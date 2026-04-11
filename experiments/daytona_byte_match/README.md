@@ -100,3 +100,53 @@ to 18.
 - Could we drive the linker from the ghidra .s reference files
   directly, producing a hybrid output that uses the reference
   pool layout but our codegen for instructions?
+
+## Instruction-count parity (updated 2026-04-11)
+
+| Function | Ours | Reference | Gap |
+|---|---|---|---|
+| FUN_06000AF8 (backup) | 16 | 17 | ‑1 (ours shorter) |
+| FUN_00280710 (main) | 13 | 13 | 0 |
+| FUN_06004378 (backup) | 49 | ~48 | +1 |
+
+Instruction counts now essentially match or beat the reference on
+the three byte-match targets we've tried. **True byte-for-byte
+equivalence is still blocked by register allocation** — Hitachi
+SHC picks r14 as its first callee-saved register home, our LCC
+backend picks r13 (because r14 is reserved as a potential FP and
+therefore excluded from vmask). Every instruction that uses a
+register differs by one nibble in its opcode byte.
+
+Closing that gap means either:
+ 1. Running the register allocator twice — once speculatively
+    with r14 in vmask, and if the function turns out to need an
+    FP we redo the allocation with r14 reserved. Non-trivial
+    because `sizeisave` and the body's FP-relative disps are all
+    baked in after the first pass.
+ 2. Producing a post-compile byte-level rewriter that reads both
+    object files, pairs up instructions structurally, and swaps
+    register fields into canonical form. Ugly but would let us
+    prove equivalence without touching the backend.
+ 3. Accepting that byte-match isn't feasible without matching
+    a specific compiler's register allocator, and pivoting the
+    validation story to "does our output produce equivalent
+    behavior in the emulator" instead.
+
+## Wins the byte-match experiments produced
+
+Even without hitting true byte equivalence, the experiments paid
+for themselves many times over by surfacing concrete backend
+optimizations that also improve every function we compile:
+
+1. **Immediate-add path** (`a + 1` → `add #1,Rn`)
+2. **Drop double sign/zero extension** on byte loads
+3. **`tst Rn,Rn`** for zero compares instead of loading 0 into a temp
+4. **Post-peephole dead-register trim** — drop wasted callee-saved
+   saves when the round-trip peephole kills their only users
+5. **Fix the PR-in-rts-delay-slot architectural hazard**
+6. **Body-level branch delay-slot fill** that scans past
+   PC-relative pool loads as transparent intermediates
+7. **`x & 0xff`/`x & 0xffff`** → single-instruction `extu.b`/`extu.w`
+
+Each of these landed as a separate commit and all ship with test
+coverage in the regression suite.
