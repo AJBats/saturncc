@@ -400,9 +400,16 @@ stmt: ASGNU1(ADDRLP4,reg)  "# lpstore_b\n"  2
 stmt: ASGNI2(ADDRLP4,reg)  "# lpstore_w\n"  2
 stmt: ASGNU2(ADDRLP4,reg)  "# lpstore_w\n"  2
 
+immi8: CNSTI4  "%a"  range(a, -128, 127)
+immu8: CNSTU4  "%a"  range(a, 0, 127)
+
 reg:  ADDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDP4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
+
+reg:  ADDI4(reg,immi8)  "?\tmov\tr%0,r%c\n\tadd\t#%1,r%c\n"  0
+reg:  ADDU4(reg,immu8)  "?\tmov\tr%0,r%c\n\tadd\t#%1,r%c\n"  0
+reg:  ADDP4(reg,immi8)  "?\tmov\tr%0,r%c\n\tadd\t#%1,r%c\n"  0
 
 reg:  SUBI4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 reg:  SUBU4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
@@ -427,8 +434,8 @@ reg:  LOADI4(reg)  "\tmov\tr%0,r%c\n"  move(a)
 reg:  LOADU4(reg)  "\tmov\tr%0,r%c\n"  move(a)
 reg:  LOADP4(reg)  "\tmov\tr%0,r%c\n"  move(a)
 
-reg:  INDIRI1(reg)  "\tmov.b\t@r%0,r%c\n\textu.b\tr%c,r%c\n"  2
-reg:  INDIRU1(reg)  "\tmov.b\t@r%0,r%c\n\textu.b\tr%c,r%c\n"  2
+reg:  INDIRI1(reg)  "\tmov.b\t@r%0,r%c\n"  1
+reg:  INDIRU1(reg)  "\tmov.b\t@r%0,r%c\n"  1
 reg:  INDIRI2(reg)  "\tmov.w\t@r%0,r%c\n"  1
 reg:  INDIRU2(reg)  "\tmov.w\t@r%0,r%c\n"  1
 reg:  INDIRI4(reg)  "\tmov.l\t@r%0,r%c\n"  1
@@ -1207,13 +1214,9 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         if (has_prologue) {
                 /* Hitachi ordering (verified against Daytona CCE
                  * output): push r14 first, then r13, r12, ..., r8
-                 * (descending register number), then PR last.
-                 * After all pushes r15 points at the PR slot. The
+                 * (descending register number), then PR last. The
                  * `mov r15,r14` FP setup and the local-area
-                 * reservation only fire when FP is actually needed
-                 * — if r14 is just a plain callee-saved register
-                 * the function body uses it directly without any
-                 * mov/add. */
+                 * reservation only fire when FP is actually needed. */
                 for (i = 14; i >= 8; i--)
                         if (usedmask[IREG] & (1u << i))
                                 print("\tmov.l\tr%d,@-r15\n", i);
@@ -1229,9 +1232,9 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         /* Run the param-home moves and the function body through
          * the capture buffer so the peephole can see them together.
-         * Otherwise a `mov r4,r13` emitted directly to stdout here
-         * would never pair up with a `mov r13,r4` emitted later by
-         * the body. */
+         * The captured lines are emitted below, after the epilogue
+         * decides whether to pull the last instruction into the
+         * rts delay slot. */
         {
                 FILE *tmp = NULL;
                 int savfd = sh_capture_begin(&tmp);
