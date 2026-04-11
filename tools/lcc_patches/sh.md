@@ -406,6 +406,11 @@ immu8: CNSTU4  "%a"  range(a, 0, 127)
 zeroi: CNSTI4  ""  (range(a, 0, 0) == 0 ? 0 : SH_GBR_REJECT)
 zerou: CNSTU4  ""  (range(a, 0, 0) == 0 ? 0 : SH_GBR_REJECT)
 
+bmask: CNSTI4  ""  (range(a, 0xff, 0xff) == 0 ? 0 : SH_GBR_REJECT)
+bmasu: CNSTU4  ""  (range(a, 0xff, 0xff) == 0 ? 0 : SH_GBR_REJECT)
+wmask: CNSTI4  ""  (range(a, 0xffff, 0xffff) == 0 ? 0 : SH_GBR_REJECT)
+wmasu: CNSTU4  ""  (range(a, 0xffff, 0xffff) == 0 ? 0 : SH_GBR_REJECT)
+
 reg:  ADDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDP4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
@@ -417,6 +422,11 @@ reg:  ADDP4(reg,immi8)  "?\tmov\tr%0,r%c\n\tadd\t#%1,r%c\n"  0
 reg:  SUBI4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 reg:  SUBU4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 reg:  SUBP4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
+
+reg:  BANDI4(reg,bmask)  "\textu.b\tr%0,r%c\n"  0
+reg:  BANDU4(reg,bmasu)  "\textu.b\tr%0,r%c\n"  0
+reg:  BANDI4(reg,wmask)  "\textu.w\tr%0,r%c\n"  0
+reg:  BANDU4(reg,wmasu)  "\textu.w\tr%0,r%c\n"  0
 
 reg:  BANDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tand\tr%1,r%c\n"  1
 reg:  BANDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tand\tr%1,r%c\n"  1
