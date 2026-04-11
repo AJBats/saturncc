@@ -674,6 +674,20 @@ static void emit2(Node p) {
                 print("\tmov.%s\tr0,@(%s-%s,gbr)\n",
                       suf, s->x.name, base);
                 break;
+        case ARG+I: case ARG+U: case ARG+P:
+                /* argno 0..3 pass in r4..r7 (handled by target() via
+                 * rtarget, so the kid was already loaded into the
+                 * right register and this case emits nothing).
+                 * argno >= 4 go on the caller's outgoing-arg area at
+                 * offset p->syms[2]->u.c.v.i. The offset includes
+                 * slots for the register-passed args too, so the
+                 * first stack arg is at +16 for int params. */
+                if (p->x.argno < 4)
+                        break;
+                src = getregnum(p->x.kids[0]);
+                print("\tmov.l\tr%d,@(%d,r15)\n",
+                      src, (int)p->syms[2]->u.c.v.i);
+                break;
         }
 }
 
@@ -747,10 +761,14 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         localsize = roundup(maxargoffset + maxoffset, 4);
 
         /* Set up FP whenever we need to reach anything on the stack:
-         * locals, spilled params, or a PR save. Leaf functions that
-         * touch nothing but r0-r7 skip the prologue entirely. */
+         * locals, spilled params, a PR save, or stack-passed
+         * incoming params (callee[i] for i >= 4). Leaf functions
+         * that touch nothing but r0-r7 skip the prologue entirely. */
         need_fp = (ncalls || localsize > 0 || usedmask[IREG] != 0
                    || maxargoffset > 0);
+        for (i = 0; i < 5 && !need_fp && callee[i]; i++)
+                if (i >= 4)
+                        need_fp = 1;
 
         sizeisave = 4 * bitcount(usedmask[IREG]);
         if (need_fp) {
