@@ -1,0 +1,14 @@
+diff --git a/src/bind.c b/src/bind.c
+index bb26eee..55ad06e 100755
+--- a/src/bind.c
++++ b/src/bind.c
+@@ -11,7 +11,8 @@ xx(symbolic/osf, symbolic64IR) \
+ xx(symbolic/irix,symbolicIR) \
+ xx(symbolic,     symbolicIR) \
+ xx(bytecode,     bytecodeIR) \
+-xx(null,         nullIR)
++xx(null,         nullIR) \
++xx(sh/hitachi,   shIR)
+ 
+ #undef xx
+ #define xx(a,b) extern Interface b;

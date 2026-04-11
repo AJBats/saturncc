@@ -1,0 +1,76 @@
+v2.0: 229,685 chars
+v5.0: 290,591 chars
+
+======================================================================
+COMPILER OPTIONS DIFF
+======================================================================
+
+Options in v2.0 (known): ['listfile']
+
+Options in v5.0 (known): ['align16', 'cpu', 'debug', 'define', 'double', 'endian', 'help', 'include', 'inline', 'listfile', 'loop', 'macsave', 'nodebug', 'noinline', 'nolistfile', 'nortnext', 'nospeed', 'objectfile', 'rtnext', 'section', 'show', 'size']
+
+New in v5.0 (not in v2.0): ['align16', 'cpu', 'debug', 'define', 'double', 'endian', 'help', 'include', 'inline', 'loop', 'macsave', 'nodebug', 'noinline', 'nolistfile', 'nortnext', 'nospeed', 'objectfile', 'rtnext', 'section', 'show', 'size']
+
+Removed from v2.0 (not in v5.0): []
+
+======================================================================
+INTRINSIC FUNCTIONS DIFF
+======================================================================
+v2.0 intrinsics: ['gbr_and_byte', 'gbr_or_byte', 'gbr_read_byte', 'gbr_read_long', 'gbr_read_word', 'gbr_tst_byte', 'gbr_write_byte', 'gbr_write_long', 'gbr_write_word', 'gbr_xor_byte', 'get_cr', 'get_gbr', 'get_imask', 'get_vbr', 'set_cr', 'set_gbr', 'set_imask', 'set_vbr', 'sleep', 'tas', 'trapa']
+v5.0 intrinsics: ['gbr_and_byte', 'gbr_or_byte', 'gbr_read_byte', 'gbr_read_long', 'gbr_read_word', 'gbr_tst_byte', 'gbr_write_byte', 'gbr_write_long', 'gbr_write_word', 'gbr_xor_byte', 'get_cr', 'get_gbr', 'get_imask', 'get_vbr', 'macl', 'set_cr', 'set_gbr', 'set_imask', 'set_vbr', 'sleep', 'tas', 'trapa']
+NEW in v5.0: ['macl']
+REMOVED: []
+
+======================================================================
+#PRAGMA DIRECTIVES DIFF
+======================================================================
+v2.0 #pragmas: ['directive', 'interrupt']
+v5.0 #pragmas: ['abs', 'abs16', 'absl6', 'directive', 'directives', 'for', 'gbr', 'gbr_base', 'gbr_base1', 'gbr_basel', 'gbr_bsee', 'global_register', 'inline', 'inline_asm', 'interrupt', 'is', 'noregalloc', 'noregsave', 'regsave', 'section', 'specification', 'specifications', 'that']
+NEW in v5.0: ['abs', 'abs16', 'absl6', 'directives', 'for', 'gbr', 'gbr_base', 'gbr_base1', 'gbr_basel', 'gbr_bsee', 'global_register', 'inline', 'inline_asm', 'is', 'noregalloc', 'noregsave', 'regsave', 'section', 'specification', 'specifications', 'that']
+REMOVED: []
+
+======================================================================
+CPU COVERAGE DIFF
+======================================================================
+v2.0 CPUs mentioned: []
+v5.0 CPUs mentioned: ['SH1', 'SH2', 'SH3', 'SH3E']
+
+======================================================================
+TABLE OF CONTENTS ('Section' headings)
+======================================================================
+
+v2.0 sections (12):
+  Section 1   Error Messages Output by the C Compiler
+  Section 1   Limitations of the C Compiler
+  Section 1   Overview
+  Section 2   Allocating Memory Areas
+  Section 2   Developing Procedures
+  Section 2   Error Messages Output for the C Library Functions
+  Section 2   Executing a C Program
+  Section 3   C Compiler Execution
+  Section 3   Extended Specifications
+  Section 3   Setting the Execution Environment
+  Section 4   Notes on Programming
+  Section 4   Setting the C Library Function Execution Environment
+
+v5.0 sections (7):
+  Section 1 Error Messages
+  Section 1 Limits of the C Compiler
+  Section 1 Overview of System Installation
+  Section 2 C Standard Library Error Messages
+  Section 2 Executing a C Program
+  Section 4 Notes on Programming
+  Section 4 Setting the C Library Function Execution Environment
+
+======================================================================
+ERROR CODE RANGES
+======================================================================
+v2.0 error codes: 1 codes, range 2011-2011
+v5.0 error codes: 183 codes, range 1000-3320
+New codes in v5.0: [1000, 1001, 1002, 1008, 1012, 1013, 1014, 1015, 1016, 1019, 1021, 1022, 1023, 1200, 1201, 1300, 1400, 2000, 2001, 2002]
+
+======================================================================
+VERSION MARKERS
+======================================================================
+v2.0: Versions=['Ver. 2.0', 'Ver.5.0'], Dates=[]
+v5.0: Versions=['Ver.5.0'], Dates=['June 1993', 'March 1997']
