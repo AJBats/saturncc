@@ -403,6 +403,9 @@ stmt: ASGNU2(ADDRLP4,reg)  "# lpstore_w\n"  2
 immi8: CNSTI4  "%a"  range(a, -128, 127)
 immu8: CNSTU4  "%a"  range(a, 0, 127)
 
+zeroi: CNSTI4  ""  (range(a, 0, 0) == 0 ? 0 : SH_GBR_REJECT)
+zerou: CNSTU4  ""  (range(a, 0, 0) == 0 ? 0 : SH_GBR_REJECT)
+
 reg:  ADDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDP4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
@@ -482,6 +485,11 @@ stmt: EQI4(reg,reg)  "\tcmp/eq\tr%1,r%0\n\tbt\t%a\n"  2
 stmt: EQU4(reg,reg)  "\tcmp/eq\tr%1,r%0\n\tbt\t%a\n"  2
 stmt: NEI4(reg,reg)  "\tcmp/eq\tr%1,r%0\n\tbf\t%a\n"  2
 stmt: NEU4(reg,reg)  "\tcmp/eq\tr%1,r%0\n\tbf\t%a\n"  2
+
+stmt: EQI4(reg,zeroi)  "\ttst\tr%0,r%0\n\tbt\t%a\n"  1
+stmt: EQU4(reg,zerou)  "\ttst\tr%0,r%0\n\tbt\t%a\n"  1
+stmt: NEI4(reg,zeroi)  "\ttst\tr%0,r%0\n\tbf\t%a\n"  1
+stmt: NEU4(reg,zerou)  "\ttst\tr%0,r%0\n\tbf\t%a\n"  1
 stmt: LTI4(reg,reg)  "\tcmp/gt\tr%0,r%1\n\tbt\t%a\n"  2
 stmt: LEI4(reg,reg)  "\tcmp/ge\tr%0,r%1\n\tbt\t%a\n"  2
 stmt: GTI4(reg,reg)  "\tcmp/gt\tr%1,r%0\n\tbt\t%a\n"  2
