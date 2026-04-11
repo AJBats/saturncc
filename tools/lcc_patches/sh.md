@@ -365,8 +365,8 @@ reg:  CNSTP4  "# large const\n"  2
 
 reg:  ADDRGP4  "# addrg\n"  2
 
-reg:  ADDRFP4  "\tmov\tr14,r%c\n\tadd\t#%a+%F,r%c\n"  2
-reg:  ADDRLP4  "\tmov\tr14,r%c\n\tadd\t#%a,r%c\n"     2
+reg:  ADDRFP4  "# addrfp\n"  2
+reg:  ADDRLP4  "# addrlp\n"  2
 
 reg:  INDIRI4(ADDRFP4)  "# fpload_l\n"  1
 reg:  INDIRU4(ADDRFP4)  "# fpload_l\n"  1
@@ -703,6 +703,37 @@ static void emit2(Node p) {
                 dst = getregnum(p);
                 print("\tmov.l\tL%d,r%d\n", lab, dst);
                 break;
+        case ADDRF+P: {
+                int disp, off;
+                char *b;
+                off = p->syms[0] ? p->syms[0]->x.offset : 0;
+                dst = getregnum(p);
+                /* Standalone ADDRFP4 (i.e., &param used as a value)
+                 * computes the caller-frame address. With FP active
+                 * the base is r14 and disp = off + sizeisave; when
+                 * FP is skipped r15 still sits at orig_sp -
+                 * sizeisave, so r15 + off + sizeisave points at the
+                 * same slot. */
+                if (sh_fp_active) {
+                        b = "r14";
+                        disp = off + sh_sizeisave;
+                } else {
+                        b = "r15";
+                        disp = off + sh_sizeisave;
+                }
+                print("\tmov\t%s,r%d\n", b, dst);
+                print("\tadd\t#%d,r%d\n", disp, dst);
+                break;
+                }
+        case ADDRL+P: {
+                int disp;
+                dst = getregnum(p);
+                disp = sh_localsize
+                       + (p->syms[0] ? p->syms[0]->x.offset : 0);
+                print("\tmov\tr15,r%d\n", dst);
+                print("\tadd\t#%d,r%d\n", disp, dst);
+                break;
+                }
         case INDIR+I: case INDIR+U: case INDIR+P: {
                 int disp, off;
                 int kop;
@@ -745,7 +776,7 @@ static void emit2(Node p) {
                 off = s ? s->x.offset : 0;
                 if (kop == ADDRF) {
                         disp = off + sh_sizeisave;
-                        base = "r14";
+                        base = sh_fp_active ? "r14" : "r15";
                 } else {
                         disp = sh_localsize + off;
                         base = "r15";
@@ -808,7 +839,7 @@ static void emit2(Node p) {
                 off = s ? s->x.offset : 0;
                 if (kop == ADDRF) {
                         disp = off + sh_sizeisave;
-                        base = "r14";
+                        base = sh_fp_active ? "r14" : "r15";
                 } else {
                         disp = sh_localsize + off;
                         base = "r15";
@@ -1146,21 +1177,26 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         localsize = roundup(maxargoffset + maxoffset, 4);
         sh_localsize = localsize;
 
-        need_fp = (ncalls || localsize > 0 || usedmask[IREG] != 0
-                   || maxargoffset > 0);
-        for (i = 0; i < 5 && !need_fp && callee[i]; i++)
+        /* FP is only needed when there are locals on the stack
+         * (register-promoted locals don't count). Stack-passed
+         * incoming params could in principle be read via r15, but
+         * for simplicity we still set up FP when any stack-arg is
+         * present. */
+        need_fp = (localsize > 0);
+        for (i = 0; !need_fp && callee[i]; i++)
                 if (i >= 4)
                         need_fp = 1;
-        has_prologue = need_fp;
         sh_fp_active = need_fp;
 
-        sizeisave = 4 * bitcount(usedmask[IREG]);
-        if (need_fp) {
+        /* A prologue is emitted if we're either setting up FP,
+         * saving callee-saved regs, or saving PR. Otherwise the
+         * function is a pure leaf that only touches r0..r7. */
+        if (need_fp)
                 usedmask[IREG] |= 1u << 14;
-                sizeisave = 4 * bitcount(usedmask[IREG]);
-                if (ncalls)
-                        sizeisave += 4;
-        }
+        has_prologue = need_fp || ncalls || usedmask[IREG] != 0;
+        sizeisave = 4 * bitcount(usedmask[IREG]);
+        if (ncalls)
+                sizeisave += 4;
         framesize = sizeisave;
         sh_sizeisave = sizeisave;
 
