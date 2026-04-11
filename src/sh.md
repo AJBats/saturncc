@@ -37,9 +37,17 @@
  * R8-R14 are callee-saved and live in INTVAR; the prologue saves the
  * subset actually used, in descending order (Hitachi style).
  * R15 is the stack pointer.
+ *
+ * R14 is also the frame pointer when any local needs a stack slot or
+ * when any incoming param lands at an r14-relative disp. The allocator
+ * is allowed to pick r14 as a variable home speculatively — if FP
+ * later turns out to be needed AND r14 was claimed as a var, the
+ * conflict is resolved post-gencode by renaming every non-FP r14
+ * mention in the captured body to the highest-numbered free callee-
+ * saved reg. See function() for the detection and rename dance.
  */
 #define INTTMP  0x0000000e  /* R1..R3                          */
-#define INTVAR  0x00003f00  /* R8..R13 (R14 reserved for FP)   */
+#define INTVAR  0x00007f00  /* R8..R14 (R14 may be reclaimed as FP) */
 #define INTRET  0x00000001  /* R0                              */
 
 static void address(Symbol, Symbol, long);
@@ -1216,6 +1224,51 @@ static void sh_peephole(void) {
         }
 }
 
+/* Rename every non-FP use of r14 in the captured body to r<new_reg>.
+ * An r14 token is considered an FP-indirect use iff it appears inside
+ * `@(disp,r14)` — i.e., preceded by `,` and followed by `)`. Every
+ * other occurrence (bare `r14`, `@r14`, `mov rX,r14`, etc.) is a
+ * variable-home use left behind by ralloc and must move to new_reg.
+ *
+ * This runs only when the allocator picked r14 as a var home AND the
+ * function also turns out to need FP. See function() for the call
+ * site and the surrounding conflict-detection logic. */
+static void sh_rename_r14_var(int new_reg) {
+        char buf[SH_MAX_LINELEN];
+        int j;
+        for (j = 0; j < sh_nlines; j++) {
+                const char *in = sh_lines[j];
+                char *out = buf;
+                if (in[0] == 0)
+                        continue;
+                while (*in) {
+                        if (*in == 'r' && in[1] == '1' && in[2] == '4'
+                            && !(in[3] >= '0' && in[3] <= '9')) {
+                                int is_fp_indexed =
+                                        (in > sh_lines[j]
+                                         && in[-1] == ','
+                                         && in[3] == ')');
+                                if (is_fp_indexed) {
+                                        *out++ = *in++;
+                                        *out++ = *in++;
+                                        *out++ = *in++;
+                                } else {
+                                        int n = snprintf(out,
+                                                sizeof buf - (size_t)(out - buf),
+                                                "r%d", new_reg);
+                                        out += n;
+                                        in += 3;
+                                }
+                        } else {
+                                *out++ = *in++;
+                        }
+                }
+                *out = 0;
+                strncpy(sh_lines[j], buf, SH_MAX_LINELEN - 1);
+                sh_lines[j][SH_MAX_LINELEN - 1] = 0;
+        }
+}
+
 static int sh_is_delay_safe(const char *s) {
         /* Conservative whitelist: simple ALU and data moves only.
          * Excludes any branch, jmp/jsr/rts/bsr/bra/bt/bf, and the
@@ -1278,6 +1331,8 @@ static void sh_capture_end(int savfd, FILE *tmp) {
 
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         int i, localsize, sizeisave, need_fp, has_prologue;
+        int need_r14_rename = 0;
+        int r14_rename_to = -1;
         Symbol r, argregs[4];
 
         nshlit = 0;
@@ -1361,6 +1416,27 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         need_fp = 1;
         sh_fp_active = need_fp;
 
+        /* Speculative r14 reclaim. INTVAR lets the allocator pick r14
+         * as a variable home so leaf functions match Hitachi's
+         * descending-from-r14 allocation. If the function also turns
+         * out to need FP, that's a conflict: r14 can't be both the
+         * frame pointer and a var at the same time. We steal the
+         * highest-numbered free callee-saved reg as the new var home
+         * and rewrite the captured body after peephole (see below). */
+        if (need_fp && (usedmask[IREG] & (1u << 14))) {
+                int j;
+                for (j = 13; j >= 8; j--) {
+                        if (!(usedmask[IREG] & (1u << j))) {
+                                r14_rename_to = j;
+                                break;
+                        }
+                }
+                assert(r14_rename_to >= 0);
+                need_r14_rename = 1;
+                usedmask[IREG] &= ~(1u << 14);
+                usedmask[IREG] |= 1u << r14_rename_to;
+        }
+
         if (need_fp)
                 usedmask[IREG] |= 1u << 14;
         sizeisave = 4 * bitcount(usedmask[IREG]);
@@ -1395,15 +1471,18 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         sh_nlines = 0;
                 sh_peephole();
                 sh_fill_branch_delays();
+                if (need_r14_rename)
+                        sh_rename_r14_var(r14_rename_to);
         }
 
         /* Rebuild usedmask from surviving body lines so dead-after-
          * peephole registers drop off the save/restore list. This is
-         * only safe when the body doesn't reference r14-relative
+         * only safe when the body doesn't reference r14-relative FP
          * addresses — if it does, changing sizeisave would shift the
-         * disps in those references and break correctness. The
-         * direct-disp paths in emit2() use `(%d,r14)` and `@r14`
-         * style syntax we can scan for. */
+         * disps in those references and break correctness. The FP
+         * direct-disp paths in emit2() emit `@(disp,r14)`, which is
+         * the only form that pins sizeisave; bare `@r14` is always a
+         * variable-pointer deref in our emitter and doesn't lock. */
         {
                 unsigned live = 0;
                 int fp_locked = 0;
@@ -1412,8 +1491,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         if (sh_lines[j][0] == 0)
                                 continue;
                         live |= sh_regs_used(sh_lines[j]);
-                        if (strstr(sh_lines[j], ",r14)")
-                            || strstr(sh_lines[j], "@r14"))
+                        if (strstr(sh_lines[j], ",r14)"))
                                 fp_locked = 1;
                 }
                 if (!fp_locked) {
