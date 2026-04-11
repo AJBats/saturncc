@@ -1,0 +1,335 @@
+SH SERIES C Compiler (Ver. 1.0)                                                                      08-Feb-1994 16:29:42  PAGE    1
+
+************ SOURCE LISTING ************
+
+FILE NAME: test.c
+
+  Seq       File  Line   0----+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8----+----9----+----0----+-
+    1     test.c     1    /*  name = test.c, February 8, 1994, P. Hack for HMSI           */
+    2     test.c     2    /*  purpose = test file to check out E7000PC                    */
+    3     test.c     3    
+    4     test.c     4    void  fill(void);
+    5     test.c     5    void  clear(void);
+    6     test.c     6    
+    7     test.c     7    main()
+    8     test.c     8    {
+    9     test.c     9            while(1)
+   10     test.c    10                    {
+   11     test.c    11                    fill();
+   12     test.c    12                    clear();
+   13     test.c    13                    }
+   14     test.c    14    }
+   15     test.c    15    
+   16     test.c    16    void fill(void)
+   17     test.c    17    {
+   18     test.c    18            static int i=0;
+   19     test.c    19            int *ip;
+   20     test.c    20    
+   21     test.c    21            ip=(int *) 0x9000;
+   22     test.c    22    
+   23     test.c    23            for(i=1;i<=10;i++)
+   24     test.c    24                    {
+   25     test.c    25                    *ip = i;
+   26     test.c    26                    ++ip;
+   27     test.c    27                    }
+   28     test.c    28    }
+   29     test.c    29    
+   30     test.c    30    void clear(void)
+   31     test.c    31    {
+   32     test.c    32            static int j=0;
+   33     test.c    33            int *ip;
+   34     test.c    34    
+   35     test.c    35            ip=(int *) 0x9000;
+   36     test.c    36    
+   37     test.c    37            for(j=1;j<=10;j++)
+   38     test.c    38                    {
+   39     test.c    39                    *ip = 0x0000;
+   40     test.c    40                    ++ip;
+   41     test.c    41                    }
+   42     test.c    42    }
+   43     test.c    43    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SH SERIES C Compiler (Ver. 1.0)                                                                      08-Feb-1994 16:29:42  PAGE    1
+
+************ OBJECT LISTING ************
+
+FILE NAME: test.c
+
+SCT OFFSET   CODE       C LABEL     INSTRUCTION OPERAND    COMMENT
+
+  P                       ; File test.c    , Line 7        ; block
+    00000000              _main:                           ; function: main
+                                                           ; frame size=4
+    00000000 4F22                   STS.L       PR,@-R15
+                          ; File test.c    , Line 8        ; block
+                          ; File test.c    , Line 9        ; while
+    00000002 A004                   BRA         L113
+    00000004 0009                   NOP
+    00000006              L114:                             
+                          ; File test.c    , Line 10       ; block
+                          ; File test.c    , Line 11       ; expression statement
+    00000006 B004                   BSR         _fill
+    00000008 0009                   NOP
+                          ; File test.c    , Line 12       ; expression statement
+    0000000A B025                   BSR         _clear
+    0000000C 0009                   NOP
+    0000000E              L113:                             
+    0000000E AFFA                   BRA         L114
+    00000010 0009                   NOP
+                          ; File test.c    , Line 14       ; block
+                          ; File test.c    , Line 16       ; block
+    00000012              _fill:                           ; function: fill
+                                                           ; frame size=4
+    00000012 7FFC                   ADD         #-4,R15
+                          ; File test.c    , Line 17       ; block
+                          ; File test.c    , Line 21       ; expression statement
+    00000014 D303                   MOV.L       @(L119+2-$-4,PC),R3
+    00000016 2F32                   MOV.L       R3,@R15
+                          ; File test.c    , Line 23       ; for
+    00000018 E301                   MOV         #1,R3
+    0000001A D203                   MOV.L       @(L119+6-$-2,PC),R2
+    0000001C 2232                   MOV.L       R3,@R2
+    0000001E A011                   BRA         L115
+    00000020 0009                   NOP
+    00000022              L119:                             
+    00000022 00000002               .RES.W      1
+    00000024 00009000               .DATA.L     H'00009000
+    00000028 <00000000>             .DATA.L     L104
+    0000002C              L116:                             
+                          ; File test.c    , Line 24       ; block
+                          ; File test.c    , Line 25       ; expression statement
+    0000002C 62F2                   MOV.L       @R15,R2
+    0000002E D309                   MOV.L       @(L120-$-2,PC),R3
+    00000030 6332                   MOV.L       @R3,R3
+    00000032 2232                   MOV.L       R3,@R2
+                          ; File test.c    , Line 26       ; expression statement
+    00000034 62F2                   MOV.L       @R15,R2
+    00000036 7204                   ADD         #4,R2
+    00000038 2F22                   MOV.L       R2,@R15
+    0000003A D306                   MOV.L       @(L120-$-2,PC),R3
+    0000003C 6332                   MOV.L       @R3,R3
+    0000003E 7301                   ADD         #1,R3
+    00000040 D104                   MOV.L       @(L120-$-4,PC),R1
+    00000042 2132                   MOV.L       R3,@R1
+
+
+
+
+SH SERIES C Compiler (Ver. 1.0)                                                                      08-Feb-1994 16:29:42  PAGE    2
+
+
+SCT OFFSET   CODE       C LABEL     INSTRUCTION OPERAND    COMMENT
+
+    00000044              L115:                             
+    00000044 D303                   MOV.L       @(L120-$-4,PC),R3
+    00000046 6332                   MOV.L       @R3,R3
+    00000048 E20A                   MOV         #10,R2
+    0000004A 3327                   CMP/GT      R2,R3
+    0000004C 8BEE                   BF          L116
+                          ; File test.c    , Line 28       ; block
+    0000004E 7F04                   ADD         #4,R15
+    00000050 000B                   RTS
+    00000052 0009                   NOP
+    00000054              L120:                             
+    00000054 <00000000>             .DATA.L     L104
+                          ; File test.c    , Line 30       ; block
+    00000058              _clear:                          ; function: clear
+                                                           ; frame size=4
+    00000058 7FFC                   ADD         #-4,R15
+                          ; File test.c    , Line 31       ; block
+                          ; File test.c    , Line 35       ; expression statement
+    0000005A D303                   MOV.L       @(L121-$-2,PC),R3
+    0000005C 2F32                   MOV.L       R3,@R15
+                          ; File test.c    , Line 37       ; for
+    0000005E E301                   MOV         #1,R3
+    00000060 D202                   MOV.L       @(L121+4-$-4,PC),R2
+    00000062 2232                   MOV.L       R3,@R2
+    00000064 A00F                   BRA         L117
+    00000066 0009                   NOP
+    00000068              L121:                             
+    00000068 00009000               .DATA.L     H'00009000
+    0000006C <00000000>             .DATA.L     L108
+    00000070              L118:                             
+                          ; File test.c    , Line 38       ; block
+                          ; File test.c    , Line 39       ; expression statement
+    00000070 62F2                   MOV.L       @R15,R2
+    00000072 E300                   MOV         #0,R3
+    00000074 2232                   MOV.L       R3,@R2
+                          ; File test.c    , Line 40       ; expression statement
+    00000076 62F2                   MOV.L       @R15,R2
+    00000078 7204                   ADD         #4,R2
+    0000007A 2F22                   MOV.L       R2,@R15
+    0000007C D306                   MOV.L       @(L122+2-$-4,PC),R3
+    0000007E 6332                   MOV.L       @R3,R3
+    00000080 7301                   ADD         #1,R3
+    00000082 D105                   MOV.L       @(L122+2-$-2,PC),R1
+    00000084 2132                   MOV.L       R3,@R1
+    00000086              L117:                             
+    00000086 D304                   MOV.L       @(L122+2-$-2,PC),R3
+    00000088 6332                   MOV.L       @R3,R3
+    0000008A E20A                   MOV         #10,R2
+    0000008C 3327                   CMP/GT      R2,R3
+    0000008E 8BEF                   BF          L118
+                          ; File test.c    , Line 42       ; block
+    00000090 7F04                   ADD         #4,R15
+    00000092 000B                   RTS
+    00000094 0009                   NOP
+    00000096              L122:                             
+    00000096 00000002               .RES.W      1
+    00000098 <00000000>             .DATA.L     L108
+
+
+
+
+SH SERIES C Compiler (Ver. 1.0)                                                                      08-Feb-1994 16:29:42  PAGE    3
+
+
+SCT OFFSET   CODE       C LABEL     INSTRUCTION OPERAND    COMMENT
+
+  D 00000000              L104:                            ; static: i
+    00000000 00000000               .DATA.L     H'00000000
+    00000004              L108:                            ; static: j
+    00000004 00000000               .DATA.L     H'00000000
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SH SERIES C Compiler (Ver. 1.0)                                                                      08-Feb-1994 16:29:42  PAGE    1
+
+
+******** STATISTICS INFORMATION ********
+
+
+********** ERROR INFORMATION ***********
+
+NUMBER OF ERRORS:           0
+NUMBER OF WARNINGS:         0
+
+
+
+
+******* SOURCE LINE INFORMATION ********
+
+COMPILED SOURCE LINE:       43
+
+
+
+******* SECTION SIZE INFORMATION *******
+
+PROGRAM  SECTION (P): 9C000000 Byte(s)
+CONSTANT SECTION (C): 00000000 Byte(s)
+DATA     SECTION (D): 08000000 Byte(s)
+BSS      SECTION (B): 00000000 Byte(s)
+
+ TOTAL PROGRAM SIZE: A4000000 Byte(s)
+
+
+
+********** LABEL INFORMATION ***********
+
+NUMBER OF EXTERNAL REFERENCE SYMBOLS:            0
+NUMBER OF EXTERNAL DEFINITION SYMBOLS:           3
+NUMBER OF INTERNAL/EXTERNAL SYMBOLS:             3
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*** COMMAND PARAMETER ***
+
+
+  /deb /op=0 /lis test.c 
+
