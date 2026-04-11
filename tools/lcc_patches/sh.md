@@ -63,6 +63,9 @@ static void segment(int);
 static void space(int);
 static void target(Node);
 static Symbol argreg(int);
+static void sh_pragma(char *name);
+
+extern void (*shc_pragma_hook)(char *name);
 
 /* ireg is sized to 32 because gen.c's askreg() walks a wildcard's
  * register array from index 31 down to 0. On SH-2 we only populate
@@ -543,6 +546,25 @@ static int gbr_is_eligible(Node p) {
         return 1;
 }
 
+/* #pragma handler wired up through the input.c hook. Recognizes
+ * `#pragma gbr_base (name)` — the syntax Hitachi SHC uses — and
+ * records the identifier as the base symbol for GBR-relative
+ * addressing. Unknown pragmas are silently ignored (same behavior
+ * as unmodified LCC). */
+static void sh_pragma(char *name) {
+        if (strcmp(name, "gbr_base") == 0) {
+                while (*cp == ' ' || *cp == '\t')
+                        cp++;
+                if (*cp == '(') {
+                        cp++;
+                        while (*cp == ' ' || *cp == '\t')
+                                cp++;
+                }
+                if (gettok() == ID)
+                        gbr_base_cname = string(token);
+        }
+}
+
 static int sh_log2_align(int a) {
         switch (a) {
         case 1:  return 0;
@@ -588,6 +610,7 @@ static void progbeg(int argc, char *argv[]) {
         for (i = 0; i < argc; i++)
                 if (strncmp(argv[i], "-gbr-base=", 10) == 0)
                         gbr_base_cname = argv[i] + 10;
+        shc_pragma_hook = sh_pragma;
         for (i = 0; i < 16; i++)
                 ireg[i] = mkreg("%d", i, 1, IREG);
         ireg[15]->x.name = "15";

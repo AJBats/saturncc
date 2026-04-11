@@ -45,8 +45,8 @@ cp "${PATCHES_DIR}/sh.md" "${LCC_DIR}/src/sh.md"
 # build uses the lburg-generated $Bsh.c instead.
 rm -f "${LCC_DIR}/src/sh.c"
 
-# bind.c and makefile: apply patches, idempotent check first
-for patch_file in bind.c.patch makefile.patch; do
+# bind.c, input.c, and makefile: apply patches, idempotent check first
+for patch_file in bind.c.patch input.c.patch makefile.patch; do
     if patch -p1 --dry-run -R --silent < "${PATCHES_DIR}/${patch_file}" > /dev/null 2>&1; then
         echo "    ${patch_file} already applied, skipping"
     else
