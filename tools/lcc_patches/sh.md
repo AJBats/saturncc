@@ -973,8 +973,12 @@ static int sh_has_prefix(const char *s, const char *pre) {
         while (*pre) {
                 if (*s++ != *pre++) return 0;
         }
-        /* Must be followed by whitespace or tab (an operand separator). */
-        return *s == ' ' || *s == '\t';
+        /* Must be followed by whitespace, tab, newline, or end of
+         * string. Operand-less instructions like `nop` terminate
+         * immediately with a newline; operand-having ones put a
+         * tab before the first operand. */
+        return *s == ' ' || *s == '\t' || *s == '\n'
+               || *s == '\r' || *s == 0;
 }
 
 /* Return a mask of the r0..r15 register numbers that appear anywhere
@@ -1024,6 +1028,150 @@ static int sh_parse_regmov(const char *s, int *rA, int *rB) {
         if (*s >= '0' && *s <= '9')
                 *rB = *rB * 10 + *s++ - '0';
         return 1;
+}
+
+static int sh_is_delay_safe(const char *s);
+
+/* Return 1 if this line is a PC-relative long load — i.e.
+ * `mov.l L<n>,Rn` or the explicit `mov.l @(<disp>,PC),Rn` form.
+ * Those are forbidden in delay slots because the CPU's PC-relative
+ * addressing mode misbehaves there. */
+static int sh_is_pc_rel_load(const char *s) {
+        while (*s == ' ' || *s == '\t') s++;
+        if (!(s[0] == 'm' && s[1] == 'o' && s[2] == 'v'
+              && (s[3] == '.') && (s[4] == 'l' || s[4] == 'w')
+              && (s[5] == ' ' || s[5] == '\t')))
+                return 0;
+        s += 6;
+        while (*s == ' ' || *s == '\t') s++;
+        /* `mov.l L<digit>,...` — our literal-pool load convention. */
+        if (s[0] == 'L' && s[1] >= '0' && s[1] <= '9')
+                return 1;
+        /* `mov.l @(<anything>,PC),...` — GAS syntax. */
+        if (strstr(s, ",PC)") || strstr(s, ",pc)"))
+                return 1;
+        return 0;
+}
+
+/* Pick apart a `jsr @rN` / `jmp @rN` line and return N, or -1 for
+ * branches that don't have a register target. */
+static int sh_branch_target_reg(const char *s) {
+        while (*s == ' ' || *s == '\t') s++;
+        if ((s[0] == 'j' && s[1] == 's' && s[2] == 'r')
+            || (s[0] == 'j' && s[1] == 'm' && s[2] == 'p')) {
+                s += 3;
+                while (*s == ' ' || *s == '\t') s++;
+                if (*s != '@') return -1;
+                s++;
+                if (*s != 'r') return -1;
+                s++;
+                if (*s < '0' || *s > '9') return -1;
+                {
+                        int n = *s - '0';
+                        if (s[1] >= '0' && s[1] <= '9')
+                                n = n * 10 + (s[1] - '0');
+                        return n;
+                }
+        }
+        return -1;
+}
+
+static int sh_is_branch_line(const char *s) {
+        while (*s == ' ' || *s == '\t') s++;
+        if (sh_has_prefix(s, "jsr"))  return 1;
+        if (sh_has_prefix(s, "jmp"))  return 1;
+        if (sh_has_prefix(s, "bra"))  return 1;
+        if (sh_has_prefix(s, "bsr"))  return 1;
+        return 0;
+}
+
+/* Return 1 if `line` writes to register `rN` (destination operand).
+ * For the SH-2 syntax we emit, the destination is the last register
+ * before the newline; a simple scan-from-end works. */
+static int sh_writes_reg(const char *line, int rN) {
+        const char *s = line;
+        const char *last_r = NULL;
+        while (*s) {
+                if (*s == 'r' && s[1] >= '0' && s[1] <= '9')
+                        last_r = s;
+                s++;
+        }
+        if (!last_r) return 0;
+        last_r++;
+        {
+                int n = *last_r - '0';
+                if (last_r[1] >= '0' && last_r[1] <= '9')
+                        n = n * 10 + (last_r[1] - '0');
+                return n == rN;
+        }
+}
+
+/* Peephole: fill the nop delay slot after each bra/bsr/jsr/jmp
+ * with a safe preceding instruction. Scans backward from the
+ * branch, allowing the walk to pass OVER PC-relative pool loads
+ * (they're our own emission pattern and never really block motion
+ * as long as the candidate doesn't share registers with them).
+ * Halts on any label, branch, or non-delay-safe instruction.
+ *
+ * When a candidate is found we verify:
+ *   - Its register set is disjoint from every intermediate pool
+ *     load's destination register (else moving it past them would
+ *     see a stale input or clobber a later read).
+ *   - For jsr/jmp, it doesn't rewrite the branch's target register
+ *     (the CPU reads the target at branch time, which is AFTER the
+ *     delay slot runs).
+ */
+static void sh_fill_branch_delays(void) {
+        int i, j, k;
+        for (i = 0; i < sh_nlines - 1; i++) {
+                int tgt_reg;
+                unsigned intermediate_mask = 0;
+                int cand = -1;
+                if (sh_lines[i][0] == 0)
+                        continue;
+                if (!sh_is_branch_line(sh_lines[i]))
+                        continue;
+                for (j = i + 1; j < sh_nlines; j++) {
+                        if (sh_lines[j][0] == 0)
+                                continue;
+                        break;
+                }
+                if (j >= sh_nlines)
+                        continue;
+                if (!sh_has_prefix(sh_lines[j], "nop"))
+                        continue;
+                tgt_reg = sh_branch_target_reg(sh_lines[i]);
+
+                for (k = i - 1; k >= 0; k--) {
+                        unsigned cand_regs;
+                        if (sh_lines[k][0] == 0)
+                                continue;
+                        if (sh_is_label_line(sh_lines[k]))
+                                break;
+                        if (sh_is_branch_line(sh_lines[k]))
+                                break;
+                        if (!sh_is_delay_safe(sh_lines[k]))
+                                break;
+                        cand_regs = sh_regs_used(sh_lines[k]);
+                        if (sh_is_pc_rel_load(sh_lines[k])) {
+                                intermediate_mask |= cand_regs;
+                                continue;
+                        }
+                        if (cand_regs & intermediate_mask)
+                                break;
+                        if (tgt_reg >= 0
+                            && sh_writes_reg(sh_lines[k], tgt_reg))
+                                break;
+                        cand = k;
+                        break;
+                }
+                if (cand < 0)
+                        continue;
+                strncpy(sh_lines[j], sh_lines[cand],
+                        SH_MAX_LINELEN - 1);
+                sh_lines[j][SH_MAX_LINELEN - 1] = 0;
+                sh_lines[cand][0] = 0;
+        }
 }
 
 /* Peephole: delete `mov rA,rB` ... `mov rB,rA` pairs when no
@@ -1236,6 +1384,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 else
                         sh_nlines = 0;
                 sh_peephole();
+                sh_fill_branch_delays();
         }
 
         /* Rebuild usedmask from surviving body lines so dead-after-
