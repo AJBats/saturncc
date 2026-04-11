@@ -14,6 +14,9 @@ unsigned char *limit;	/* points to last character + 1 */
 char *line;		/* current line */
 int lineno;		/* line number of current line */
 
+/* SaturnCompiler backend hook for unrecognized #pragma directives. */
+void (*shc_pragma_hook)(char *name) = 0;
+
 void nextline(void) {
 	do {
 		if (cp >= limit) {
@@ -84,7 +87,7 @@ static void ident(void) {
 
 /* pragma - handle #pragma ref id... */
 static void pragma(void) {
-	if ((t = gettok()) == ID && strcmp(token, "ref") == 0)
+	if ((t = gettok()) == ID && strcmp(token, "ref") == 0) {
 		for (;;) {
 			while (*cp == ' ' || *cp == '\t')
 				cp++;
@@ -95,6 +98,9 @@ static void pragma(void) {
 				use(tsym, src);
 			}	
 		}
+	} else if (t == ID && shc_pragma_hook) {
+		(*shc_pragma_hook)(token);
+	}
 }
 
 /* resynch - set line number/file name in # n [ "file" ], #pragma, etc. */
