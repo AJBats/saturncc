@@ -838,23 +838,30 @@ static void emit2(Node p) {
                 break;
                 }
         case ARG+I: case ARG+U: case ARG+P:
-                /* argno 0..3 pass in r4..r7 (handled by target() via
-                 * rtarget, so the kid was already loaded into the
-                 * right register and this case emits nothing).
-                 * argno >= 4 go on the caller's outgoing-arg area at
-                 * offset p->syms[2]->u.c.v.i. The offset includes
-                 * slots for the register-passed args too, so the
-                 * first stack arg is at +16 for int params. */
+                /* argno 0..3 pass in r4..r7 (handled by target()
+                 * via rtarget). argno >= 4 go on the caller's
+                 * outgoing-arg area. doarg() records the raw
+                 * mkactual offset (including the 16 bytes nominally
+                 * reserved for the four register-passed slots);
+                 * subtract 16 here so the actual store lands at
+                 * @(0,r15) for the first stack arg. */
                 if (p->x.argno < 4)
                         break;
                 src = getregnum(p->x.kids[0]);
                 print("\tmov.l\tr%d,@(%d,r15)\n",
-                      src, (int)p->syms[2]->u.c.v.i);
+                      src, (int)p->syms[2]->u.c.v.i - 16);
                 break;
         }
 }
 
 static void doarg(Node p) {
+        /* argoffset is advanced for every arg (including the
+         * register-passed ones) so LCC's per-call reset logic
+         * (if (argoffset == 0) argno = 0) keeps working. The
+         * returned slot offset is then shifted by -16 at
+         * emit-time in emit2() for stack-passed args, so the
+         * caller's outgoing-arg area only holds the args 4+ and
+         * doesn't waste 16 bytes on the register-passed slots. */
         static int argno;
         if (argoffset == 0)
                 argno = 0;
@@ -1077,30 +1084,49 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         for (i = 0; callee[i]; i++)
                 ;
-        for (i = 0; callee[i]; i++) {
-                Symbol p = callee[i];
-                Symbol q = caller[i];
-                assert(q);
-                offset = roundup(offset, q->type->align);
-                p->x.offset = q->x.offset = offset;
-                p->x.name = q->x.name = stringd(offset);
-                r = argreg(i);
-                if (i < 4)
-                        argregs[i] = r;
-                offset = roundup(offset + q->type->size, 4);
-                if (i < 4 && !isstruct(q->type) && !p->addressed && ncalls == 0) {
-                        p->sclass = q->sclass = REGISTER;
-                        askregvar(p, r);
-                        assert(p->x.regnode && p->x.regnode->vbl == p);
-                        q->x = p->x;
-                        q->type = p->type;
-                } else if (i < 4 && !isstruct(q->type) && !p->addressed) {
-                        p->sclass = REGISTER;
-                        if (askregvar(p, rmap(ttob(p->type)))) {
-                                q->sclass = REGISTER;
-                                q->type = p->type;
+        {
+                int stack_off = 0;
+                for (i = 0; callee[i]; i++) {
+                        Symbol p = callee[i];
+                        Symbol q = caller[i];
+                        assert(q);
+                        r = argreg(i);
+                        if (i < 4)
+                                argregs[i] = r;
+                        /* Register-passed incoming params have no
+                         * stack slot. Only params 4+ get an offset
+                         * (starting from 0), matching doarg()'s
+                         * shifted layout on the caller side. */
+                        if (i < 4) {
+                                p->x.offset = q->x.offset = 0;
+                                p->x.name = q->x.name = stringd(0);
                         } else {
-                                p->sclass = AUTO;
+                                stack_off = roundup(stack_off,
+                                                    q->type->align);
+                                p->x.offset = q->x.offset = stack_off;
+                                p->x.name = q->x.name =
+                                        stringd(stack_off);
+                                stack_off = roundup(
+                                        stack_off + q->type->size, 4);
+                        }
+                        if (i < 4 && !isstruct(q->type)
+                            && !p->addressed && ncalls == 0) {
+                                p->sclass = q->sclass = REGISTER;
+                                askregvar(p, r);
+                                assert(p->x.regnode
+                                       && p->x.regnode->vbl == p);
+                                q->x = p->x;
+                                q->type = p->type;
+                        } else if (i < 4 && !isstruct(q->type)
+                                   && !p->addressed) {
+                                p->sclass = REGISTER;
+                                if (askregvar(p,
+                                              rmap(ttob(p->type)))) {
+                                        q->sclass = REGISTER;
+                                        q->type = p->type;
+                                } else {
+                                        p->sclass = AUTO;
+                                }
                         }
                 }
         }
@@ -1110,6 +1136,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         usedmask[IREG] &= INTVAR;
         maxargoffset = roundup(maxargoffset, 4);
+        /* Strip the 16-byte nominal reservation for the register-
+         * passed arg slots — the real outgoing-arg area only needs
+         * to hold args 4+ so we avoid reserving space nobody uses. */
+        if (maxargoffset >= 16)
+                maxargoffset -= 16;
+        else
+                maxargoffset = 0;
         localsize = roundup(maxargoffset + maxoffset, 4);
         sh_localsize = localsize;
 
