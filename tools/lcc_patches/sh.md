@@ -816,17 +816,42 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         emitcode();
 
+        /* Epilogue with a minimal delay-slot fill. Collect the pop
+         * instructions and use the last one as the rts delay slot
+         * when we have at least one — SH-2's rts delay slot executes
+         * before PC jumps to PR, and a `mov.l @r15+,rN` post-
+         * increment load is a legal delay-slot instruction that
+         * doesn't touch PC or branch state. For leaf functions with
+         * no pops the delay slot stays a plain nop. */
         if (need_fp) {
+                int npops = 0;
+                int pop_regs[16];
+                int want_pr = ncalls;
                 print("\tmov\tr14,r15\n");
-                if (ncalls)
-                        print("\tlds.l\t@r15+,pr\n");
-                print("\tmov.l\t@r15+,r14\n");
+                if (want_pr)
+                        pop_regs[npops++] = -1;      /* -1 means PR */
+                pop_regs[npops++] = 14;
                 for (i = 13; i >= 8; i--)
                         if (usedmask[IREG] & (1u << i))
-                                print("\tmov.l\t@r15+,r%d\n", i);
+                                pop_regs[npops++] = i;
+                /* Emit all pops except the last, then rts, then the
+                 * last pop in the delay slot. */
+                for (i = 0; i < npops - 1; i++) {
+                        if (pop_regs[i] == -1)
+                                print("\tlds.l\t@r15+,pr\n");
+                        else
+                                print("\tmov.l\t@r15+,r%d\n", pop_regs[i]);
+                }
+                print("\trts\n");
+                if (pop_regs[npops - 1] == -1)
+                        print("\tlds.l\t@r15+,pr\n");
+                else
+                        print("\tmov.l\t@r15+,r%d\n",
+                              pop_regs[npops - 1]);
+        } else {
+                print("\trts\n");
+                print("\tnop\n");
         }
-        print("\trts\n");
-        print("\tnop\n");
         shlit_flush();
 }
 
