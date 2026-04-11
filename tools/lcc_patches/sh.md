@@ -83,6 +83,7 @@ static int cseg;
  * into an r14- or r15-relative displacement. */
 static int sh_sizeisave;
 static int sh_localsize;
+static int sh_fp_active;
 
 /* Literal pool: per-function table of 32-bit constants and symbol
  * addresses that can't be loaded with an inline 8-bit immediate.
@@ -862,14 +863,19 @@ static void doarg(Node p) {
 }
 
 static void local(Symbol p) {
-        /* Force-promote non-addressed scalars to REGISTER class
-         * before calling askregvar, because the default sclass for
-         * a plain `int x;` local is AUTO and askregvar returns 0
-         * immediately for AUTO symbols — leaving every local on the
-         * stack even when there are callee-saved registers free.
-         * If the symbol was address-taken (&x somewhere) or
-         * askregvar fails because vmask is exhausted, fall back to
-         * an auto slot via mkauto. */
+        /* LCC calls IR->local for two flavors of symbol: real
+         * user-declared locals (from `int x;` in the source) and
+         * CSE temporaries that need spill storage. The temporary
+         * path must go through askregvar so LCC's per-temporary
+         * handling fires (sets x.name = "?" and hands the symbol
+         * off to the per-node allocator later). Real locals need a
+         * force-promote to REGISTER or they default to AUTO and
+         * land on the stack even when vmask has room. */
+        if (p->temporary) {
+                if (askregvar(p, rmap(ttob(p->type))) == 0)
+                        mkauto(p);
+                return;
+        }
         if (!p->addressed) {
                 p->sclass = REGISTER;
                 if (askregvar(p, rmap(ttob(p->type))))
@@ -1060,7 +1066,7 @@ static void sh_capture_end(int savfd, FILE *tmp) {
 }
 
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
-        int i, localsize, sizeisave, need_fp;
+        int i, localsize, sizeisave, need_fp, has_prologue;
         Symbol r, argregs[4];
 
         nshlit = 0;
@@ -1107,15 +1113,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         localsize = roundup(maxargoffset + maxoffset, 4);
         sh_localsize = localsize;
 
-        /* Set up FP whenever we need to reach anything on the stack:
-         * locals, spilled params, a PR save, or stack-passed
-         * incoming params (callee[i] for i >= 4). Leaf functions
-         * that touch nothing but r0-r7 skip the prologue entirely. */
         need_fp = (ncalls || localsize > 0 || usedmask[IREG] != 0
                    || maxargoffset > 0);
         for (i = 0; i < 5 && !need_fp && callee[i]; i++)
                 if (i >= 4)
                         need_fp = 1;
+        has_prologue = need_fp;
+        sh_fp_active = need_fp;
 
         sizeisave = 4 * bitcount(usedmask[IREG]);
         if (need_fp) {
@@ -1131,21 +1135,27 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         print("\t.align 2\n");
         print("%s:\n", f->x.name);
 
-        if (need_fp) {
+        if (has_prologue) {
                 /* Hitachi ordering (verified against Daytona CCE
                  * output): push r14 first, then r13, r12, ..., r8
                  * (descending register number), then PR last.
-                 * After all pushes r15 points at the PR slot; r14
-                 * ends up at the highest saved-reg address. Setting
-                 * r14 = r15 makes r14 the frame pointer. */
+                 * After all pushes r15 points at the PR slot. The
+                 * `mov r15,r14` FP setup and the local-area
+                 * reservation only fire when FP is actually needed
+                 * — if r14 is just a plain callee-saved register
+                 * the function body uses it directly without any
+                 * mov/add. */
                 for (i = 14; i >= 8; i--)
                         if (usedmask[IREG] & (1u << i))
                                 print("\tmov.l\tr%d,@-r15\n", i);
                 if (ncalls)
                         print("\tsts.l\tpr,@-r15\n");
-                print("\tmov\tr15,r14\n");
-                if (localsize > 0)
-                        print("\tadd\t#%d,r15\n", -localsize);
+                if (need_fp) {
+                        print("\tmov\tr15,r14\n");
+                        if (localsize > 0)
+                                print("\tadd\t#%d,r15\n",
+                                      -localsize);
+                }
         }
 
         /* Run the param-home moves and the function body through
@@ -1175,16 +1185,16 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_peephole();
         }
 
-        /* For leaf functions we try to pull the last safe body
-         * instruction into the rts delay slot. Scan backward past
-         * trailing labels and peephole-deleted (empty) lines to
-         * find the last real instruction; if it passes the
+        /* For functions with no pops we try to pull the last safe
+         * body instruction into the rts delay slot. Scan backward
+         * past trailing labels and peephole-deleted (empty) lines
+         * to find the last real instruction; if it passes the
          * delay-slot whitelist, drop it from the body and stash
          * it for emission after rts. */
         {
                 int delay_idx = -1;
                 int j;
-                if (!need_fp) {
+                if (!has_prologue) {
                         for (j = sh_nlines - 1; j >= 0; j--) {
                                 if (sh_lines[j][0] == 0)
                                         continue;
@@ -1203,17 +1213,19 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         fputs(sh_lines[j], stdout);
                 }
 
-                if (need_fp) {
+                if (has_prologue) {
                         /* Pop order is the reverse of the push
                          * order. Pushes were r14, r13, ..., r8, PR;
                          * so pops come out PR, r8, r9, ..., r14.
-                         * r14 is always pushed (it's the FP) so it
-                         * ends up in the last slot and fills the
-                         * rts delay slot. */
+                         * The highest-numbered pop ends up in the
+                         * rts delay slot. When FP is active we
+                         * first restore r15 from r14 so the
+                         * popping happens at the right slot. */
                         int npops = 0;
                         int pop_regs[16];
                         int want_pr = ncalls;
-                        print("\tmov\tr14,r15\n");
+                        if (need_fp)
+                                print("\tmov\tr14,r15\n");
                         if (want_pr)
                                 pop_regs[npops++] = -1;
                         for (i = 8; i <= 14; i++)
@@ -1227,11 +1239,17 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                               pop_regs[i]);
                         }
                         print("\trts\n");
-                        if (pop_regs[npops - 1] == -1)
-                                print("\tlds.l\t@r15+,pr\n");
-                        else
-                                print("\tmov.l\t@r15+,r%d\n",
-                                      pop_regs[npops - 1]);
+                        if (npops > 0) {
+                                if (pop_regs[npops - 1] == -1)
+                                        print("\tlds.l\t@r15+,pr\n");
+                                else
+                                        print("\tmov.l\t@r15+,r%d\n",
+                                              pop_regs[npops - 1]);
+                        } else if (delay_idx >= 0) {
+                                fputs(sh_lines[delay_idx], stdout);
+                        } else {
+                                print("\tnop\n");
+                        }
                 } else {
                         print("\trts\n");
                         if (delay_idx >= 0)
