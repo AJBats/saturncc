@@ -1,0 +1,204 @@
+SH SERIES C/C++ Compiler (Ver. 5.0(Release31))                                                       11-Apr-2026 11:21:58  PAGE    1
+
+************ OBJECT LISTING ************
+
+FILE NAME: D:/Projects/SaturnCompiler/experiments/exp1_gbr/gbr_test_sh.c
+
+SCT OFFSET   CODE       C LABEL     INSTRUCTION OPERAND    COMMENT
+
+      gbr_test_s     1    /*
+      gbr_test_s     2     * Hitachi SHC test: can we get mov.? @(disp,gbr) output using #pragma gbr_base?
+      gbr_test_s     3     *
+      gbr_test_s     4     * Expected: yes. The v5.0 manual documents this exact use case.
+      gbr_test_s     5     */
+      gbr_test_s     6    
+      gbr_test_s     7    struct game_state {
+      gbr_test_s     8        unsigned char  flag_a;    /* offset 0 */
+      gbr_test_s     9        unsigned char  flag_b;    /* offset 1 */
+      gbr_test_s    10        unsigned short word_c;    /* offset 2 */
+      gbr_test_s    11        unsigned long  long_d;    /* offset 4 */
+      gbr_test_s    12        unsigned char  flag_e;    /* offset 8 */
+      gbr_test_s    13        unsigned char  pad[3];    /* offset 9-11 */
+      gbr_test_s    14        unsigned long  long_f;    /* offset 12 */
+      gbr_test_s    15        unsigned short word_g;    /* offset 16 */
+      gbr_test_s    16    };
+      gbr_test_s    17    
+      gbr_test_s    18    #pragma gbr_base (gs)
+      gbr_test_s    19    struct game_state gs;
+      gbr_test_s    20    
+      gbr_test_s    21    void store_all(unsigned char a, unsigned char b, unsigned short c,
+P   00000000              _store_all:                      ; function: store_all
+                                                           ; frame size=0
+      gbr_test_s    22                   unsigned long d, unsigned char e, unsigned long f,
+      gbr_test_s    23                   unsigned short g)
+      gbr_test_s    24    {
+      gbr_test_s    25        gs.flag_a = a;
+    00000000 6043                   MOV         R4,R0
+    00000002 C000                   MOV.B       R0,@(_gs-(STARTOF $G0),GBR)
+      gbr_test_s    26        gs.flag_b = b;
+    00000004 6053                   MOV         R5,R0
+    00000006 C000                   MOV.B       R0,@(_gs-(STARTOF $G0)+1,GBR)
+      gbr_test_s    27        gs.word_c = c;
+    00000008 6063                   MOV         R6,R0
+    0000000A C100                   MOV.W       R0,@(_gs-(STARTOF $G0)+2,GBR)
+      gbr_test_s    28        gs.long_d = d;
+    0000000C 6073                   MOV         R7,R0
+    0000000E C200                   MOV.L       R0,@(_gs-(STARTOF $G0)+4,GBR)
+      gbr_test_s    29        gs.flag_e = e;
+    00000010 84F3                   MOV.B       @(3,R15),R0
+    00000012 C000                   MOV.B       R0,@(_gs-(STARTOF $G0)+8,GBR)
+      gbr_test_s    30        gs.long_f = f;
+    00000014 50F1                   MOV.L       @(4,R15),R0
+    00000016 C200                   MOV.L       R0,@(_gs-(STARTOF $G0)+12,GBR)
+      gbr_test_s    31        gs.word_g = g;
+    00000018 85F5                   MOV.W       @(10,R15),R0
+      gbr_test_s    32    }
+    0000001A 000B                   RTS
+    0000001C C100                   MOV.W       R0,@(_gs-(STARTOF $G0)+16,GBR)
+      gbr_test_s    33    
+      gbr_test_s    34    unsigned long load_sum(void)
+    0000001E              _load_sum:                       ; function: load_sum
+                                                           ; frame size=0
+      gbr_test_s    35    {
+
+
+
+
+SH SERIES C/C++ Compiler (Ver. 5.0(Release31))                                                       11-Apr-2026 11:21:58  PAGE    2
+
+
+SCT OFFSET   CODE       C LABEL     INSTRUCTION OPERAND    COMMENT
+
+      gbr_test_s    36        return (unsigned long)gs.flag_a
+      gbr_test_s    37             + (unsigned long)gs.flag_b
+      gbr_test_s    38             + (unsigned long)gs.word_c
+      gbr_test_s    39             + gs.long_d
+      gbr_test_s    40             + (unsigned long)gs.flag_e
+      gbr_test_s    41             + gs.long_f
+      gbr_test_s    42             + (unsigned long)gs.word_g;
+    0000001E C400                   MOV.B       @(_gs-(STARTOF $G0),GBR),R0
+    00000020 630C                   EXTU.B      R0,R3
+    00000022 C400                   MOV.B       @(_gs-(STARTOF $G0)+1,GBR),R0
+    00000024 600C                   EXTU.B      R0,R0
+    00000026 303C                   ADD         R3,R0
+    00000028 6303                   MOV         R0,R3
+    0000002A C500                   MOV.W       @(_gs-(STARTOF $G0)+2,GBR),R0
+    0000002C 600D                   EXTU.W      R0,R0
+    0000002E 303C                   ADD         R3,R0
+    00000030 6203                   MOV         R0,R2
+    00000032 C600                   MOV.L       @(_gs-(STARTOF $G0)+4,GBR),R0
+    00000034 302C                   ADD         R2,R0
+    00000036 6303                   MOV         R0,R3
+    00000038 C400                   MOV.B       @(_gs-(STARTOF $G0)+8,GBR),R0
+    0000003A 600C                   EXTU.B      R0,R0
+    0000003C 303C                   ADD         R3,R0
+    0000003E 6203                   MOV         R0,R2
+    00000040 C600                   MOV.L       @(_gs-(STARTOF $G0)+12,GBR),R0
+    00000042 302C                   ADD         R2,R0
+    00000044 6303                   MOV         R0,R3
+    00000046 C500                   MOV.W       @(_gs-(STARTOF $G0)+16,GBR),R0
+    00000048 600D                   EXTU.W      R0,R0
+      gbr_test_s    43    }
+    0000004A 000B                   RTS
+    0000004C 303C                   ADD         R3,R0
+$G0 00000000              _gs:                             ; static: gs
+    00000000 0000000504             .DATAB.L    5,0
+             00000000     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SH SERIES C/C++ Compiler (Ver. 5.0(Release31))                                                       11-Apr-2026 11:21:58  PAGE    1
+
+
+******** STATISTICS INFORMATION ********
+
+
+********** ERROR INFORMATION ***********
+
+NUMBER OF ERRORS:           0
+NUMBER OF WARNINGS:         0
+
+
+
+
+******* SOURCE LINE INFORMATION ********
+
+COMPILED SOURCE LINE:       43
+
+
+
+******* SECTION SIZE INFORMATION *******
+
+PROGRAM  SECTION (P):                               0000004E Byte(s)
+CONSTANT SECTION (C):                               00000000 Byte(s)
+DATA     SECTION (D):                               00000000 Byte(s)
+DATA     SECTION ($G0):                             00000014 Byte(s)
+BSS      SECTION (B):                               00000000 Byte(s)
+
+ TOTAL PROGRAM SIZE: 00000062 Byte(s)
+
+
+
+********** LABEL INFORMATION ***********
+
+NUMBER OF EXTERNAL REFERENCE SYMBOLS:            0
+NUMBER OF EXTERNAL DEFINITION SYMBOLS:           3
+NUMBER OF INTERNAL/EXTERNAL SYMBOLS:             3
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*** COMMAND PARAMETER ***
+
+
+  -cpu=sh2 -optimize=1 -listfile=D:/Projects/SaturnCompiler/experiments/exp1_gbr/hitachi_out.lst -show=object,source D:/Projects/Sat
+urnCompiler/experiments/exp1_gbr/gbr_test_sh.c 
+
