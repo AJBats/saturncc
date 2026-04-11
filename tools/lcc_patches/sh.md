@@ -1119,17 +1119,15 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         print("%s:\n", f->x.name);
 
         if (need_fp) {
-                /* Hitachi ordering: push r8 first, ..., r14 last,
-                 * then PR last of all. After all pushes, r15 points
-                 * at the PR slot (or at r14 if no PR). Setting
-                 * r14 = r15 makes r14 the frame pointer; addresses
-                 * of caller params resolve to r14 + sizeisave + offset,
-                 * and addresses of locals resolve to r14 + negative
-                 * offset (locals sit below r14 in the reserved area). */
-                for (i = 8; i <= 13; i++)
+                /* Hitachi ordering (verified against Daytona CCE
+                 * output): push r14 first, then r13, r12, ..., r8
+                 * (descending register number), then PR last.
+                 * After all pushes r15 points at the PR slot; r14
+                 * ends up at the highest saved-reg address. Setting
+                 * r14 = r15 makes r14 the frame pointer. */
+                for (i = 14; i >= 8; i--)
                         if (usedmask[IREG] & (1u << i))
                                 print("\tmov.l\tr%d,@-r15\n", i);
-                print("\tmov.l\tr14,@-r15\n");
                 if (ncalls)
                         print("\tsts.l\tpr,@-r15\n");
                 print("\tmov\tr15,r14\n");
@@ -1193,14 +1191,19 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 }
 
                 if (need_fp) {
+                        /* Pop order is the reverse of the push
+                         * order. Pushes were r14, r13, ..., r8, PR;
+                         * so pops come out PR, r8, r9, ..., r14.
+                         * r14 is always pushed (it's the FP) so it
+                         * ends up in the last slot and fills the
+                         * rts delay slot. */
                         int npops = 0;
                         int pop_regs[16];
                         int want_pr = ncalls;
                         print("\tmov\tr14,r15\n");
                         if (want_pr)
                                 pop_regs[npops++] = -1;
-                        pop_regs[npops++] = 14;
-                        for (i = 13; i >= 8; i--)
+                        for (i = 8; i <= 14; i++)
                                 if (usedmask[IREG] & (1u << i))
                                         pop_regs[npops++] = i;
                         for (i = 0; i < npops - 1; i++) {
