@@ -374,12 +374,30 @@ reg:  INDIRI4(ADDRLP4)  "# lpload_l\n"  1
 reg:  INDIRU4(ADDRLP4)  "# lpload_l\n"  1
 reg:  INDIRP4(ADDRLP4)  "# lpload_l\n"  1
 
+reg:  INDIRI1(ADDRFP4)  "# fpload_b\n"  2
+reg:  INDIRU1(ADDRFP4)  "# fpload_b\n"  2
+reg:  INDIRI2(ADDRFP4)  "# fpload_w\n"  2
+reg:  INDIRU2(ADDRFP4)  "# fpload_w\n"  2
+reg:  INDIRI1(ADDRLP4)  "# lpload_b\n"  2
+reg:  INDIRU1(ADDRLP4)  "# lpload_b\n"  2
+reg:  INDIRI2(ADDRLP4)  "# lpload_w\n"  2
+reg:  INDIRU2(ADDRLP4)  "# lpload_w\n"  2
+
 stmt: ASGNI4(ADDRFP4,reg)  "# fpstore_l\n"  1
 stmt: ASGNU4(ADDRFP4,reg)  "# fpstore_l\n"  1
 stmt: ASGNP4(ADDRFP4,reg)  "# fpstore_l\n"  1
 stmt: ASGNI4(ADDRLP4,reg)  "# lpstore_l\n"  1
 stmt: ASGNU4(ADDRLP4,reg)  "# lpstore_l\n"  1
 stmt: ASGNP4(ADDRLP4,reg)  "# lpstore_l\n"  1
+
+stmt: ASGNI1(ADDRFP4,reg)  "# fpstore_b\n"  2
+stmt: ASGNU1(ADDRFP4,reg)  "# fpstore_b\n"  2
+stmt: ASGNI2(ADDRFP4,reg)  "# fpstore_w\n"  2
+stmt: ASGNU2(ADDRFP4,reg)  "# fpstore_w\n"  2
+stmt: ASGNI1(ADDRLP4,reg)  "# lpstore_b\n"  2
+stmt: ASGNU1(ADDRLP4,reg)  "# lpstore_b\n"  2
+stmt: ASGNI2(ADDRLP4,reg)  "# lpstore_w\n"  2
+stmt: ASGNU2(ADDRLP4,reg)  "# lpstore_w\n"  2
 
 reg:  ADDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
@@ -711,15 +729,46 @@ static void emit2(Node p) {
                  * instruction base is r14 (FP), disp = offset+sizeisave.
                  * For ADDRLP4 the symbol offset is negative relative
                  * to r14, so we use r15 as the base and disp =
-                 * localsize + offset. Both paths only handle mov.l
-                 * (disp field scales by 4, fits in 4 bits). */
+                 * localsize + offset. The disp field in
+                 * mov.? @(disp,Rn),Rm is 4 bits scaled by the access
+                 * size, so the usable range is 0..15 bytes / 0..30
+                 * words / 0..60 longs. Anything outside that falls
+                 * back to the compute-address-then-indirect form. */
                 off = s ? s->x.offset : 0;
-                if (kop == ADDRF) {
+                if (kop == ADDRF)
                         disp = off + sh_sizeisave;
-                        print("\tmov.l\t@(%d,r14),r%d\n", disp, dst);
-                } else if (kop == ADDRL) {
+                else
                         disp = sh_localsize + off;
-                        print("\tmov.l\t@(%d,r15),r%d\n", disp, dst);
+                suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                base = (kop == ADDRF) ? "r14" : "r15";
+                {
+                        int max_disp = sz == 1 ? 15 : sz == 2 ? 30 : 60;
+                        int fits = disp >= 0 && disp <= max_disp
+                                   && (disp % sz) == 0;
+                        if (!fits) {
+                                print("\tmov\t%s,r%d\n", base, dst);
+                                print("\tadd\t#%d,r%d\n", disp, dst);
+                                print("\tmov.%s\t@r%d,r%d\n",
+                                      suf, dst, dst);
+                                if (sz < 4 && optype(p->op) == I)
+                                        print("\texts.%s\tr%d,r%d\n",
+                                              suf, dst, dst);
+                                else if (sz < 4 && optype(p->op) == U)
+                                        print("\textu.%s\tr%d,r%d\n",
+                                              suf, dst, dst);
+                                break;
+                        }
+                }
+                if (sz == 4) {
+                        print("\tmov.l\t@(%d,%s),r%d\n", disp, base, dst);
+                } else {
+                        print("\tmov.%s\t@(%d,%s),r0\n", suf, disp, base);
+                        if (optype(p->op) == I)
+                                print("\texts.%s\tr0,r0\n", suf);
+                        else
+                                print("\textu.%s\tr0,r0\n", suf);
+                        if (dst != 0)
+                                print("\tmov\tr0,r%d\n", dst);
                 }
                 break;
                 }
@@ -742,12 +791,32 @@ static void emit2(Node p) {
                         break;
                 }
                 off = s ? s->x.offset : 0;
-                if (kop == ADDRF) {
+                if (kop == ADDRF)
                         disp = off + sh_sizeisave;
-                        print("\tmov.l\tr%d,@(%d,r14)\n", src, disp);
-                } else if (kop == ADDRL) {
+                else
                         disp = sh_localsize + off;
-                        print("\tmov.l\tr%d,@(%d,r15)\n", src, disp);
+                suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                base = (kop == ADDRF) ? "r14" : "r15";
+                {
+                        int max_disp = sz == 1 ? 15 : sz == 2 ? 30 : 60;
+                        int fits = disp >= 0 && disp <= max_disp
+                                   && (disp % sz) == 0;
+                        if (!fits) {
+                                /* Use r1 as a scratch address register.
+                                 * r1 is in INTTMP and clobber() has
+                                 * already spilled it around calls. */
+                                print("\tmov\t%s,r1\n", base);
+                                print("\tadd\t#%d,r1\n", disp);
+                                print("\tmov.%s\tr%d,@r1\n", suf, src);
+                                break;
+                        }
+                }
+                if (sz == 4) {
+                        print("\tmov.l\tr%d,@(%d,%s)\n", src, disp, base);
+                } else {
+                        if (src != 0)
+                                print("\tmov\tr%d,r0\n", src);
+                        print("\tmov.%s\tr0,@(%d,%s)\n", suf, disp, base);
                 }
                 break;
                 }
