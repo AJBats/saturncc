@@ -862,8 +862,21 @@ static void doarg(Node p) {
 }
 
 static void local(Symbol p) {
-        if (askregvar(p, rmap(ttob(p->type))) == 0)
-                mkauto(p);
+        /* Force-promote non-addressed scalars to REGISTER class
+         * before calling askregvar, because the default sclass for
+         * a plain `int x;` local is AUTO and askregvar returns 0
+         * immediately for AUTO symbols — leaving every local on the
+         * stack even when there are callee-saved registers free.
+         * If the symbol was address-taken (&x somewhere) or
+         * askregvar fails because vmask is exhausted, fall back to
+         * an auto slot via mkauto. */
+        if (!p->addressed) {
+                p->sclass = REGISTER;
+                if (askregvar(p, rmap(ttob(p->type))))
+                        return;
+                p->sclass = AUTO;
+        }
+        mkauto(p);
 }
 
 static int bitcount(unsigned mask) {
