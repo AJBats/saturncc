@@ -72,6 +72,33 @@ static Symbol ireg[32];
 static Symbol iregw;
 static int tmpregs[] = {1, 2, 3};
 static int cseg;
+
+/* Literal pool: per-function table of 32-bit constants and symbol
+ * addresses that can't be loaded with an inline 8-bit immediate.
+ * Each entry gets a generated label; emit2() prints a
+ * `mov.l @(disp,PC),Rn` that references the label, and function()
+ * dumps the pool after the epilogue so forward PC-relative
+ * displacements resolve.
+ *
+ * SH-2's mov.l @(disp,PC),Rn reaches (PC+4)+4*disp with an 8-bit
+ * unsigned disp, so the pool must sit within ~1020 bytes of the
+ * furthest load that references it. For short functions dumping once
+ * at the tail is fine; long functions that overflow the range are a
+ * Phase 1C+ problem. */
+#define SH_MAX_LITERALS 64
+
+struct shlit {
+        int label;
+        int is_symbol;          /* 0 = numeric, 1 = symbol name */
+        int value;
+        char *name;
+};
+static struct shlit shlits[SH_MAX_LITERALS];
+static int nshlit;
+
+static int shlit_num(int val);
+static int shlit_sym(char *name);
+static void shlit_flush(void);
 %}
 %start stmt
 
@@ -267,14 +294,6 @@ stmt: ASGNI4(VREGP,reg)  "# write register\n"
 stmt: ASGNU4(VREGP,reg)  "# write register\n"
 stmt: ASGNP4(VREGP,reg)  "# write register\n"
 
-reg:  CNSTI1  "# zero\n"  range(a, 0, 0)
-reg:  CNSTI2  "# zero\n"  range(a, 0, 0)
-reg:  CNSTI4  "# zero\n"  range(a, 0, 0)
-reg:  CNSTU1  "# zero\n"  range(a, 0, 0)
-reg:  CNSTU2  "# zero\n"  range(a, 0, 0)
-reg:  CNSTU4  "# zero\n"  range(a, 0, 0)
-reg:  CNSTP4  "# zero\n"  range(a, 0, 0)
-
 reg:  CNSTI1  "\tmov\t#%a,r%c\n"  range(a, -128, 127)
 reg:  CNSTI2  "\tmov\t#%a,r%c\n"  range(a, -128, 127)
 reg:  CNSTI4  "\tmov\t#%a,r%c\n"  range(a, -128, 127)
@@ -282,28 +301,29 @@ reg:  CNSTU1  "\tmov\t#%a,r%c\n"  range(a, 0, 127)
 reg:  CNSTU2  "\tmov\t#%a,r%c\n"  range(a, 0, 127)
 reg:  CNSTU4  "\tmov\t#%a,r%c\n"  range(a, 0, 127)
 
-addr: ADDRGP4  "%a"
-addr: ADDRFP4  "%a+%F,r14"
-addr: ADDRLP4  "%a+%F,r15"
+reg:  CNSTI4  "# large const\n"  2
+reg:  CNSTU4  "# large const\n"  2
+reg:  CNSTP4  "# large const\n"  2
 
-reg:  ADDRGP4  "\tmov.l\t.L_%a,r%c\n"  2
+reg:  ADDRGP4  "# addrg\n"  2
+
 reg:  ADDRFP4  "\tmov\tr14,r%c\n\tadd\t#%a+%F,r%c\n"  3
 reg:  ADDRLP4  "\tmov\tr15,r%c\n\tadd\t#%a+%F,r%c\n"  3
 
-reg:  ADDI4(reg,reg)  "\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  2
-reg:  ADDU4(reg,reg)  "\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  2
-reg:  ADDP4(reg,reg)  "\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  2
+reg:  ADDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
+reg:  ADDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
+reg:  ADDP4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 
-reg:  SUBI4(reg,reg)  "\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  2
-reg:  SUBU4(reg,reg)  "\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  2
-reg:  SUBP4(reg,reg)  "\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  2
+reg:  SUBI4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
+reg:  SUBU4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
+reg:  SUBP4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 
-reg:  BANDI4(reg,reg)  "\tmov\tr%0,r%c\n\tand\tr%1,r%c\n"  2
-reg:  BANDU4(reg,reg)  "\tmov\tr%0,r%c\n\tand\tr%1,r%c\n"  2
-reg:  BORI4(reg,reg)   "\tmov\tr%0,r%c\n\tor\tr%1,r%c\n"   2
-reg:  BORU4(reg,reg)   "\tmov\tr%0,r%c\n\tor\tr%1,r%c\n"   2
-reg:  BXORI4(reg,reg)  "\tmov\tr%0,r%c\n\txor\tr%1,r%c\n"  2
-reg:  BXORU4(reg,reg)  "\tmov\tr%0,r%c\n\txor\tr%1,r%c\n"  2
+reg:  BANDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tand\tr%1,r%c\n"  1
+reg:  BANDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tand\tr%1,r%c\n"  1
+reg:  BORI4(reg,reg)   "?\tmov\tr%0,r%c\n\tor\tr%1,r%c\n"   1
+reg:  BORU4(reg,reg)   "?\tmov\tr%0,r%c\n\tor\tr%1,r%c\n"   1
+reg:  BXORI4(reg,reg)  "?\tmov\tr%0,r%c\n\txor\tr%1,r%c\n"  1
+reg:  BXORU4(reg,reg)  "?\tmov\tr%0,r%c\n\txor\tr%1,r%c\n"  1
 
 reg:  BCOMI4(reg)  "\tnot\tr%0,r%c\n"  1
 reg:  BCOMU4(reg)  "\tnot\tr%0,r%c\n"  1
@@ -341,7 +361,9 @@ reg:  CVUU4(reg)  "\textu.b\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==1?1:LBURG_MAX)
 reg:  CVUU4(reg)  "\textu.w\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==2?1:LBURG_MAX)
 
 stmt: LABELV  "%a:\n"
-stmt: JUMPV(addr)  "\tbra\t%0\n\tnop\n"  2
+
+jtarget: ADDRGP4  "%a"
+stmt: JUMPV(jtarget)  "\tbra\t%0\n\tnop\n"  2
 
 stmt: EQI4(reg,reg)  "\tcmp/eq\tr%1,r%0\n\tbt\t%a\n"  2
 stmt: EQU4(reg,reg)  "\tcmp/eq\tr%1,r%0\n\tbt\t%a\n"  2
@@ -376,6 +398,46 @@ stmt: ARGB(INDIRB(reg))       "# argb %0\n"      1
 stmt: ASGNB(reg,INDIRB(reg))  "# asgnb %0 %1\n"  1
 
 %%
+static int shlit_num(int val) {
+        int i;
+        for (i = 0; i < nshlit; i++)
+                if (!shlits[i].is_symbol && shlits[i].value == val)
+                        return shlits[i].label;
+        assert(nshlit < SH_MAX_LITERALS);
+        shlits[nshlit].label = genlabel(1);
+        shlits[nshlit].is_symbol = 0;
+        shlits[nshlit].value = val;
+        return shlits[nshlit++].label;
+}
+
+static int shlit_sym(char *name) {
+        int i;
+        for (i = 0; i < nshlit; i++)
+                if (shlits[i].is_symbol && strcmp(shlits[i].name, name) == 0)
+                        return shlits[i].label;
+        assert(nshlit < SH_MAX_LITERALS);
+        shlits[nshlit].label = genlabel(1);
+        shlits[nshlit].is_symbol = 1;
+        shlits[nshlit].name = name;
+        return shlits[nshlit++].label;
+}
+
+static void shlit_flush(void) {
+        int i;
+        if (nshlit == 0)
+                return;
+        print("\t.align 2\n");
+        for (i = 0; i < nshlit; i++) {
+                if (shlits[i].is_symbol)
+                        print("L%d:\t.long\t%s\n",
+                              shlits[i].label, shlits[i].name);
+                else
+                        print("L%d:\t.long\t%d\n",
+                              shlits[i].label, shlits[i].value);
+        }
+        nshlit = 0;
+}
+
 static void progend(void) {}
 
 static void progbeg(int argc, char *argv[]) {
@@ -414,12 +476,6 @@ static Symbol argreg(int argno) {
 static void target(Node p) {
         assert(p);
         switch (specific(p->op)) {
-        case CNST+I: case CNST+U: case CNST+P:
-                if (range(p, 0, 0) == 0) {
-                        setreg(p, ireg[0]);
-                        p->x.registered = 1;
-                }
-                break;
         case CALL+I: case CALL+P: case CALL+U:
                 setreg(p, ireg[0]);
                 break;
@@ -447,7 +503,21 @@ static void clobber(Node p) {
         }
 }
 
-static void emit2(Node p) {}
+static void emit2(Node p) {
+        int lab, dst;
+        switch (specific(p->op)) {
+        case CNST+I: case CNST+U: case CNST+P:
+                lab = shlit_num((int)p->syms[0]->u.c.v.i);
+                dst = getregnum(p);
+                print("\tmov.l\tL%d,r%d\n", lab, dst);
+                break;
+        case ADDRG+P:
+                lab = shlit_sym(p->syms[0]->x.name);
+                dst = getregnum(p);
+                print("\tmov.l\tL%d,r%d\n", lab, dst);
+                break;
+        }
+}
 
 static void doarg(Node p) {
         static int argno;
@@ -465,6 +535,8 @@ static void local(Symbol p) {
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         int i, saved;
         Symbol r, argregs[4];
+
+        nshlit = 0;
 
         usedmask[0] = usedmask[1] = 0;
         freemask[0] = freemask[1] = ~(unsigned)0;
@@ -550,6 +622,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 print("\tlds.l\t@r15+,pr\n");
         print("\trts\n");
         print("\tnop\n");
+        shlit_flush();
 }
 
 static void defconst(int suffix, int size, Value v) {
@@ -631,10 +704,10 @@ static void segment(int n) {
                 return;
         cseg = n;
         switch (n) {
-        case CODE: print("\t.text\n");  break;
-        case DATA: print("\t.data\n");  break;
-        case BSS:  print("\t.bss\n");   break;
-        case LIT:  print("\t.rdata\n"); break;
+        case CODE: print("\t.text\n");            break;
+        case DATA: print("\t.data\n");            break;
+        case BSS:  print("\t.section\t.bss\n");   break;
+        case LIT:  print("\t.section\t.rodata\n"); break;
         }
 }
 
