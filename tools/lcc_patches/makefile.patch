@@ -10,11 +10,36 @@ index c96afff..c4f941a 100755
  	$Bsymbolic$O \
  	$Bgen$O \
  	$Bbytecode$O \
-@@ -88,6 +89,7 @@ $Blex$O:	src/lex.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/lex.c
- $Blist$O:	src/list.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/list.c
- $Bmain$O:	src/main.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/main.c
- $Bnull$O:	src/null.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/null.c
-+$Bsh$O:		src/sh.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/sh.c
- $Boutput$O:	src/output.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/output.c
- $Bprof$O:	src/prof.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/prof.c
- $Bprofio$O:	src/profio.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/profio.c
+@@ -108,6 +109,7 @@ $Bdagcheck$O:	$Bdagcheck.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bdagcheck.c
+ $Balpha$O:	$Balpha.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Balpha.c
+ $Bmips$O:	$Bmips.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bmips.c
+ $Bsparc$O:	$Bsparc.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bsparc.c
++$Bsh$O:		$Bsh.c;		$(CC) $(CFLAGS) -c -Isrc -o $@ $Bsh.c
+ $Bx86$O:	$Bx86.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bx86.c
+ $Bx86linux$O:	$Bx86linux.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bx86linux.c
+
+@@ -115,6 +117,7 @@ $Bdagcheck.c:	$Blburg$E src/dagcheck.md; $Blburg src/dagcheck.md $@
+ $Balpha.c:	$Blburg$E src/alpha.md;    $Blburg src/alpha.md    $@
+ $Bmips.c:	$Blburg$E src/mips.md;     $Blburg src/mips.md     $@
+ $Bsparc.c:	$Blburg$E src/sparc.md;    $Blburg src/sparc.md    $@
++$Bsh.c:		$Blburg$E src/sh.md;       $Blburg src/sh.md       $@
+ $Bx86.c:	$Blburg$E src/x86.md;      $Blburg src/x86.md      $@
+ $Bx86linux.c:	$Blburg$E src/x86linux.md; $Blburg src/x86linux.md $@
+
+@@ -223,7 +226,7 @@ clean::		testclean
+
+ clean::		testclean
+ 		$(RM) $B*$O
+-		$(RM) $Bdagcheck.c $Balpha.c $Bmips.c $Bx86.c $Bsparc.c $Bx86linux.c
++		$(RM) $Bdagcheck.c $Balpha.c $Bmips.c $Bx86.c $Bsparc.c $Bx86linux.c $Bsh.c
+ 		$(RM) $Brcc1$E $Brcc1$E $B1rcc$E $B2rcc$E
+ 		$(RM) $B*.ilk
+
+@@ -264,6 +267,7 @@ RCCSRCS=src/alloc.c \
+ 	$Balpha.c \
+ 	$Bmips.c \
+ 	$Bsparc.c \
++	$Bsh.c \
+ 	$Bx86linux.c \
+ 	$Bx86.c
+

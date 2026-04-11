@@ -37,8 +37,13 @@ find . -type f \
     -exec sed -i 's/\r$//' {} +
 
 echo "[3/5] Applying SaturnCompiler patches from ${PATCHES_DIR}"
-# sh.c: drop in directly (new file, not a patch)
-cp "${PATCHES_DIR}/sh.c" "${LCC_DIR}/src/sh.c"
+# sh.md: drop in directly (new file, not a patch). Phase 1B replaced
+# the Phase 1A sh.c stub with an lburg grammar; the makefile patch
+# swaps the object rule to generate $Bsh.c from src/sh.md via lburg.
+cp "${PATCHES_DIR}/sh.md" "${LCC_DIR}/src/sh.md"
+# Remove any leftover src/sh.c from a previous Phase 1A install so the
+# build uses the lburg-generated $Bsh.c instead.
+rm -f "${LCC_DIR}/src/sh.c"
 
 # bind.c and makefile: apply patches, idempotent check first
 for patch_file in bind.c.patch makefile.patch; do
@@ -71,17 +76,24 @@ cat > /tmp/sat_lcc_smoke.c <<'EOF'
 int add(int a, int b) { return a + b; }
 EOF
 if ./build/rcc -target=sh/hitachi /tmp/sat_lcc_smoke.c /tmp/sat_lcc_smoke_sh.s 2>&1; then
-    echo "  OK - rcc -target=sh/hitachi runs without crashing (output empty, as expected in Phase 1A)"
+    echo "  OK - rcc -target=sh/hitachi compiled trivial C"
+    if [ -s /tmp/sat_lcc_smoke_sh.s ]; then
+        echo "  --- /tmp/sat_lcc_smoke_sh.s ---"
+        cat /tmp/sat_lcc_smoke_sh.s
+        echo "  --------------------------------"
+    else
+        echo "  WARN - output file is empty"
+    fi
 else
     echo "  FAIL - rcc crashed on sh/hitachi target"
     exit 1
 fi
 
 echo ""
-echo "LCC build complete with sh/hitachi Phase 1A scaffold."
+echo "LCC build complete with sh/hitachi Phase 1B backend."
 echo "  Compiler:   ${LCC_DIR}/build/rcc"
 echo "  List targets: ${LCC_DIR}/build/rcc  (run with no args)"
 echo "  Symbolic IR: ./build/rcc -target=symbolic input.c output.txt"
+echo "  SH output:   ./build/rcc -target=sh/hitachi input.c output.s"
 echo ""
-echo "Next: replace src/sh.c with src/sh.md (lburg grammar) for Phase 1B."
 echo "See workstreams/lcc_feasibility.md for the roadmap."
