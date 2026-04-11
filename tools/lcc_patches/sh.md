@@ -19,6 +19,7 @@
  * matching Hitachi SHC output. Restore order ascends.
  */
 #include "c.h"
+#include <unistd.h>
 #define NODEPTR_TYPE Node
 #define OP_LABEL(p) ((p)->op)
 #define LEFT_CHILD(p) ((p)->kids[0])
@@ -789,6 +790,96 @@ static int bitcount(unsigned mask) {
         return n;
 }
 
+/* Delay-slot peephole helpers. For leaf functions we buffer
+ * emitcode()'s output to a temp file by dup2'ing fd 1, then
+ * rewrite the buffer to swap the last body instruction into the
+ * rts delay slot. Non-leaf functions use the epilogue-pop delay
+ * slot fill done directly in function(). */
+#define SH_MAX_LINES  2048
+#define SH_MAX_LINELEN 256
+static char sh_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+static int sh_nlines;
+
+static int sh_is_label_line(const char *s) {
+        const char *p;
+        while (*s == ' ' || *s == '\t') s++;
+        p = strchr(s, ':');
+        if (!p) return 0;
+        /* Allow trailing whitespace/newline after the colon. */
+        p++;
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+        return *p == 0;
+}
+
+static int sh_has_prefix(const char *s, const char *pre) {
+        while (*s == ' ' || *s == '\t') s++;
+        while (*pre) {
+                if (*s++ != *pre++) return 0;
+        }
+        /* Must be followed by whitespace or tab (an operand separator). */
+        return *s == ' ' || *s == '\t';
+}
+
+static int sh_is_delay_safe(const char *s) {
+        /* Conservative whitelist: simple ALU and data moves only.
+         * Excludes any branch, jmp/jsr/rts/bsr/bra/bt/bf, and the
+         * few PC-relative or delay-slot-forbidden forms. */
+        if (sh_has_prefix(s, "mov")) return 1;
+        if (sh_has_prefix(s, "mov.b")) return 1;
+        if (sh_has_prefix(s, "mov.w")) return 1;
+        if (sh_has_prefix(s, "mov.l")) return 1;
+        if (sh_has_prefix(s, "add")) return 1;
+        if (sh_has_prefix(s, "sub")) return 1;
+        if (sh_has_prefix(s, "and")) return 1;
+        if (sh_has_prefix(s, "or")) return 1;
+        if (sh_has_prefix(s, "xor")) return 1;
+        if (sh_has_prefix(s, "not")) return 1;
+        if (sh_has_prefix(s, "neg")) return 1;
+        if (sh_has_prefix(s, "exts.b")) return 1;
+        if (sh_has_prefix(s, "exts.w")) return 1;
+        if (sh_has_prefix(s, "extu.b")) return 1;
+        if (sh_has_prefix(s, "extu.w")) return 1;
+        if (sh_has_prefix(s, "shll")) return 1;
+        if (sh_has_prefix(s, "shlr")) return 1;
+        if (sh_has_prefix(s, "shar")) return 1;
+        return 0;
+}
+
+static int sh_capture_begin(FILE **tmp_out) {
+        int savfd;
+        FILE *tmp;
+        fflush(stdout);
+        savfd = dup(1);
+        if (savfd < 0) return -1;
+        tmp = tmpfile();
+        if (!tmp) {
+                close(savfd);
+                return -1;
+        }
+        if (dup2(fileno(tmp), 1) < 0) {
+                fclose(tmp);
+                close(savfd);
+                return -1;
+        }
+        *tmp_out = tmp;
+        return savfd;
+}
+
+static void sh_capture_end(int savfd, FILE *tmp) {
+        long pos;
+        fflush(stdout);
+        dup2(savfd, 1);
+        close(savfd);
+        pos = ftell(tmp);
+        rewind(tmp);
+        sh_nlines = 0;
+        while (sh_nlines < SH_MAX_LINES
+            && fgets(sh_lines[sh_nlines], SH_MAX_LINELEN, tmp))
+                sh_nlines++;
+        fclose(tmp);
+        (void)pos;
+}
+
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         int i, localsize, sizeisave, need_fp;
         Symbol r, argregs[4];
@@ -892,43 +983,68 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 }
         }
 
-        emitcode();
+        {
+                FILE *tmp = NULL;
+                int savfd = sh_capture_begin(&tmp);
+                emitcode();
+                if (savfd >= 0)
+                        sh_capture_end(savfd, tmp);
+                else
+                        sh_nlines = 0;
+        }
 
-        /* Epilogue with a minimal delay-slot fill. Collect the pop
-         * instructions and use the last one as the rts delay slot
-         * when we have at least one — SH-2's rts delay slot executes
-         * before PC jumps to PR, and a `mov.l @r15+,rN` post-
-         * increment load is a legal delay-slot instruction that
-         * doesn't touch PC or branch state. For leaf functions with
-         * no pops the delay slot stays a plain nop. */
-        if (need_fp) {
-                int npops = 0;
-                int pop_regs[16];
-                int want_pr = ncalls;
-                print("\tmov\tr14,r15\n");
-                if (want_pr)
-                        pop_regs[npops++] = -1;      /* -1 means PR */
-                pop_regs[npops++] = 14;
-                for (i = 13; i >= 8; i--)
-                        if (usedmask[IREG] & (1u << i))
-                                pop_regs[npops++] = i;
-                /* Emit all pops except the last, then rts, then the
-                 * last pop in the delay slot. */
-                for (i = 0; i < npops - 1; i++) {
-                        if (pop_regs[i] == -1)
+        /* For leaf functions we try to pull the last safe body
+         * instruction into the rts delay slot. Scan backward past
+         * trailing labels to find the last real instruction; if it
+         * passes the delay-slot whitelist, drop it from the body
+         * and stash it for emission after rts. */
+        {
+                int delay_idx = -1;
+                int j;
+                if (!need_fp) {
+                        for (j = sh_nlines - 1; j >= 0; j--) {
+                                if (sh_is_label_line(sh_lines[j]))
+                                        continue;
+                                if (sh_is_delay_safe(sh_lines[j]))
+                                        delay_idx = j;
+                                break;
+                        }
+                }
+                for (j = 0; j < sh_nlines; j++)
+                        if (j != delay_idx)
+                                fputs(sh_lines[j], stdout);
+
+                if (need_fp) {
+                        int npops = 0;
+                        int pop_regs[16];
+                        int want_pr = ncalls;
+                        print("\tmov\tr14,r15\n");
+                        if (want_pr)
+                                pop_regs[npops++] = -1;
+                        pop_regs[npops++] = 14;
+                        for (i = 13; i >= 8; i--)
+                                if (usedmask[IREG] & (1u << i))
+                                        pop_regs[npops++] = i;
+                        for (i = 0; i < npops - 1; i++) {
+                                if (pop_regs[i] == -1)
+                                        print("\tlds.l\t@r15+,pr\n");
+                                else
+                                        print("\tmov.l\t@r15+,r%d\n",
+                                              pop_regs[i]);
+                        }
+                        print("\trts\n");
+                        if (pop_regs[npops - 1] == -1)
                                 print("\tlds.l\t@r15+,pr\n");
                         else
-                                print("\tmov.l\t@r15+,r%d\n", pop_regs[i]);
+                                print("\tmov.l\t@r15+,r%d\n",
+                                      pop_regs[npops - 1]);
+                } else {
+                        print("\trts\n");
+                        if (delay_idx >= 0)
+                                fputs(sh_lines[delay_idx], stdout);
+                        else
+                                print("\tnop\n");
                 }
-                print("\trts\n");
-                if (pop_regs[npops - 1] == -1)
-                        print("\tlds.l\t@r15+,pr\n");
-                else
-                        print("\tmov.l\t@r15+,r%d\n",
-                              pop_regs[npops - 1]);
-        } else {
-                print("\trts\n");
-                print("\tnop\n");
         }
         shlit_flush();
 }
