@@ -99,6 +99,52 @@ static int nshlit;
 static int shlit_num(int val);
 static int shlit_sym(char *name);
 static void shlit_flush(void);
+
+/* GBR-relative addressing pool.
+ *
+ * Hitachi SHC's `#pragma gbr_base (name)` directive declares a
+ * specific global as the origin of a GBR-reachable pool. Globals
+ * that land in the same pool are then accessed with
+ * `mov.? @(disp,GBR),R0` (opcodes C000/C100/C200 for stores and
+ * C400/C500/C600 for loads), where disp is the byte offset from the
+ * base. This is a Hitachi signature feature — no other SH compiler
+ * emits it automatically, and reproducing it is the single most
+ * important hurdle between us and byte-matching Daytona CCE.
+ *
+ * Phase 1C MVP: we skip real pragma parsing and instead take the
+ * gbr base name from a command-line flag `-gbr-base=NAME`. When set,
+ * we treat every non-function global that goes through global() as
+ * a member of the pool, emit them all into a single `.gbr_data`
+ * section with explicit layout (not .comm), and lower loads and
+ * stores of those globals as GBR-relative instructions whose
+ * displacement is the assembly-time expression `_sym-_base`. The
+ * assembler can evaluate this to a constant because both symbols
+ * live in the same section.
+ *
+ * Phase 2 will wire this to a real #pragma gbr_base parser and
+ * handle cross-TU references, linker layout, and the sizeof-aware
+ * opcode selection Hitachi does for auto-sized GBR access. */
+/* Large "never pick me" cost used in composite GBR rule predicates.
+ * lburg stores costs in a signed short and computes rule cost as
+ * sum-of-child-costs + predicate, so using LBURG_MAX (== SHRT_MAX)
+ * here overflows into a negative number that looks cheapest. 30000
+ * is large enough to dominate any real sum but leaves headroom. */
+#define SH_GBR_REJECT 30000
+#define SH_MAX_GBR 256
+static char *gbr_base_cname;
+static char gbr_base_asmbuf[258];
+
+struct shgbr {
+        char *cname;
+        char *asmname;
+        int size;
+        int align;
+};
+static struct shgbr gbr_pool[SH_MAX_GBR];
+static int ngbr_pool;
+
+static int gbr_is_eligible(Node p);
+static char *gbr_base_asmname(void);
 %}
 %start stmt
 
@@ -345,6 +391,14 @@ reg:  INDIRI4(reg)  "\tmov.l\t@r%0,r%c\n"  1
 reg:  INDIRU4(reg)  "\tmov.l\t@r%0,r%c\n"  1
 reg:  INDIRP4(reg)  "\tmov.l\t@r%0,r%c\n"  1
 
+reg:  INDIRI1(ADDRGP4)  "# gbr_load_b\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+reg:  INDIRU1(ADDRGP4)  "# gbr_load_b\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+reg:  INDIRI2(ADDRGP4)  "# gbr_load_w\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+reg:  INDIRU2(ADDRGP4)  "# gbr_load_w\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+reg:  INDIRI4(ADDRGP4)  "# gbr_load_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+reg:  INDIRU4(ADDRGP4)  "# gbr_load_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+reg:  INDIRP4(ADDRGP4)  "# gbr_load_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+
 stmt: ASGNI1(reg,reg)  "\tmov.b\tr%1,@r%0\n"  1
 stmt: ASGNU1(reg,reg)  "\tmov.b\tr%1,@r%0\n"  1
 stmt: ASGNI2(reg,reg)  "\tmov.w\tr%1,@r%0\n"  1
@@ -352,6 +406,14 @@ stmt: ASGNU2(reg,reg)  "\tmov.w\tr%1,@r%0\n"  1
 stmt: ASGNI4(reg,reg)  "\tmov.l\tr%1,@r%0\n"  1
 stmt: ASGNU4(reg,reg)  "\tmov.l\tr%1,@r%0\n"  1
 stmt: ASGNP4(reg,reg)  "\tmov.l\tr%1,@r%0\n"  1
+
+stmt: ASGNI1(ADDRGP4,reg)  "# gbr_store_b\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+stmt: ASGNU1(ADDRGP4,reg)  "# gbr_store_b\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+stmt: ASGNI2(ADDRGP4,reg)  "# gbr_store_w\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+stmt: ASGNU2(ADDRGP4,reg)  "# gbr_store_w\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+stmt: ASGNI4(ADDRGP4,reg)  "# gbr_store_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+stmt: ASGNU4(ADDRGP4,reg)  "# gbr_store_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+stmt: ASGNP4(ADDRGP4,reg)  "# gbr_store_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
 
 reg:  CVII4(reg)  "\texts.b\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==1?1:LBURG_MAX)
 reg:  CVII4(reg)  "\texts.w\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==2?1:LBURG_MAX)
@@ -436,7 +498,63 @@ static void shlit_flush(void) {
         nshlit = 0;
 }
 
-static void progend(void) {}
+static char *gbr_base_asmname(void) {
+        if (!gbr_base_cname)
+                return NULL;
+        if (gbr_base_asmbuf[0] == 0) {
+                gbr_base_asmbuf[0] = '_';
+                strncpy(gbr_base_asmbuf + 1, gbr_base_cname,
+                        sizeof(gbr_base_asmbuf) - 2);
+                gbr_base_asmbuf[sizeof(gbr_base_asmbuf) - 1] = 0;
+        }
+        return gbr_base_asmbuf;
+}
+
+static int gbr_is_eligible(Node p) {
+        Symbol s;
+        if (!gbr_base_cname || !p || !p->syms[0])
+                return 0;
+        s = p->syms[0];
+        if (s->scope != GLOBAL)
+                return 0;
+        if (isfunc(s->type))
+                return 0;
+        return 1;
+}
+
+static int sh_log2_align(int a) {
+        switch (a) {
+        case 1:  return 0;
+        case 2:  return 1;
+        case 4:  return 2;
+        case 8:  return 3;
+        case 16: return 4;
+        default: return 2;
+        }
+}
+
+static void sh_emit_gbr_entry(int i) {
+        print("\t.align\t%d\n", sh_log2_align(gbr_pool[i].align));
+        print("%s:\n", gbr_pool[i].asmname);
+        print("\t.space\t%d\n", gbr_pool[i].size);
+}
+
+static void progend(void) {
+        int i, base_idx = -1;
+        if (ngbr_pool == 0)
+                return;
+        print("\t.section\t.gbr_data,\"aw\"\n");
+        for (i = 0; i < ngbr_pool; i++)
+                if (strcmp(gbr_pool[i].cname, gbr_base_cname) == 0) {
+                        base_idx = i;
+                        break;
+                }
+        if (base_idx >= 0)
+                sh_emit_gbr_entry(base_idx);
+        for (i = 0; i < ngbr_pool; i++)
+                if (i != base_idx)
+                        sh_emit_gbr_entry(i);
+}
 
 static void progbeg(int argc, char *argv[]) {
         int i;
@@ -446,6 +564,9 @@ static void progbeg(int argc, char *argv[]) {
                 swap = ((int)(u.i == 1)) != IR->little_endian;
         }
         parseflags(argc, argv);
+        for (i = 0; i < argc; i++)
+                if (strncmp(argv[i], "-gbr-base=", 10) == 0)
+                        gbr_base_cname = argv[i] + 10;
         for (i = 0; i < 16; i++)
                 ireg[i] = mkreg("%d", i, 1, IREG);
         ireg[15]->x.name = "15";
@@ -502,7 +623,11 @@ static void clobber(Node p) {
 }
 
 static void emit2(Node p) {
-        int lab, dst;
+        int lab, dst, src;
+        int sz;
+        char *suf;
+        Symbol s;
+        char *base;
         switch (specific(p->op)) {
         case CNST+I: case CNST+U: case CNST+P:
                 lab = shlit_num((int)p->syms[0]->u.c.v.i);
@@ -513,6 +638,41 @@ static void emit2(Node p) {
                 lab = shlit_sym(p->syms[0]->x.name);
                 dst = getregnum(p);
                 print("\tmov.l\tL%d,r%d\n", lab, dst);
+                break;
+        case INDIR+I: case INDIR+U: case INDIR+P:
+                /* Only the GBR path lands here — INDIRxx(VREGP) uses
+                 * a `# read register` template that intentionally
+                 * does nothing, but emit() routes those through here
+                 * too. Guard on the kid being a real ADDRGP4 so the
+                 * register-read case falls through to no-op. */
+                if (!p->kids[0] || generic(p->kids[0]->op) != ADDRG)
+                        break;
+                s = p->kids[0]->syms[0];
+                sz = opsize(p->op);
+                suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                dst = getregnum(p);
+                base = gbr_base_asmname();
+                print("\tmov.%s\t@(%s-%s,gbr),r0\n",
+                      suf, s->x.name, base);
+                if (sz < 4 && optype(p->op) == I)
+                        print("\texts.%s\tr0,r0\n", suf);
+                else if (sz < 4 && optype(p->op) == U)
+                        print("\textu.%s\tr0,r0\n", suf);
+                if (dst != 0)
+                        print("\tmov\tr0,r%d\n", dst);
+                break;
+        case ASGN+I: case ASGN+U: case ASGN+P:
+                if (!p->kids[0] || generic(p->kids[0]->op) != ADDRG)
+                        break;
+                s = p->kids[0]->syms[0];
+                sz = opsize(p->op);
+                suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                src = getregnum(p->kids[1]);
+                base = gbr_base_asmname();
+                if (src != 0)
+                        print("\tmov\tr%d,r0\n", src);
+                print("\tmov.%s\tr0,@(%s-%s,gbr)\n",
+                      suf, s->x.name, base);
                 break;
         }
 }
@@ -715,6 +875,22 @@ static void address(Symbol q, Symbol p, long n) {
 }
 
 static void global(Symbol p) {
+        if (gbr_base_cname && !isfunc(p->type)) {
+                /* Buffer the symbol so progend() can emit the whole
+                 * .gbr_data section with the base symbol first. We
+                 * emit nothing here; the matching space() / defconst()
+                 * calls from the front end are also suppressed while
+                 * gbr mode is active. Phase 1C MVP only supports
+                 * zero-initialized (tentative BSS) gbr globals. */
+                if (ngbr_pool < SH_MAX_GBR) {
+                        gbr_pool[ngbr_pool].cname = p->name;
+                        gbr_pool[ngbr_pool].asmname = p->x.name;
+                        gbr_pool[ngbr_pool].size = p->type->size;
+                        gbr_pool[ngbr_pool].align = p->type->align;
+                        ngbr_pool++;
+                }
+                return;
+        }
         print("\t.align %d\n", p->type->align > 4 ? 4 : p->type->align);
         if (p->u.seg == BSS) {
                 if (p->sclass == STATIC)
@@ -739,6 +915,13 @@ static void segment(int n) {
 }
 
 static void space(int n) {
+        /* When gbr mode is on, every global is routed through the
+         * deferred pool and the front end's post-global() space()
+         * call would otherwise leak into whatever segment we're in.
+         * Suppress it; progend() emits the matching space once it
+         * lays out the .gbr_data section. */
+        if (gbr_base_cname)
+                return;
         if (cseg != BSS)
                 print("\t.space %d\n", n);
 }
