@@ -73,6 +73,13 @@ static Symbol iregw;
 static int tmpregs[] = {1, 2, 3};
 static int cseg;
 
+/* Frame metrics made visible to emit2() after function() has run
+ * gencode(). The direct `mov.l @(disp,Rn),Rm` rules for ADDRFP4 and
+ * ADDRLP4 need the sizeisave/localsize values to turn an LCC offset
+ * into an r14- or r15-relative displacement. */
+static int sh_sizeisave;
+static int sh_localsize;
+
 /* Literal pool: per-function table of 32-bit constants and symbol
  * addresses that can't be loaded with an inline 8-bit immediate.
  * Each entry gets a generated label; emit2() prints a
@@ -355,6 +362,20 @@ reg:  ADDRGP4  "# addrg\n"  2
 
 reg:  ADDRFP4  "\tmov\tr14,r%c\n\tadd\t#%a+%F,r%c\n"  2
 reg:  ADDRLP4  "\tmov\tr14,r%c\n\tadd\t#%a,r%c\n"     2
+
+reg:  INDIRI4(ADDRFP4)  "# fpload_l\n"  1
+reg:  INDIRU4(ADDRFP4)  "# fpload_l\n"  1
+reg:  INDIRP4(ADDRFP4)  "# fpload_l\n"  1
+reg:  INDIRI4(ADDRLP4)  "# lpload_l\n"  1
+reg:  INDIRU4(ADDRLP4)  "# lpload_l\n"  1
+reg:  INDIRP4(ADDRLP4)  "# lpload_l\n"  1
+
+stmt: ASGNI4(ADDRFP4,reg)  "# fpstore_l\n"  1
+stmt: ASGNU4(ADDRFP4,reg)  "# fpstore_l\n"  1
+stmt: ASGNP4(ADDRFP4,reg)  "# fpstore_l\n"  1
+stmt: ASGNI4(ADDRLP4,reg)  "# lpstore_l\n"  1
+stmt: ASGNU4(ADDRLP4,reg)  "# lpstore_l\n"  1
+stmt: ASGNP4(ADDRLP4,reg)  "# lpstore_l\n"  1
 
 reg:  ADDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
@@ -639,41 +660,73 @@ static void emit2(Node p) {
                 dst = getregnum(p);
                 print("\tmov.l\tL%d,r%d\n", lab, dst);
                 break;
-        case INDIR+I: case INDIR+U: case INDIR+P:
-                /* Only the GBR path lands here — INDIRxx(VREGP) uses
-                 * a `# read register` template that intentionally
-                 * does nothing, but emit() routes those through here
-                 * too. Guard on the kid being a real ADDRGP4 so the
-                 * register-read case falls through to no-op. */
-                if (!p->kids[0] || generic(p->kids[0]->op) != ADDRG)
+        case INDIR+I: case INDIR+U: case INDIR+P: {
+                int disp, off;
+                int kop;
+                if (!p->kids[0])
                         break;
+                kop = generic(p->kids[0]->op);
                 s = p->kids[0]->syms[0];
                 sz = opsize(p->op);
-                suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
                 dst = getregnum(p);
-                base = gbr_base_asmname();
-                print("\tmov.%s\t@(%s-%s,gbr),r0\n",
-                      suf, s->x.name, base);
-                if (sz < 4 && optype(p->op) == I)
-                        print("\texts.%s\tr0,r0\n", suf);
-                else if (sz < 4 && optype(p->op) == U)
-                        print("\textu.%s\tr0,r0\n", suf);
-                if (dst != 0)
-                        print("\tmov\tr0,r%d\n", dst);
-                break;
-        case ASGN+I: case ASGN+U: case ASGN+P:
-                if (!p->kids[0] || generic(p->kids[0]->op) != ADDRG)
+                if (kop == ADDRG) {
+                        suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                        base = gbr_base_asmname();
+                        print("\tmov.%s\t@(%s-%s,gbr),r0\n",
+                              suf, s->x.name, base);
+                        if (sz < 4 && optype(p->op) == I)
+                                print("\texts.%s\tr0,r0\n", suf);
+                        else if (sz < 4 && optype(p->op) == U)
+                                print("\textu.%s\tr0,r0\n", suf);
+                        if (dst != 0)
+                                print("\tmov\tr0,r%d\n", dst);
                         break;
+                }
+                /* ADDRFP4 / ADDRLP4 direct-disp load. For ADDRFP4 the
+                 * symbol offset is the caller-frame offset and the
+                 * instruction base is r14 (FP), disp = offset+sizeisave.
+                 * For ADDRLP4 the symbol offset is negative relative
+                 * to r14, so we use r15 as the base and disp =
+                 * localsize + offset. Both paths only handle mov.l
+                 * (disp field scales by 4, fits in 4 bits). */
+                off = s ? s->x.offset : 0;
+                if (kop == ADDRF) {
+                        disp = off + sh_sizeisave;
+                        print("\tmov.l\t@(%d,r14),r%d\n", disp, dst);
+                } else if (kop == ADDRL) {
+                        disp = sh_localsize + off;
+                        print("\tmov.l\t@(%d,r15),r%d\n", disp, dst);
+                }
+                break;
+                }
+        case ASGN+I: case ASGN+U: case ASGN+P: {
+                int disp, off;
+                int kop;
+                if (!p->kids[0])
+                        break;
+                kop = generic(p->kids[0]->op);
                 s = p->kids[0]->syms[0];
                 sz = opsize(p->op);
-                suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
                 src = getregnum(p->kids[1]);
-                base = gbr_base_asmname();
-                if (src != 0)
-                        print("\tmov\tr%d,r0\n", src);
-                print("\tmov.%s\tr0,@(%s-%s,gbr)\n",
-                      suf, s->x.name, base);
+                if (kop == ADDRG) {
+                        suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                        base = gbr_base_asmname();
+                        if (src != 0)
+                                print("\tmov\tr%d,r0\n", src);
+                        print("\tmov.%s\tr0,@(%s-%s,gbr)\n",
+                              suf, s->x.name, base);
+                        break;
+                }
+                off = s ? s->x.offset : 0;
+                if (kop == ADDRF) {
+                        disp = off + sh_sizeisave;
+                        print("\tmov.l\tr%d,@(%d,r14)\n", src, disp);
+                } else if (kop == ADDRL) {
+                        disp = sh_localsize + off;
+                        print("\tmov.l\tr%d,@(%d,r15)\n", src, disp);
+                }
                 break;
+                }
         case ARG+I: case ARG+U: case ARG+P:
                 /* argno 0..3 pass in r4..r7 (handled by target() via
                  * rtarget, so the kid was already loaded into the
@@ -759,6 +812,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         usedmask[IREG] &= INTVAR;
         maxargoffset = roundup(maxargoffset, 4);
         localsize = roundup(maxargoffset + maxoffset, 4);
+        sh_localsize = localsize;
 
         /* Set up FP whenever we need to reach anything on the stack:
          * locals, spilled params, a PR save, or stack-passed
@@ -778,6 +832,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         sizeisave += 4;
         }
         framesize = sizeisave;
+        sh_sizeisave = sizeisave;
 
         segment(CODE);
         print("\t.align 2\n");
