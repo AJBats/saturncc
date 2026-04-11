@@ -11,7 +11,8 @@ xx(symbolic/osf, symbolic64IR) \
 xx(symbolic/irix,symbolicIR) \
 xx(symbolic,     symbolicIR) \
 xx(bytecode,     bytecodeIR) \
-xx(null,         nullIR)
+xx(null,         nullIR) \
+xx(sh/hitachi,   shIR)
 
 #undef xx
 #define xx(a,b) extern Interface b;
