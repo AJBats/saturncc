@@ -708,6 +708,13 @@ static void emit2(Node p) {
                 if (!p->kids[0])
                         break;
                 kop = generic(p->kids[0]->op);
+                /* INDIR(VREGP) uses a `# read register` template
+                 * that routes through emit2 but is intentionally a
+                 * no-op: the value already lives in the register
+                 * assigned to the node. Only ADDRG/ADDRF/ADDRL kids
+                 * want real code emission here. */
+                if (kop != ADDRG && kop != ADDRF && kop != ADDRL)
+                        break;
                 s = p->kids[0]->syms[0];
                 sz = opsize(p->op);
                 dst = getregnum(p);
@@ -735,12 +742,14 @@ static void emit2(Node p) {
                  * words / 0..60 longs. Anything outside that falls
                  * back to the compute-address-then-indirect form. */
                 off = s ? s->x.offset : 0;
-                if (kop == ADDRF)
+                if (kop == ADDRF) {
                         disp = off + sh_sizeisave;
-                else
+                        base = "r14";
+                } else {
                         disp = sh_localsize + off;
+                        base = "r15";
+                }
                 suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
-                base = (kop == ADDRF) ? "r14" : "r15";
                 {
                         int max_disp = sz == 1 ? 15 : sz == 2 ? 30 : 60;
                         int fits = disp >= 0 && disp <= max_disp
@@ -778,6 +787,11 @@ static void emit2(Node p) {
                 if (!p->kids[0])
                         break;
                 kop = generic(p->kids[0]->op);
+                /* Same no-op bail-out as INDIR: ASGN(VREGP,reg)
+                 * routes through emit2 but doesn't need any output
+                 * — the value is already in the destination register. */
+                if (kop != ADDRG && kop != ADDRF && kop != ADDRL)
+                        break;
                 s = p->kids[0]->syms[0];
                 sz = opsize(p->op);
                 src = getregnum(p->kids[1]);
@@ -791,12 +805,14 @@ static void emit2(Node p) {
                         break;
                 }
                 off = s ? s->x.offset : 0;
-                if (kop == ADDRF)
+                if (kop == ADDRF) {
                         disp = off + sh_sizeisave;
-                else
+                        base = "r14";
+                } else {
                         disp = sh_localsize + off;
+                        base = "r15";
+                }
                 suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
-                base = (kop == ADDRF) ? "r14" : "r15";
                 {
                         int max_disp = sz == 1 ? 15 : sz == 2 ? 30 : 60;
                         int fits = disp >= 0 && disp <= max_disp
@@ -887,6 +903,87 @@ static int sh_has_prefix(const char *s, const char *pre) {
         }
         /* Must be followed by whitespace or tab (an operand separator). */
         return *s == ' ' || *s == '\t';
+}
+
+/* Return a mask of the r0..r15 register numbers that appear anywhere
+ * in this instruction text. Conservative: flags both reads and
+ * writes. Used by the peephole pass to check whether a range of
+ * instructions between a pair of candidate dead-move lines touches
+ * the registers involved. */
+static unsigned sh_regs_used(const char *line) {
+        unsigned mask = 0;
+        const char *s = line;
+        while (*s) {
+                if (*s == 'r' && s[1] >= '0' && s[1] <= '9') {
+                        int n = s[1] - '0';
+                        s += 2;
+                        if (*s >= '0' && *s <= '9') {
+                                n = n * 10 + (*s - '0');
+                                s++;
+                        }
+                        if (n >= 0 && n < 16)
+                                mask |= 1u << n;
+                } else {
+                        s++;
+                }
+        }
+        return mask;
+}
+
+/* Parse `[\\t ]*mov\\tr<A>,r<B>\\n` and fill *rA/*rB. Returns 1 on
+ * success, 0 otherwise. The size-suffixed forms (mov.b, mov.w,
+ * mov.l) and immediate moves are intentionally rejected — we only
+ * want the register-to-register plain mov. */
+static int sh_parse_regmov(const char *s, int *rA, int *rB) {
+        while (*s == ' ' || *s == '\t') s++;
+        if (s[0] != 'm' || s[1] != 'o' || s[2] != 'v') return 0;
+        if (s[3] != ' ' && s[3] != '\t') return 0;
+        s += 3;
+        while (*s == ' ' || *s == '\t') s++;
+        if (*s++ != 'r') return 0;
+        if (*s < '0' || *s > '9') return 0;
+        *rA = *s++ - '0';
+        if (*s >= '0' && *s <= '9')
+                *rA = *rA * 10 + *s++ - '0';
+        if (*s++ != ',') return 0;
+        if (*s++ != 'r') return 0;
+        if (*s < '0' || *s > '9') return 0;
+        *rB = *s++ - '0';
+        if (*s >= '0' && *s <= '9')
+                *rB = *rB * 10 + *s++ - '0';
+        return 1;
+}
+
+/* Peephole: delete `mov rA,rB` ... `mov rB,rA` pairs when no
+ * instruction between them touches rA or rB. LCC's register
+ * allocator leaves this pattern after every call (the call result
+ * lands in r0, gets copied to the node's destination, and then
+ * copied back to r0 for use by the next expression) and after some
+ * arithmetic chains. Empty lines are written as `\\0` in place so
+ * the flush loop can skip them. */
+static void sh_peephole(void) {
+        int i, j;
+        for (i = 0; i < sh_nlines; i++) {
+                int rA, rB, rX, rY;
+                if (!sh_parse_regmov(sh_lines[i], &rA, &rB))
+                        continue;
+                if (rA == rB)
+                        continue;
+                for (j = i + 1; j < sh_nlines; j++) {
+                        unsigned mask;
+                        if (sh_lines[j][0] == 0)
+                                continue;
+                        if (sh_parse_regmov(sh_lines[j], &rX, &rY)
+                            && rX == rB && rY == rA) {
+                                sh_lines[i][0] = 0;
+                                sh_lines[j][0] = 0;
+                                break;
+                        }
+                        mask = sh_regs_used(sh_lines[j]);
+                        if (mask & ((1u << rA) | (1u << rB)))
+                                break;
+                }
+        }
 }
 
 static int sh_is_delay_safe(const char *s) {
@@ -1040,38 +1137,46 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         print("\tadd\t#%d,r15\n", -localsize);
         }
 
-        /* Move incoming argument registers to their allocated home. */
-        for (i = 0; i < 4 && callee[i]; i++) {
-                r = argregs[i];
-                if (r && callee[i]->sclass == REGISTER
-                    && callee[i]->x.regnode
-                    && callee[i]->x.regnode->number != r->x.regnode->number) {
-                        print("\tmov\tr%d,r%d\n",
-                              r->x.regnode->number,
-                              callee[i]->x.regnode->number);
-                }
-        }
-
+        /* Run the param-home moves and the function body through
+         * the capture buffer so the peephole can see them together.
+         * Otherwise a `mov r4,r13` emitted directly to stdout here
+         * would never pair up with a `mov r13,r4` emitted later by
+         * the body. */
         {
                 FILE *tmp = NULL;
                 int savfd = sh_capture_begin(&tmp);
+                for (i = 0; i < 4 && callee[i]; i++) {
+                        r = argregs[i];
+                        if (r && callee[i]->sclass == REGISTER
+                            && callee[i]->x.regnode
+                            && callee[i]->x.regnode->number
+                                != r->x.regnode->number) {
+                                print("\tmov\tr%d,r%d\n",
+                                      r->x.regnode->number,
+                                      callee[i]->x.regnode->number);
+                        }
+                }
                 emitcode();
                 if (savfd >= 0)
                         sh_capture_end(savfd, tmp);
                 else
                         sh_nlines = 0;
+                sh_peephole();
         }
 
         /* For leaf functions we try to pull the last safe body
          * instruction into the rts delay slot. Scan backward past
-         * trailing labels to find the last real instruction; if it
-         * passes the delay-slot whitelist, drop it from the body
-         * and stash it for emission after rts. */
+         * trailing labels and peephole-deleted (empty) lines to
+         * find the last real instruction; if it passes the
+         * delay-slot whitelist, drop it from the body and stash
+         * it for emission after rts. */
         {
                 int delay_idx = -1;
                 int j;
                 if (!need_fp) {
                         for (j = sh_nlines - 1; j >= 0; j--) {
+                                if (sh_lines[j][0] == 0)
+                                        continue;
                                 if (sh_is_label_line(sh_lines[j]))
                                         continue;
                                 if (sh_is_delay_safe(sh_lines[j]))
@@ -1079,9 +1184,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                 break;
                         }
                 }
-                for (j = 0; j < sh_nlines; j++)
-                        if (j != delay_idx)
-                                fputs(sh_lines[j], stdout);
+                for (j = 0; j < sh_nlines; j++) {
+                        if (j == delay_idx)
+                                continue;
+                        if (sh_lines[j][0] == 0)
+                                continue;
+                        fputs(sh_lines[j], stdout);
+                }
 
                 if (need_fp) {
                         int npops = 0;
