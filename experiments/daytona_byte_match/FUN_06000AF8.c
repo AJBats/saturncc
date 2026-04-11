@@ -9,7 +9,7 @@
  *   *PTR_DAT_06028c24 = *PTR_DAT_06028c24 + '\x01';
  *   return uVar1;
  *
- * Reference assembly (src/backup/FUN_06000AF8.s):
+ * Reference assembly (src/backup/FUN_06000AF8.s) — 17 instructions:
  *
  *   sts.l pr, @-r15
  *   mov.l @(0x118,PC),r6   ; r6 = 0x06036F58
@@ -22,12 +22,27 @@
  *   mov.l @(0x118,PC),r5   ; r5 = 0x06036F37
  *   mov r0, r4             ; r4 = result
  *   mov.b @r5, r3
- *   tst r4, r4
+ *   tst r4, r4             ; DEAD — original C must have had an if here
  *   add #0x1, r3
  *   mov.b r3, @r5
  *   lds.l @r15+, pr
  *   rts
  *   mov r4, r0             ; delay slot
+ *
+ * Our current output — 16 instructions, one SHORTER than the
+ * reference because:
+ *   - Our peephole deletes the `mov r0,r<N>/mov r<N>,r0` round
+ *     trip LCC's allocator leaves around the call result.
+ *   - The post-peephole `usedmask` rebuild drops the r13 save
+ *     that only existed to hold the now-eliminated temp.
+ *   - The counter store `mov.b r2,@r3` gets pulled into the rts
+ *     delay slot by the leaf-scan.
+ *
+ * Remaining differences from the reference are stylistic rather
+ * than missing optimizations: Hitachi loads r6,r5,r4,r3 in
+ * reverse and schedules `extu.w r4,r4` into the jsr delay slot,
+ * plus has the dead `tst r4,r4` leftover from some `if` the
+ * original C had.
  */
 
 extern int ext_func(unsigned short, const char *, void *);

@@ -1203,46 +1203,19 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         need_fp = 1;
         sh_fp_active = need_fp;
 
-        /* A prologue is emitted if we're either setting up FP,
-         * saving callee-saved regs, or saving PR. Otherwise the
-         * function is a pure leaf that only touches r0..r7. */
         if (need_fp)
                 usedmask[IREG] |= 1u << 14;
-        has_prologue = need_fp || ncalls || usedmask[IREG] != 0;
         sizeisave = 4 * bitcount(usedmask[IREG]);
         if (ncalls)
                 sizeisave += 4;
         framesize = sizeisave;
         sh_sizeisave = sizeisave;
 
-        segment(CODE);
-        print("\t.align 2\n");
-        print("%s:\n", f->x.name);
-
-        if (has_prologue) {
-                /* Hitachi ordering (verified against Daytona CCE
-                 * output): push r14 first, then r13, r12, ..., r8
-                 * (descending register number), then PR last. The
-                 * `mov r15,r14` FP setup and the local-area
-                 * reservation only fire when FP is actually needed. */
-                for (i = 14; i >= 8; i--)
-                        if (usedmask[IREG] & (1u << i))
-                                print("\tmov.l\tr%d,@-r15\n", i);
-                if (ncalls)
-                        print("\tsts.l\tpr,@-r15\n");
-                if (need_fp) {
-                        print("\tmov\tr15,r14\n");
-                        if (localsize > 0)
-                                print("\tadd\t#%d,r15\n",
-                                      -localsize);
-                }
-        }
-
-        /* Run the param-home moves and the function body through
-         * the capture buffer so the peephole can see them together.
-         * The captured lines are emitted below, after the epilogue
-         * decides whether to pull the last instruction into the
-         * rts delay slot. */
+        /* Capture the body (param-home moves + emitcode) BEFORE
+         * emitting anything to stdout. This lets the peephole
+         * rewrite the body and the post-peephole live-set analysis
+         * trim dead callee-saved saves before the prologue emits
+         * its push list. */
         {
                 FILE *tmp = NULL;
                 int savfd = sh_capture_begin(&tmp);
@@ -1265,16 +1238,92 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_peephole();
         }
 
-        /* For functions with no pops we try to pull the last safe
-         * body instruction into the rts delay slot. Scan backward
-         * past trailing labels and peephole-deleted (empty) lines
-         * to find the last real instruction; if it passes the
-         * delay-slot whitelist, drop it from the body and stash
-         * it for emission after rts. */
+        /* Rebuild usedmask from surviving body lines so dead-after-
+         * peephole registers drop off the save/restore list. This is
+         * only safe when the body doesn't reference r14-relative
+         * addresses — if it does, changing sizeisave would shift the
+         * disps in those references and break correctness. The
+         * direct-disp paths in emit2() use `(%d,r14)` and `@r14`
+         * style syntax we can scan for. */
         {
-                int delay_idx = -1;
+                unsigned live = 0;
+                int fp_locked = 0;
                 int j;
-                if (!has_prologue) {
+                for (j = 0; j < sh_nlines; j++) {
+                        if (sh_lines[j][0] == 0)
+                                continue;
+                        live |= sh_regs_used(sh_lines[j]);
+                        if (strstr(sh_lines[j], ",r14)")
+                            || strstr(sh_lines[j], "@r14"))
+                                fp_locked = 1;
+                }
+                if (!fp_locked) {
+                        unsigned keep = usedmask[IREG] & live;
+                        if (need_fp)
+                                keep |= 1u << 14;
+                        if (keep != usedmask[IREG]) {
+                                usedmask[IREG] = keep;
+                                sizeisave = 4 * bitcount(usedmask[IREG]);
+                                if (ncalls)
+                                        sizeisave += 4;
+                                framesize = sizeisave;
+                                sh_sizeisave = sizeisave;
+                        }
+                }
+        }
+
+        has_prologue = need_fp || ncalls || usedmask[IREG] != 0;
+
+        segment(CODE);
+        print("\t.align 2\n");
+        print("%s:\n", f->x.name);
+
+        if (has_prologue) {
+                /* Hitachi ordering (verified against Daytona CCE
+                 * output): push r14 first, then r13, r12, ..., r8
+                 * (descending register number), then PR last. */
+                for (i = 14; i >= 8; i--)
+                        if (usedmask[IREG] & (1u << i))
+                                print("\tmov.l\tr%d,@-r15\n", i);
+                if (ncalls)
+                        print("\tsts.l\tpr,@-r15\n");
+                if (need_fp) {
+                        print("\tmov\tr15,r14\n");
+                        if (localsize > 0)
+                                print("\tadd\t#%d,r15\n",
+                                      -localsize);
+                }
+        }
+
+        /* Decide rts delay-slot filler. Priority:
+         *   1. The last non-PR epilogue pop (always wins when the
+         *      function saves any callee-saved reg).
+         *   2. The last safe body instruction, if the epilogue has
+         *      no pops to donate (or only PR, which is forbidden in
+         *      rts delay slots).
+         *   3. Plain nop. */
+        {
+                int delay_idx = -1;       /* body line to pull up */
+                int last_reg_pop = -1;    /* pop index in epilogue */
+                int npops = 0;
+                int pop_regs[16];
+                int j;
+
+                if (has_prologue) {
+                        int want_pr = ncalls;
+                        if (want_pr)
+                                pop_regs[npops++] = -1;
+                        for (i = 8; i <= 14; i++)
+                                if (usedmask[IREG] & (1u << i))
+                                        pop_regs[npops++] = i;
+                        for (i = npops - 1; i >= 0; i--)
+                                if (pop_regs[i] != -1) {
+                                        last_reg_pop = i;
+                                        break;
+                                }
+                }
+
+                if (last_reg_pop < 0) {
                         for (j = sh_nlines - 1; j >= 0; j--) {
                                 if (sh_lines[j][0] == 0)
                                         continue;
@@ -1285,6 +1334,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                 break;
                         }
                 }
+
                 for (j = 0; j < sh_nlines; j++) {
                         if (j == delay_idx)
                                 continue;
@@ -1294,24 +1344,20 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 }
 
                 if (has_prologue) {
-                        /* Pop order is the reverse of the push
-                         * order. Pushes were r14, r13, ..., r8, PR;
-                         * so pops come out PR, r8, r9, ..., r14.
-                         * The highest-numbered pop ends up in the
-                         * rts delay slot. When FP is active we
-                         * first restore r15 from r14 so the
-                         * popping happens at the right slot. */
-                        int npops = 0;
-                        int pop_regs[16];
-                        int want_pr = ncalls;
+                        /* Pop order is the reverse of push order:
+                         * PR first (if saved), then r8..r14. The
+                         * SH-2 architectural rule `lds.l @r15+,pr`
+                         * is forbidden in the rts delay slot
+                         * because rts reads PR at branch time —
+                         * so we pop PR strictly BEFORE rts and use
+                         * the highest-numbered reg pop as the
+                         * delay-slot filler. If PR is the only pop,
+                         * fall through to a body line or nop. */
                         if (need_fp)
                                 print("\tmov\tr14,r15\n");
-                        if (want_pr)
-                                pop_regs[npops++] = -1;
-                        for (i = 8; i <= 14; i++)
-                                if (usedmask[IREG] & (1u << i))
-                                        pop_regs[npops++] = i;
-                        for (i = 0; i < npops - 1; i++) {
+                        for (i = 0; i < npops; i++) {
+                                if (i == last_reg_pop)
+                                        continue;
                                 if (pop_regs[i] == -1)
                                         print("\tlds.l\t@r15+,pr\n");
                                 else
@@ -1319,17 +1365,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                               pop_regs[i]);
                         }
                         print("\trts\n");
-                        if (npops > 0) {
-                                if (pop_regs[npops - 1] == -1)
-                                        print("\tlds.l\t@r15+,pr\n");
-                                else
-                                        print("\tmov.l\t@r15+,r%d\n",
-                                              pop_regs[npops - 1]);
-                        } else if (delay_idx >= 0) {
+                        if (last_reg_pop >= 0)
+                                print("\tmov.l\t@r15+,r%d\n",
+                                      pop_regs[last_reg_pop]);
+                        else if (delay_idx >= 0)
                                 fputs(sh_lines[delay_idx], stdout);
-                        } else {
+                        else
                                 print("\tnop\n");
-                        }
                 } else {
                         print("\trts\n");
                         if (delay_idx >= 0)

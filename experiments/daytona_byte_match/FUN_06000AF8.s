@@ -2,7 +2,6 @@
 	.text
 	.align 2
 _FUN_06000AF8:
-	mov.l	r13,@-r15
 	sts.l	pr,@-r15
 	mov.l	L2,r3
 	mov.w	@r3,r3
@@ -16,11 +15,10 @@ _FUN_06000AF8:
 	mov.b	@r3,r2
 	exts.b	r2,r2
 	add	#1,r2
-	mov.b	r2,@r3
 L1:
 	lds.l	@r15+,pr
 	rts
-	mov.l	@r15+,r13
+	mov.b	r2,@r3
 	.align 2
 L2:	.long	_dat_06039FC8
 L3:	.long	_daytona96_str
