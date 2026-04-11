@@ -1,0 +1,10 @@
+# Build artifacts (saturn/tools/build.sh writes here)
+build/
+
+# Local test scratch
+test_add.*
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db

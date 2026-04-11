@@ -1,7 +1,7 @@
-# Upstream LCC source — managed via tools/setup_lcc.sh, not vendored
-tools/lcc/
-
 # Python caches
 __pycache__/
 *.pyc
 *.pyo
+
+# Experiment build artifacts
+experiments/**/*.o
