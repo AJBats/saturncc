@@ -38,7 +38,7 @@
  * R15 is the stack pointer.
  */
 #define INTTMP  0x0000000e  /* R1..R3                          */
-#define INTVAR  0x00007f00  /* R8..R14                         */
+#define INTVAR  0x00003f00  /* R8..R13 (R14 reserved for FP)   */
 #define INTRET  0x00000001  /* R0                              */
 
 static void address(Symbol, Symbol, long);
@@ -307,8 +307,8 @@ reg:  CNSTP4  "# large const\n"  2
 
 reg:  ADDRGP4  "# addrg\n"  2
 
-reg:  ADDRFP4  "\tmov\tr14,r%c\n\tadd\t#%a+%F,r%c\n"  3
-reg:  ADDRLP4  "\tmov\tr15,r%c\n\tadd\t#%a+%F,r%c\n"  3
+reg:  ADDRFP4  "\tmov\tr14,r%c\n\tadd\t#%a+%F,r%c\n"  2
+reg:  ADDRLP4  "\tmov\tr14,r%c\n\tadd\t#%a,r%c\n"     2
 
 reg:  ADDI4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
 reg:  ADDU4(reg,reg)  "?\tmov\tr%0,r%c\n\tadd\tr%1,r%c\n"  1
@@ -378,12 +378,10 @@ stmt: LEU4(reg,reg)  "\tcmp/hs\tr%0,r%1\n\tbt\t%a\n"  2
 stmt: GTU4(reg,reg)  "\tcmp/hi\tr%1,r%0\n\tbt\t%a\n"  2
 stmt: GEU4(reg,reg)  "\tcmp/hs\tr%1,r%0\n\tbt\t%a\n"  2
 
-ar:   ADDRGP4  "%a"
-
-reg:  CALLI4(ar)  "\tbsr\t%0\n\tnop\n"  2
-reg:  CALLU4(ar)  "\tbsr\t%0\n\tnop\n"  2
-reg:  CALLP4(ar)  "\tbsr\t%0\n\tnop\n"  2
-stmt: CALLV(ar)   "\tbsr\t%0\n\tnop\n"  2
+reg:  CALLI4(reg)  "\tjsr\t@r%0\n\tnop\n"  3
+reg:  CALLU4(reg)  "\tjsr\t@r%0\n\tnop\n"  3
+reg:  CALLP4(reg)  "\tjsr\t@r%0\n\tnop\n"  3
+stmt: CALLV(reg)   "\tjsr\t@r%0\n\tnop\n"  3
 
 stmt: RETI4(reg)  "# ret\n"  1
 stmt: RETU4(reg)  "# ret\n"  1
@@ -532,8 +530,17 @@ static void local(Symbol p) {
                 mkauto(p);
 }
 
+static int bitcount(unsigned mask) {
+        unsigned b;
+        int n = 0;
+        for (b = 1; b; b <<= 1)
+                if (mask & b)
+                        n++;
+        return n;
+}
+
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
-        int i, saved;
+        int i, localsize, sizeisave, need_fp;
         Symbol r, argregs[4];
 
         nshlit = 0;
@@ -561,40 +568,61 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         assert(p->x.regnode && p->x.regnode->vbl == p);
                         q->x = p->x;
                         q->type = p->type;
-                } else if (askregvar(p, rmap(ttob(p->type)))
-                           && r != NULL
-                           && (isint(p->type) || p->type == q->type)) {
-                        p->sclass = q->sclass = REGISTER;
-                        q->type = p->type;
+                } else if (i < 4 && !isstruct(q->type) && !p->addressed) {
+                        p->sclass = REGISTER;
+                        if (askregvar(p, rmap(ttob(p->type)))) {
+                                q->sclass = REGISTER;
+                                q->type = p->type;
+                        } else {
+                                p->sclass = AUTO;
+                        }
                 }
         }
         assert(!caller[i]);
         offset = 0;
         gencode(caller, callee);
 
-        /* Restrict to callee-saved mask. */
         usedmask[IREG] &= INTVAR;
         maxargoffset = roundup(maxargoffset, 4);
-        framesize = roundup(maxargoffset + maxoffset, 4);
+        localsize = roundup(maxargoffset + maxoffset, 4);
+
+        /* Set up FP whenever we need to reach anything on the stack:
+         * locals, spilled params, or a PR save. Leaf functions that
+         * touch nothing but r0-r7 skip the prologue entirely. */
+        need_fp = (ncalls || localsize > 0 || usedmask[IREG] != 0
+                   || maxargoffset > 0);
+
+        sizeisave = 4 * bitcount(usedmask[IREG]);
+        if (need_fp) {
+                usedmask[IREG] |= 1u << 14;
+                sizeisave = 4 * bitcount(usedmask[IREG]);
+                if (ncalls)
+                        sizeisave += 4;
+        }
+        framesize = sizeisave;
 
         segment(CODE);
         print("\t.align 2\n");
         print("%s:\n", f->x.name);
 
-        /* Hitachi descending callee-saved push order: r14, r13, ..., r8. */
-        saved = 0;
-        if (ncalls) {
-                print("\tsts.l\tpr,@-r15\n");
-                saved += 4;
+        if (need_fp) {
+                /* Hitachi ordering: push r8 first, ..., r14 last,
+                 * then PR last of all. After all pushes, r15 points
+                 * at the PR slot (or at r14 if no PR). Setting
+                 * r14 = r15 makes r14 the frame pointer; addresses
+                 * of caller params resolve to r14 + sizeisave + offset,
+                 * and addresses of locals resolve to r14 + negative
+                 * offset (locals sit below r14 in the reserved area). */
+                for (i = 8; i <= 13; i++)
+                        if (usedmask[IREG] & (1u << i))
+                                print("\tmov.l\tr%d,@-r15\n", i);
+                print("\tmov.l\tr14,@-r15\n");
+                if (ncalls)
+                        print("\tsts.l\tpr,@-r15\n");
+                print("\tmov\tr15,r14\n");
+                if (localsize > 0)
+                        print("\tadd\t#%d,r15\n", -localsize);
         }
-        for (i = 14; i >= 8; i--) {
-                if (usedmask[IREG] & (1u << i)) {
-                        print("\tmov.l\tr%d,@-r15\n", i);
-                        saved += 4;
-                }
-        }
-        if (framesize > 0)
-                print("\tadd\t#%d,r15\n", -framesize);
 
         /* Move incoming argument registers to their allocated home. */
         for (i = 0; i < 4 && callee[i]; i++) {
@@ -610,16 +638,15 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         emitcode();
 
-        /* Epilogue: restore in ascending order. */
-        if (framesize > 0)
-                print("\tadd\t#%d,r15\n", framesize);
-        for (i = 8; i <= 14; i++) {
-                if (usedmask[IREG] & (1u << i)) {
-                        print("\tmov.l\t@r15+,r%d\n", i);
-                }
+        if (need_fp) {
+                print("\tmov\tr14,r15\n");
+                if (ncalls)
+                        print("\tlds.l\t@r15+,pr\n");
+                print("\tmov.l\t@r15+,r14\n");
+                for (i = 13; i >= 8; i--)
+                        if (usedmask[IREG] & (1u << i))
+                                print("\tmov.l\t@r15+,r%d\n", i);
         }
-        if (ncalls)
-                print("\tlds.l\t@r15+,pr\n");
         print("\trts\n");
         print("\tnop\n");
         shlit_flush();
