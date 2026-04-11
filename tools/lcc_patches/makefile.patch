@@ -1,0 +1,20 @@
+diff --git a/makefile b/makefile
+index c96afff..c4f941a 100755
+--- a/makefile
++++ b/makefile
+@@ -54,6 +54,7 @@ RCCOBJS=$Balloc$O \
+ 	$Btree$O \
+ 	$Btypes$O \
+ 	$Bnull$O \
++	$Bsh$O \
+ 	$Bsymbolic$O \
+ 	$Bgen$O \
+ 	$Bbytecode$O \
+@@ -88,6 +89,7 @@ $Blex$O:	src/lex.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/lex.c
+ $Blist$O:	src/list.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/list.c
+ $Bmain$O:	src/main.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/main.c
+ $Bnull$O:	src/null.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/null.c
++$Bsh$O:		src/sh.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/sh.c
+ $Boutput$O:	src/output.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/output.c
+ $Bprof$O:	src/prof.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/prof.c
+ $Bprofio$O:	src/profio.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/profio.c
