@@ -1737,6 +1737,54 @@ copy_line:
         }
 }
 
+/* Remove byte extensions (extu.b/exts.b) when the value is only
+ * used for arithmetic + byte store. The extension is dead because
+ * mov.b only writes the low byte. Pattern:
+ *   mov.b @rA,rB; ext.b rB,rB; add #imm,rB; mov.b rB,@rC */
+static void sh_elim_dead_byte_ext(void) {
+        int i, j, k, m;
+        for (i = 0; i < sh_nlines; i++) {
+                int rB;
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "extu.b")
+                    && !sh_has_prefix(sh_lines[i], "exts.b"))
+                        continue;
+                /* Get the dest register (same as source for ext rN,rN) */
+                {
+                        const char *r = NULL, *s = sh_lines[i];
+                        while (*s) {
+                                if (*s == 'r' && s[1] >= '0' && s[1] <= '9')
+                                        r = s;
+                                s++;
+                        }
+                        if (!r) continue;
+                        r++;
+                        rB = *r - '0';
+                        if (r[1] >= '0' && r[1] <= '9')
+                                rB = rB * 10 + (r[1] - '0');
+                }
+                /* Check preceding line: must be mov.b @rX,rB */
+                for (j = i - 1; j >= 0; j--)
+                        if (sh_lines[j][0] != 0) break;
+                if (j < 0) continue;
+                if (!sh_has_prefix(sh_lines[j], "mov.b")) continue;
+                if (!sh_writes_reg(sh_lines[j], rB)) continue;
+                /* Check following lines: add #imm,rB then mov.b rB,@rX */
+                for (k = i + 1; k < sh_nlines; k++)
+                        if (sh_lines[k][0] != 0) break;
+                if (k >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[k], "add")) continue;
+                if (!sh_writes_reg(sh_lines[k], rB)) continue;
+                for (m = k + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[m], "mov.b")) continue;
+                if (!(sh_regs_used(sh_lines[m]) & (1u << rB))) continue;
+                /* Pattern matched — extension is dead. */
+                sh_lines[i][0] = 0;
+        }
+}
+
 /* Delete `bt/bf Label` when Label is the immediately next non-empty
  * line. This is dead code from empty if-bodies like `if (x) {}`. */
 static void sh_elim_dead_branches(void) {
@@ -2913,6 +2961,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         sh_result_to_arg_reg();
         sh_elim_dead_branches();
+        sh_elim_dead_byte_ext();
 
         /* Rebuild usedmask from surviving body lines so dead-after-
          * peephole registers drop off the save/restore list. This is

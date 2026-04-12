@@ -15,7 +15,6 @@ _FUN_06000AF8:
 L2:
 	mov.l	L8,r1
 	mov.b	@r1,r2
-	extu.b	r2,r2
 	add	#1,r2
 	mov.b	r2,@r1
 L1:
