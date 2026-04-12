@@ -93,6 +93,7 @@ static int cseg;
 static int sh_sizeisave;
 static int sh_localsize;
 static int sh_fp_active;
+static int sh_all_returns_inlined;
 
 /* Literal pool: per-function table of 32-bit constants and symbol
  * addresses that can't be loaded with an inline 8-bit immediate.
@@ -1533,6 +1534,244 @@ static void sh_coalesce_move_chains(void) {
         }
 }
 
+/* Restructure cmp/eq chains from interleaved test-return blocks
+ * into a dispatch table followed by gathered return blocks.
+ *
+ * Before: cmp/eq #X,r0; bf Lskip; mov #V,r0; rts; pop; Lskip: ...
+ * After:  cmp/eq #X,r0; bt Lret; ... bra Ldefault; nop;
+ *         Lret: mov #V,r0; rts; pop; ...
+ *
+ * This matches Hitachi SHC's switch-like dispatch pattern. */
+static void sh_restructure_eq_chain(void) {
+        int i, j, n;
+        /* Detect: block starting with `cmp/eq #imm,r0; bf Label`
+         * followed by `mov #val,r0; rts; pop; Label:` repeated. */
+        struct eq_block {
+                int cmp_line;
+                int bf_line;
+                int mov_line;
+                int rts_line;
+                int pop_line;
+                int label_line;
+                char label[64];
+                int is_last_bt;
+        };
+        struct eq_block blocks[16];
+        int nblocks = 0;
+        int chain_start = -1;
+        int estab_line = -1;
+
+        for (i = 0; i < sh_nlines; i++) {
+                int rA, rB;
+                if (sh_lines[i][0] == 0) continue;
+                if (sh_parse_regmov(sh_lines[i], &rA, &rB)
+                    && rB == 0 && rA != 0) {
+                        /* Potential establishment: mov rA,r0 */
+                        for (j = i + 1; j < sh_nlines; j++)
+                                if (sh_lines[j][0] != 0) break;
+                        if (j < sh_nlines
+                            && sh_has_prefix(sh_lines[j], "cmp/eq")) {
+                                estab_line = i;
+                                chain_start = j;
+                                break;
+                        }
+                }
+        }
+        if (chain_start < 0) return;
+
+        /* Collect blocks. Skip `mov rA,r0` re-establishments
+         * between blocks (the redundant-mov pass removes them
+         * later, but hasn't run yet). */
+        i = chain_start;
+        while (i < sh_nlines && nblocks < 16) {
+                struct eq_block *b = &blocks[nblocks];
+                int m;
+                if (sh_lines[i][0] == 0) { i++; continue; }
+                if (sh_is_label_line(sh_lines[i])) { i++; continue; }
+                {
+                        int rA, rB;
+                        if (sh_parse_regmov(sh_lines[i], &rA, &rB)
+                            && rB == 0) { i++; continue; }
+                }
+                if (!sh_has_prefix(sh_lines[i], "cmp/eq")) break;
+                b->cmp_line = i;
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) break;
+                b->is_last_bt = sh_has_prefix(sh_lines[j], "bt");
+                if (!sh_has_prefix(sh_lines[j], "bf")
+                    && !sh_has_prefix(sh_lines[j], "bt"))
+                        break;
+                b->bf_line = j;
+                for (m = j + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) break;
+                if (!sh_has_prefix(sh_lines[m], "mov")) break;
+                b->mov_line = m;
+                for (m = m + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) break;
+                if (!sh_has_prefix(sh_lines[m], "rts")) break;
+                b->rts_line = m;
+                for (m = m + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) break;
+                b->pop_line = m;
+                for (m = m + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) break;
+                if (!sh_is_label_line(sh_lines[m])) break;
+                b->label_line = m;
+                {
+                        const char *lp = sh_lines[m];
+                        int len = 0;
+                        while (*lp == ' ' || *lp == '\t') lp++;
+                        while (lp[len] && lp[len] != ':'
+                               && lp[len] != '\n') len++;
+                        if (len <= 0 || len >= (int)sizeof b->label)
+                                break;
+                        memcpy(b->label, lp, (size_t)len);
+                        b->label[len] = 0;
+                }
+                nblocks++;
+                i = m + 1;
+        }
+
+        if (nblocks < 2) return;
+
+        /* Build new body section. First: dispatch table. */
+        {
+                char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+                int nout = 0;
+                int chain_end;
+                int default_mov = -1, default_rts = -1, default_pop = -1;
+
+                /* Copy everything before the chain. */
+                for (j = 0; j <= estab_line && nout < SH_MAX_LINES - 64;
+                     j++) {
+                        strncpy(new_lines[nout], sh_lines[j],
+                                SH_MAX_LINELEN - 1);
+                        new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                        nout++;
+                }
+
+                /* Emit dispatch: cmp/eq lines with bt to return labels.
+                 * Reuse the existing labels as return block labels. */
+                for (n = 0; n < nblocks; n++) {
+                        strncpy(new_lines[nout], sh_lines[blocks[n].cmp_line],
+                                SH_MAX_LINELEN - 1);
+                        new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                        nout++;
+                        snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                 "\tbt\t%s\n", blocks[n].label);
+                        nout++;
+                }
+
+                /* Default: bra + nop to the label after the last block.
+                 * The last block's label_line + 1 might have the default
+                 * code or the exit label. */
+                chain_end = blocks[nblocks - 1].label_line;
+
+                /* Find default block: lines after the last chain label
+                 * that aren't the exit label. */
+                for (j = chain_end + 1; j < sh_nlines; j++) {
+                        if (sh_lines[j][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[j])) break;
+                        if (default_mov < 0
+                            && sh_has_prefix(sh_lines[j], "mov"))
+                                default_mov = j;
+                        else if (sh_has_prefix(sh_lines[j], "rts"))
+                                default_rts = j;
+                        else
+                                default_pop = j;
+                }
+
+                {
+                        char def_label[64];
+                        struct eq_block *last = &blocks[nblocks - 1];
+                        snprintf(def_label, sizeof def_label,
+                                 "Ld%d", blocks[0].cmp_line);
+                        snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                 "\tbra\t%s\n", def_label);
+                        nout++;
+                        snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                 "\tnop\n");
+                        nout++;
+
+                        /* Emit return blocks. For `bf` blocks, the
+                         * body (mov/rts/pop) IS the match return. For
+                         * the last `bt` block, the body is the DEFAULT
+                         * and the match value is at the label. */
+                        for (n = 0; n < nblocks; n++) {
+                                struct eq_block *b = &blocks[n];
+                                snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                         "%s:\n", b->label);
+                                nout++;
+                                if (b->is_last_bt) {
+                                        /* Match value: from the code
+                                         * originally at the label. */
+                                        if (default_mov >= 0) {
+                                                strncpy(new_lines[nout],
+                                                        sh_lines[default_mov],
+                                                        SH_MAX_LINELEN - 1);
+                                                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                                                nout++;
+                                        }
+                                } else {
+                                        strncpy(new_lines[nout],
+                                                sh_lines[b->mov_line],
+                                                SH_MAX_LINELEN - 1);
+                                        new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                                        nout++;
+                                }
+                                snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                         "\trts\n");
+                                nout++;
+                                snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                         "\tmov.l\t@r15+,r14\n");
+                                nout++;
+                        }
+
+                        /* Default block: for the `bt` block, its body
+                         * (mov/rts/pop) is the default. Otherwise use
+                         * what was found after the chain. */
+                        snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                 "%s:\n", def_label);
+                        nout++;
+                        if (last->is_last_bt) {
+                                strncpy(new_lines[nout],
+                                        sh_lines[last->mov_line],
+                                        SH_MAX_LINELEN - 1);
+                                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                                nout++;
+                        } else if (default_mov >= 0) {
+                                strncpy(new_lines[nout],
+                                        sh_lines[default_mov],
+                                        SH_MAX_LINELEN - 1);
+                                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                                nout++;
+                        }
+                        snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                 "\trts\n");
+                        nout++;
+                        snprintf(new_lines[nout], SH_MAX_LINELEN,
+                                 "\tmov.l\t@r15+,r14\n");
+                        nout++;
+                }
+
+                /* The restructured chain handles all returns; the
+                 * original exit label and fall-through epilogue are
+                 * dead code. Don't copy them. */
+                sh_all_returns_inlined = 1;
+
+                /* Copy back. */
+                for (j = 0; j < nout; j++)
+                        strncpy(sh_lines[j], new_lines[j],
+                                SH_MAX_LINELEN - 1);
+                sh_nlines = nout;
+        }
+}
+
 /* Collapse `<pool_load> rA; mov rB,rC; add rA,rC` into
  * `<pool_load> rC; add rB,rC`. Swaps the pool load destination
  * into the result register and uses the other operand directly
@@ -2087,6 +2326,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         Symbol r, argregs[4];
 
         nshlit = 0;
+        sh_all_returns_inlined = 0;
 
         usedmask[0] = usedmask[1] = 0;
         freemask[0] = freemask[1] = ~(unsigned)0;
@@ -2273,6 +2513,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                   usedmask[IREG]);
         }
 
+        sh_restructure_eq_chain();
         sh_fold_conditional_delays();
         sh_swap_pool_add();
         sh_coalesce_move_chains();
@@ -2348,7 +2589,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         fputs(sh_lines[j], stdout);
                 }
 
-                if (has_prologue) {
+                if (has_prologue && !sh_all_returns_inlined) {
                         /* Pop order is the reverse of push order:
                          * PR first (if saved), then r8..r14. The
                          * SH-2 architectural rule `lds.l @r15+,pr`
@@ -2377,7 +2618,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                 fputs(sh_lines[delay_idx], stdout);
                         else
                                 print("\tnop\n");
-                } else {
+                } else if (!sh_all_returns_inlined) {
                         print("\trts\n");
                         if (delay_idx >= 0)
                                 fputs(sh_lines[delay_idx], stdout);

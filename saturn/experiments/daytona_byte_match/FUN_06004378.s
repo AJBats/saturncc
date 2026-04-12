@@ -31,30 +31,32 @@ L15:	.short	201
 L4:
 	mov	r14,r0
 	cmp/eq	#34,r0
-	bf	L6
+	bt	L6
+	cmp/eq	#39,r0
+	bt	L8
+	cmp/eq	#45,r0
+	bt	L10
+	cmp/eq	#46,r0
+	bt	L12
+	bra	Ld28
+	nop
+L6:
 	mov	#37,r0
 	rts
 	mov.l	@r15+,r14
-L6:
-	cmp/eq	#39,r0
-	bf	L8
+L8:
 	mov	#36,r0
 	rts
 	mov.l	@r15+,r14
-L8:
-	cmp/eq	#45,r0
-	bf	L10
-	mov	#38,r0
-	rts
-	mov.l	@r15+,r14
 L10:
-	cmp/eq	#46,r0
-	bt	L12
-	mov	#41,r0
+	mov	#38,r0
 	rts
 	mov.l	@r15+,r14
 L12:
 	mov	#39,r0
-L1:
+	rts
+	mov.l	@r15+,r14
+Ld28:
+	mov	#41,r0
 	rts
 	mov.l	@r15+,r14
