@@ -1,96 +1,122 @@
-# Session handoff — 2026-04-12
+# Session handoff — 2026-04-12 (session 2)
 
 ## What happened this session
 
-22 commits taking the SH-2 backend from instruction-count matching
-to near-perfect byte matching on 3 Daytona CCE functions:
+4 commits advancing the SH-2 backend toward Hitachi SHC byte-matching:
 
-- FUN_06004378 (backup): 98/100 bytes match (98%)
-- FUN_00280710 (main): 23/26 bytes match (88%)
-- FUN_06000AF8 (backup): 29/34 bytes match (85%)
+### e1bd7b8 — muls.w via core LCC mul_src_width
+Threaded pre-promotion operand width through LCC core (c.h → enode.c
+→ dag.c) so the backend automatically emits `muls.w` when either
+multiply operand originated from a type ≤ 2 bytes. No pragma needed —
+normal C with `short` types produces the right instruction. This is a
+principled core change, not a backend hack.
 
-All remaining mismatches are pool displacement bytes from compiling
-functions in isolation (TU context). Every instruction opcode
-matches the Hitachi SHC reference byte-for-byte.
+### bf6c039 — Fix && crash + validate_build.sh
+Fixed segfault in emit2's cmp/eq #imm handler when the same constant
+appears in a short-circuit && chain. LCC CSEs the constant into a
+VREG; emit2 now follows the CSE pointer to recover the value.
 
-## Major backend changes made
+Added `saturn/tools/validate_build.sh` — pre-commit gate that builds,
+compiles all experiments, checks .s stability vs HEAD, and runs
+regression tests. Rule in `.claude/rules/validate-before-commit.md`
+requires it before every commit.
 
-1. **Speculative r14 allocation** — widened INTVAR to include r14,
-   with post-peephole rename when FP conflicts arise
-2. **Scratch register priority** — custom wildcard array (ireg_prio)
-   for Hitachi-matching allocation order
-3. **cmp/eq #imm8,R0** — immediate compare opcode 88xx with rtarget
-4. **Inline return epilogues** — duplicated rts at each exit point
-5. **Literal pool interleaving** — mid-function pool placement at
-   dead zones, with 3rd-to-last heuristic for eq-chain position
-6. **Arg register propagation** — rtarget through CVI/CVU/INDIR
-   chains for jsr delay slot fill
-7. **Signed comparison rules** — LTI4/LEI4 use cmp/ge;bf form
-8. **Word pool** — .short entries for 16-bit constants via mov.w
-9. **Eq chain restructuring** — dispatch table + gathered return
-   blocks with swapped first-two-block ordering
-10. **Boolean FP rewrite** — bf/s + mov r15,r14 always-FP pattern
-11. **Pre-call arg reordering** — descending register order body
-    buffer rewrite to match right-to-left evaluation
-12. **Result-to-arg-reg** — rename callee-saved result to freed r4
-13. **Post-call counter rewrite** — r5/r3 register reuse + tst
-    interleaving
-14. **Range register diversification** — r3/r2/r1 cycling for
-    comparison constant registers
-15. **Dead branch/extension elimination** — peepholes for empty
-    if-bodies and byte load-add-store patterns
-16. **Multiply + shift** — mul.l, shll, shll2, shlr, shar rules
-17. **Function pointer targeting** — rtarget CALL kid to r3
+### 4fc53d7 — validate-before-commit rule
 
-## Files modified
+### 23f59e6 — braf jump table dispatch
+Added `switchjump` target hook to LCC's Interface (c.h, stmt.c). The
+SH-2 backend implements it to emit the Hitachi SHC braf dispatch:
 
-- `src/sh.md` — the backend (main edit target, now ~3100 lines)
-- `src/gen.c` — NOT modified (all changes through backend hooks)
-- `saturn/experiments/daytona_byte_match/` — C sources + outputs
-- `saturn/experiments/daytona_byte_match/race_tu1/` — new TU target
-- `saturn/workstreams/byte_match_status.md` — tracking doc
+```asm
+shll r0           ; index * 2
+mov  r0,r1
+mova table,r0
+mov.w @(r0,r1),r0
+braf r0
+nop
+table:
+.short case0 - table
+...
+```
 
-## Where we left off
+Exact opcode match to FUN_06037E28's reference dispatch sequence.
+Proven on switch_test.c. Blocked from use in FUN_06037E28 by the
+crash below.
 
-Started FUN_06037E28 from the race module — a 232-line function
-in a 4-function TU at `D:/Projects/DaytonaCCEReverse/mods/transplant/race/FUN_06037E28.s`.
+## Active blocker: switch + register argument crash
 
-First compile of the C skeleton shows gaps:
+### Minimal reproducer
+```c
+extern void stub0(int);
+extern void stub1(int);
+extern void stub2(int);
+extern void stub3(int);
+extern void stub4(int);
 
-1. **muls.w missing** — reference uses 16-bit signed multiply
-   (muls.w Rm,Rn; sts macl,Rd). We emit mul.l (32-bit). Need a
-   rule that fires when operands fit in 16 bits, or when the C
-   uses short types.
+int test(int state, int x) {
+    switch (state) {       // 5 cases → table dispatch
+    case 0: stub0(x); break;
+    case 1: stub1(x); break;
+    case 2: stub2(x); break;
+    case 3: stub3(x); break;
+    case 4: stub4(x); break;
+    }
+    return 0;
+}
+```
 
-2. **MACL save/restore** — reference saves/restores MACL in
-   prologue/epilogue (sts.l macl,@-r15 / lds.l @r15+,macl). Our
-   prologue doesn't handle MACL. Need to detect when MACL is used
-   and add save/restore.
+### What works / what doesn't
+- `stub0(42)` (constant arg) — **works**
+- `stub0()` (void, no args) — **works**
+- `stub0(x)` where x is a param — **crashes**
+- `stub0(state)` (switch var as arg) — **crashes**
+- 3 cases (if-else mode, no table) with param arg — also **crashes**
 
-3. **Param stack spill** — reference spills param_1 to stack
-   before the jsr call (mov.b r4,@r15), then reloads after
-   (mov.b @r15,r14). Our code uses the jsr delay slot to copy
-   param to r14. The reference can't do this because it calls
-   setup_func first, then computes the struct pointer.
+### Diagnosis
+The crash kills the entire WSL instance (SIGTERM/exit 15). It's
+**pre-existing** — happens on the original compiler before any session
+changes. The crash is in `gencode()` → `gen()` during instruction
+selection/register allocation. The `ARG+I` node's `rtarget` (targeting
+the argument to r4) conflicts with the switch dispatch machinery
+when the argument is a register variable (not a constant).
 
-4. **The switch body** — 10 cases with complex control flow,
-   function pointer calls, struct field modifications. Ghidra C
-   at `D:/Projects/DaytonaCCEReverse/ghidra_reference/race/FUN_06037E28.c`.
+GDB can't attach because the crash takes out the whole process. ASAN
+also gets killed. The stack was confirmed not to be the issue (static
+buffers, unlimited stack size tested).
 
-5. **Functions 2-4 in the TU** — FUN_06037FD6, FUN_06038202,
-   FUN_0603833C share callee-saved registers set by FUN_06037E28.
-   Need to understand the calling convention between them.
+### Likely root cause
+In `gen.c`, `rewrite()` calls `prelabel()` → `target()` which sets
+`rtarget` on ARG nodes. For 4+ case switches, the switch variable is
+in a register that also needs to survive across the table dispatch.
+When an argument also references a register, the combination of
+rtargets creates an unresolvable conflict in `ralloc()`, causing
+infinite looping or stack overflow in the register spiller.
 
-## Critical project context
+### Suggested approach
+1. Build with `-g -O0` and use `ulimit -s unlimited` + `ulimit -v 500000`
+   (limit virtual memory to catch the crash before it kills WSL)
+2. Check if `ralloc()` in gen.c enters an infinite spill loop
+3. The fix may require adding a `JUMPV(reg)` rule to the backend as
+   an alternative to the switchjump hook — letting gen.c handle the
+   table dispatch through normal register allocation instead of
+   bypassing it
 
-**Byte matching is binary — 100% or nothing.** There is no partial
-credit. The entire LCC codebase is fair game for modification
-(gen.c, dag.c, etc.), not just the backend in sh.md. When hitting
-an LCC design limitation, modify LCC itself.
+### Key file for reproducing
+`saturn/experiments/daytona_byte_match/race_tu1/crash_repro.c`
 
-## Key files to read
+## FUN_06037E28 status
 
-- `saturn/workstreams/byte_match_status.md` — detailed gap analysis
-- `saturn/experiments/daytona_byte_match/race_tu1/FUN_06037E28.c` — current C skeleton
-- `D:/Projects/DaytonaCCEReverse/mods/transplant/race/FUN_06037E28.s` — reference asm (954 lines)
-- `D:/Projects/DaytonaCCEReverse/ghidra_reference/race/FUN_06037E28.c` — Ghidra decompiled C
+The C source has: prologue, multiply (muls.w), struct pointer,
+secondary pointer load, early return for state==10, pre-switch guard
+(states 6/7/8 bypass with && conditions). Switch body is blocked by
+the crash above.
+
+## Files modified this session
+- `src/c.h` — mul_src_width field, switchjump hook
+- `src/enode.c` — capture operand width in multree()
+- `src/dag.c` — carry mul_src_width through DAG
+- `src/stmt.c` — call switchjump hook from swcode()
+- `src/sh.md` — muls.w emit, MACL save/restore, && CSE fix, braf
+  dispatch, static peephole buffers
+- `saturn/tools/validate_build.sh` — pre-commit validation
+- `.claude/rules/validate-before-commit.md`
