@@ -175,6 +175,7 @@ enum {
 struct node {
 	short op;
 	short count;
+	short mul_src_width;
  	Symbol syms[3];
 	Node kids[2];
 	Node link;
@@ -314,6 +315,7 @@ struct tree {
 
 		Field field;
 	} u;
+	short mul_src_width;
 };
 enum {
 	AND=38<<4,

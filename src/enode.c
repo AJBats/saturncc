@@ -462,14 +462,25 @@ Tree bittree(int op, Tree l, Tree r) {
 /* multree - construct tree for l [* /] r */
 static Tree multree(int op, Tree l, Tree r) {
 	Type ty = inttype;
+	int lw = 0, rw = 0;
 
 	if (isarith(l->type) && isarith(r->type)) {
+		lw = l->type->size;
+		rw = r->type->size;
 		ty = binary(l->type, r->type);
 		l = cast(l, ty);
-		r = cast(r, ty);		
+		r = cast(r, ty);
 	} else
 		typeerror(op, l, r);
-	return simplify(op, ty, l, r);
+	{
+		Tree result = simplify(op, ty, l, r);
+		if (generic(result->op) == MUL) {
+			int minw = lw < rw ? lw : rw;
+			if (minw > 0 && minw < ty->size)
+				result->mul_src_width = minw;
+		}
+		return result;
+	}
 }
 
 /* shtree - construct tree for l [>> <<] r */

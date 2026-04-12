@@ -325,6 +325,7 @@ Node listnodes(Tree tp, int tlab, int flab) {
 		      l = listnodes(tp->kids[0], 0, 0);
 		      r = listnodes(tp->kids[1], 0, 0);
 		      p = node(op, l, r, NULL);
+		      p->mul_src_width = tp->mul_src_width;
 		      if (IR->mulops_calls && isint(tp->type)) {
 		      	list(p);
 		      	cfunc->u.f.ncalls++;

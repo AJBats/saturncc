@@ -94,6 +94,7 @@ static int sh_sizeisave;
 static int sh_localsize;
 static int sh_fp_active;
 static int sh_all_returns_inlined;
+static int sh_uses_macl;
 
 /* Literal pool: per-function table of 32-bit constants and symbol
  * addresses that can't be loaded with an inline 8-bit immediate.
@@ -1040,9 +1041,16 @@ static void emit2(Node p) {
                 break;
         case MUL+I: case MUL+U:
                 dst = getregnum(p);
-                print("\tmul.l\tr%d,r%d\n",
-                      getregnum(p->kids[1]),
-                      getregnum(p->kids[0]));
+                sh_uses_macl = 1;
+                if (p->mul_src_width && p->mul_src_width <= 2) {
+                        print("\tmuls.w\tr%d,r%d\n",
+                              getregnum(p->kids[1]),
+                              getregnum(p->kids[0]));
+                } else {
+                        print("\tmul.l\tr%d,r%d\n",
+                              getregnum(p->kids[1]),
+                              getregnum(p->kids[0]));
+                }
                 print("\tsts\tmacl,r%d\n", dst);
                 break;
         }
@@ -2263,6 +2271,7 @@ static void sh_reorder_extu_mov(void) {
  * This matches Hitachi SHC's switch-like dispatch pattern. */
 static void sh_restructure_eq_chain(void) {
         int i, j, n;
+        
         /* Detect: block starting with `cmp/eq #imm,r0; bf Label`
          * followed by `mov #val,r0; rts; pop; Label:` repeated. */
         struct eq_block {
@@ -2813,6 +2822,9 @@ static void sh_inline_returns(const char *exit_label,
                 if (need_fp)
                         snprintf(new_lines[nout++], SH_MAX_LINELEN,
                                  "\tmov\tr14,r15\n");
+                if (sh_uses_macl)
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\tlds.l\t@r15+,macl\n");
                 if (ncalls) {
                         int has_reg_pop = 0;
                         for (k = 8; k <= 14; k++)
@@ -3070,6 +3082,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         nshlit = 0;
         sh_all_returns_inlined = 0;
+        sh_uses_macl = 0;
 
         usedmask[0] = usedmask[1] = 0;
         freemask[0] = freemask[1] = ~(unsigned)0;
@@ -3248,6 +3261,12 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 }
         }
 
+        if (sh_uses_macl) {
+                sizeisave += 4;
+                framesize = sizeisave;
+                sh_sizeisave = sizeisave;
+        }
+
         has_prologue = need_fp || ncalls || usedmask[IREG] != 0;
 
         /* Inline epilogues at each `bra <exit>` to match Hitachi's
@@ -3285,6 +3304,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                 print("\tmov.l\tr%d,@-r15\n", i);
                 if (ncalls)
                         print("\tsts.l\tpr,@-r15\n");
+                if (sh_uses_macl)
+                        print("\tsts.l\tmacl,@-r15\n");
                 if (need_fp) {
                         print("\tmov\tr15,r14\n");
                         if (localsize > 0)
@@ -3353,6 +3374,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                          * fall through to a body line or nop. */
                         if (need_fp)
                                 print("\tmov\tr14,r15\n");
+                        if (sh_uses_macl)
+                                print("\tlds.l\t@r15+,macl\n");
                         for (i = 0; i < npops; i++) {
                                 if (i == last_reg_pop)
                                         continue;
