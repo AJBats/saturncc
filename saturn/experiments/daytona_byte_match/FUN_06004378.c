@@ -26,11 +26,11 @@
  * `mov.w @(disp,PC)`. The actual values from the binary are 0x00D0
  * and 0x00C9 — known short constants, not runtime dereferences. */
 
-int FUN_06004378(unsigned int c) {
-    unsigned int u = c & 0xff;
-    if ((int)u >= 0x30 && (int)u <= 0x39)
+int FUN_06004378(int c) {
+    int u = c & 0xff;
+    if (u >= 0x30 && u <= 0x39)
         return 0x00D0 + c;
-    if ((int)u >= 0x41 && (int)u <= 0x5a)
+    if (u >= 0x41 && u <= 0x5a)
         return 0x00C9 + c;
     if (u == 0x22) return 0x25;
     if (u == 0x27) return 0x24;
