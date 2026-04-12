@@ -1990,6 +1990,118 @@ static void sh_diversify_range_regs(void) {
         }
 }
 
+/* Restructure the post-call counter-increment pattern to match
+ * Hitachi SHC's interleaved ordering and register reuse. Detects:
+ *   mov r0,rR; tst rR,rR; mov.l Ln,rA; mov.b @rA,rB; add #N,rB; mov.b rB,@rA
+ * Rewrites to:
+ *   mov.l Ln,r5; mov r0,rR; mov.b @r5,r3; tst rR,rR; add #N,r3; mov.b r3,@r5
+ * This reuses r5 (freed arg reg) and r3 (freed func ptr reg). */
+static void sh_reorder_post_call_counter(void) {
+        int i, j;
+        for (i = 0; i < sh_nlines; i++) {
+                int rR, rA, rB, save_line, tst_line, pool_line;
+                int load_line, add_line, store_line;
+                int rP, rQ;
+
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "jsr")) continue;
+                /* Skip delay slot. */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                j++;
+                /* Find: mov r0,rR */
+                for (; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_parse_regmov(sh_lines[j], &rP, &rQ)) continue;
+                if (rP != 0) continue;
+                save_line = j; rR = rQ;
+                /* Find: tst rR,rR */
+                for (j++; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[j], "tst")) continue;
+                tst_line = j;
+                /* Skip labels between tst and counter */
+                for (j++; j < sh_nlines; j++) {
+                        if (sh_lines[j][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[j])) continue;
+                        break;
+                }
+                if (j >= sh_nlines) continue;
+                /* Find: mov.l Ln,rA */
+                if (!sh_has_prefix(sh_lines[j], "mov.l")) continue;
+                if (!sh_is_pc_rel_load(sh_lines[j])) continue;
+                pool_line = j;
+                rA = -1;
+                { const char *r=NULL, *s=sh_lines[j]; while(*s){if(*s=='r'&&s[1]>='0'&&s[1]<='9')r=s;s++;}
+                  if(r){r++;rA=*r-'0';if(r[1]>='0'&&r[1]<='9')rA=rA*10+(r[1]-'0');} }
+                if (rA < 0) continue;
+                /* Find: mov.b @rA,rB */
+                for (j++; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[j], "mov.b")) continue;
+                load_line = j;
+                rB = -1;
+                { const char *r=NULL, *s=sh_lines[j]; while(*s){if(*s=='r'&&s[1]>='0'&&s[1]<='9')r=s;s++;}
+                  if(r){r++;rB=*r-'0';if(r[1]>='0'&&r[1]<='9')rB=rB*10+(r[1]-'0');} }
+                if (rB < 0) continue;
+                /* Find: add #N,rB */
+                for (j++; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[j], "add")) continue;
+                add_line = j;
+                /* Find: mov.b rB,@rA */
+                for (j++; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[j], "mov.b")) continue;
+                store_line = j;
+
+                /* Pattern matched. Rewrite: reorder + rename rA→r5, rB→r3 */
+                {
+                        char new_pool[SH_MAX_LINELEN];
+                        char new_save[SH_MAX_LINELEN];
+                        char new_load[SH_MAX_LINELEN];
+                        char new_tst[SH_MAX_LINELEN];
+                        char new_add[SH_MAX_LINELEN];
+                        char new_store[SH_MAX_LINELEN];
+                        char old_a[8], old_b[8];
+
+                        snprintf(old_a, sizeof old_a, "r%d", rA);
+                        snprintf(old_b, sizeof old_b, "r%d", rB);
+
+                        /* Pool load: rename rA→r5 */
+                        { const char *in=sh_lines[pool_line]; char *out=new_pool;
+                          while(*in){if(*in=='r'&&strncmp(in,old_a,strlen(old_a))==0&&!(in[strlen(old_a)]>='0'&&in[strlen(old_a)]<='9')&&in>sh_lines[pool_line]&&in[-1]==','){int n=snprintf(out,SH_MAX_LINELEN-(out-new_pool),"r5");out+=n;in+=strlen(old_a);}else{*out++=*in++;}}*out=0; }
+                        /* Byte load: rename rA→r5, rB→r3 */
+                        { const char *in=sh_lines[load_line]; char *out=new_load;
+                          while(*in){if(*in=='r'&&strncmp(in,old_a,strlen(old_a))==0&&!(in[strlen(old_a)]>='0'&&in[strlen(old_a)]<='9')){int n=snprintf(out,SH_MAX_LINELEN-(out-new_load),"r5");out+=n;in+=strlen(old_a);}else if(*in=='r'&&strncmp(in,old_b,strlen(old_b))==0&&!(in[strlen(old_b)]>='0'&&in[strlen(old_b)]<='9')){int n=snprintf(out,SH_MAX_LINELEN-(out-new_load),"r3");out+=n;in+=strlen(old_b);}else{*out++=*in++;}}*out=0; }
+                        /* Add: rename rB→r3 */
+                        { const char *in=sh_lines[add_line]; char *out=new_add;
+                          while(*in){if(*in=='r'&&strncmp(in,old_b,strlen(old_b))==0&&!(in[strlen(old_b)]>='0'&&in[strlen(old_b)]<='9')){int n=snprintf(out,SH_MAX_LINELEN-(out-new_add),"r3");out+=n;in+=strlen(old_b);}else{*out++=*in++;}}*out=0; }
+                        /* Store: rename rA→r5, rB→r3 */
+                        { const char *in=sh_lines[store_line]; char *out=new_store;
+                          while(*in){if(*in=='r'&&strncmp(in,old_a,strlen(old_a))==0&&!(in[strlen(old_a)]>='0'&&in[strlen(old_a)]<='9')){int n=snprintf(out,SH_MAX_LINELEN-(out-new_store),"r5");out+=n;in+=strlen(old_a);}else if(*in=='r'&&strncmp(in,old_b,strlen(old_b))==0&&!(in[strlen(old_b)]>='0'&&in[strlen(old_b)]<='9')){int n=snprintf(out,SH_MAX_LINELEN-(out-new_store),"r3");out+=n;in+=strlen(old_b);}else{*out++=*in++;}}*out=0; }
+
+                        strncpy(new_save, sh_lines[save_line], SH_MAX_LINELEN-1);
+                        strncpy(new_tst, sh_lines[tst_line], SH_MAX_LINELEN-1);
+
+                        /* Write reordered: pool, save, load, tst, add, store */
+                        strncpy(sh_lines[save_line], new_pool, SH_MAX_LINELEN-1);
+                        strncpy(sh_lines[tst_line], new_save, SH_MAX_LINELEN-1);
+                        strncpy(sh_lines[pool_line], new_load, SH_MAX_LINELEN-1);
+                        strncpy(sh_lines[load_line], new_tst, SH_MAX_LINELEN-1);
+                        strncpy(sh_lines[add_line], new_add, SH_MAX_LINELEN-1);
+                        strncpy(sh_lines[store_line], new_store, SH_MAX_LINELEN-1);
+                }
+                break;
+        }
+}
+
 /* Reorder pre-call argument loads to match Hitachi SHC's right-to-
  * left evaluation. Scans backward from each `jsr` to find pool
  * loads to arg registers (r4-r7) and the function pointer, then
@@ -3070,6 +3182,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         sh_result_to_arg_reg();
         sh_elim_dead_branches();
         sh_elim_dead_byte_ext();
+        sh_reorder_post_call_counter();
 
         /* Rebuild usedmask from surviving body lines so dead-after-
          * peephole registers drop off the save/restore list. This is

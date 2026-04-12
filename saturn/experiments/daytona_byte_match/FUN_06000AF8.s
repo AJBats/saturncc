@@ -10,13 +10,13 @@ _FUN_06000AF8:
 	mov.w	@r4,r4
 	jsr	@r3
 	extu.w	r4,r4
+	mov.l	L8,r5
 	mov	r0,r4
-	tst	r4,r4
 L2:
-	mov.l	L8,r1
-	mov.b	@r1,r2
-	add	#1,r2
-	mov.b	r2,@r1
+	mov.b	@r5,r3
+	tst	r4,r4
+	add	#1,r3
+	mov.b	r3,@r5
 L1:
 	lds.l	@r15+,pr
 	rts
