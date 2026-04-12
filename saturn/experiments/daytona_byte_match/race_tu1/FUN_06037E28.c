@@ -39,5 +39,8 @@ int FUN_06037E28(int param_1) {
         }
     }
 
+    /* TODO: switch body — blocked by crash when switch + computed
+     * local variable coexist in the same function (stack overflow
+     * or register allocator crash, pre-existing LCC issue). */
     return state;
 }

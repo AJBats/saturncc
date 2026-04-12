@@ -73,6 +73,7 @@ static void space(int);
 static void target(Node);
 static Symbol argreg(int);
 static void sh_pragma(char *name);
+static int sh_switchjump(Swtch, long *, int, int, Symbol *, Symbol, int, int);
 
 extern void (*shc_pragma_hook)(char *name);
 
@@ -95,6 +96,20 @@ static int sh_localsize;
 static int sh_fp_active;
 static int sh_all_returns_inlined;
 static int sh_uses_macl;
+
+/* Switch jump table: recorded by sh_switchjump() during front-end
+ * processing, emitted by sh_emit_switch_dispatch() after body capture.
+ * Only one switch table per function is supported (enough for Daytona). */
+#define SH_MAX_SWITCH_LABELS 64
+static struct {
+        int active;
+        int dispatch_lab;         /* label where braf dispatch goes */
+        int deflab;               /* default/out-of-range label */
+        int ncases;               /* number of table entries */
+        int min_val;              /* minimum case value */
+        char labels[SH_MAX_SWITCH_LABELS][64]; /* case label names */
+        char deflabel[64];        /* default label name */
+} sh_switch;
 
 /* Literal pool: per-function table of 32-bit constants and symbol
  * addresses that can't be loaded with an inline 8-bit immediate.
@@ -663,6 +678,71 @@ static void sh_pragma(char *name) {
                 if (gettok() == ID)
                         gbr_base_cname = string(token);
         }
+}
+
+/* Switch jump table hook. Called from swcode() in stmt.c when a
+ * dense switch range has 4+ cases. Emits bounds check + records
+ * table metadata for post-capture emission of the SH-2 braf idiom. */
+static int sh_switchjump(Swtch swp, long *v, int l, int u,
+                         Symbol *labels, Symbol deflab,
+                         int lolab, int hilab)
+{
+        int i, tablesize;
+        Type ty = signedint(swp->sym->type);
+
+        /* Only handle the case where lo/hi both go to default
+         * (single dense bucket — the common case for Daytona). */
+        if (lolab != deflab->u.l.label || hilab != deflab->u.l.label)
+                return 0;
+
+        tablesize = (int)(v[u] - v[l] + 1);
+        if (tablesize > SH_MAX_SWITCH_LABELS)
+                return 0;
+
+        /* Emit bounds check: if state > max, goto default. */
+        {
+                Type ty = signedint(swp->sym->type);
+                listnodes(eqtree(GT,
+                        cast(idtree(swp->sym), ty),
+                        cnsttree(ty, v[u])),
+                        deflab->u.l.label, 0);
+                walk(NULL, 0, 0);
+        }
+
+        /* No definelab here — branch() in swstmt would equate
+         * and remove it.  The post-capture pass finds the insertion
+         * point by matching the bounds-check pattern instead. */
+
+        /* Record metadata for the post-capture pass. */
+        sh_switch.active = 1;
+        sh_switch.min_val = (int)v[l];
+        sh_switch.ncases = tablesize;
+        snprintf(sh_switch.deflabel, sizeof sh_switch.deflabel,
+                 "%s", deflab->x.name);
+        {
+                int idx = 0;
+                long val;
+                for (val = v[l]; val <= v[u]; val++) {
+                        /* Find the label for this value, or use default. */
+                        int found = 0;
+                        for (i = l; i <= u; i++) {
+                                if (v[i] == val) {
+                                        snprintf(sh_switch.labels[idx],
+                                                 sizeof sh_switch.labels[idx],
+                                                 "%s", labels[i]->x.name);
+                                        found = 1;
+                                        break;
+                                }
+                        }
+                        if (!found)
+                                snprintf(sh_switch.labels[idx],
+                                         sizeof sh_switch.labels[idx],
+                                         "%s", deflab->x.name);
+                        idx++;
+                }
+        }
+
+        return 1;
 }
 
 static int sh_log2_align(int a) {
@@ -1603,7 +1683,7 @@ static void sh_rewrite_bool_fp(int need_fp) {
         int i, j, k, m, n;
         int rA, rB, rX, rY, rP, rQ;
         char label_bfs[64], label_merge[64];
-        char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
         int nout = 0;
 
         if (need_fp) return;
@@ -2385,7 +2465,7 @@ static void sh_restructure_eq_chain(void) {
 
         /* Build new body section. First: dispatch table. */
         {
-                char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+                static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
                 int nout = 0;
                 int chain_end;
                 int default_mov = -1, default_rts = -1, default_pop = -1;
@@ -2806,7 +2886,7 @@ static void sh_inline_returns(const char *exit_label,
                               int need_fp, int ncalls,
                               unsigned umask)
 {
-        char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
         int nout = 0;
         int i, j, k;
         char bra_pat[64];
@@ -2940,6 +3020,107 @@ static void sh_inline_returns(const char *exit_label,
  *
  * If no dead zone exists in the body (no inline returns), the pool
  * stays at the end and shlit_flush() handles it as before. */
+
+/* Replace the dispatch label placeholder with the SH-2 braf jump
+ * table idiom:
+ *   shll r0          ; index * 2 (for .short entries)
+ *   mov  r0,r1
+ *   mova .Ltable,r0  ; table address
+ *   mov.w @(r0,r1),r0 ; load offset
+ *   braf r0          ; PC + 4 + offset
+ *   nop
+ * .Ltable:
+ *   .short case0 - .Ltable
+ *   .short case1 - .Ltable
+ *   ...
+ */
+static void sh_emit_switch_dispatch(void) {
+        int i, j, insert_after = -1;
+        static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        int nout = 0;
+        char table_label[32];
+        char bt_pattern[64];
+
+        if (!sh_switch.active)
+                return;
+
+        snprintf(table_label, sizeof table_label,
+                 "Lswt%d", sh_switch.dispatch_lab);
+        /* Match either bt (from GE/GT) for the bounds check. */
+        snprintf(bt_pattern, sizeof bt_pattern,
+                 "\tbt\t%s\n", sh_switch.deflabel);
+
+        /* Find the bounds-check bt instruction. The braf dispatch
+         * replaces the bra+nop that follows it. */
+        for (i = 0; i < sh_nlines; i++)
+                if (sh_lines[i][0] != 0
+                    && strcmp(sh_lines[i], bt_pattern) == 0) {
+                        insert_after = i;
+                        break;
+                }
+
+        if (insert_after < 0) {
+                sh_switch.active = 0;
+                return;
+        }
+
+        for (i = 0; i < sh_nlines && nout < SH_MAX_LINES - 32; i++) {
+                if (sh_lines[i][0] == 0)
+                        continue;
+                strncpy(new_lines[nout], sh_lines[i],
+                        SH_MAX_LINELEN - 1);
+                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                nout++;
+
+                if (i != insert_after)
+                        continue;
+
+                /* Skip the bra+nop that follows the bt (swstmt's
+                 * fallthrough branch — unreachable with braf). */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j < sh_nlines
+                    && sh_has_prefix(sh_lines[j], "\tbra")) {
+                        sh_lines[j][0] = 0;
+                        for (j = j + 1; j < sh_nlines; j++)
+                                if (sh_lines[j][0] != 0) break;
+                        if (j < sh_nlines
+                            && sh_has_prefix(sh_lines[j], "\tnop"))
+                                sh_lines[j][0] = 0;
+                }
+
+                /* Insert braf dispatch idiom. */
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tshll\tr0\n");
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tmov\tr0,r1\n");
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tmova\t%s,r0\n", table_label);
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tmov.w\t@(r0,r1),r0\n");
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tbraf\tr0\n");
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tnop\n");
+                /* Emit the .short offset table. */
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "%s:\n", table_label);
+                for (j = 0; j < sh_switch.ncases; j++)
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\t.short\t%s - %s\n",
+                                 sh_switch.labels[j], table_label);
+        }
+
+        /* Copy back. */
+        sh_nlines = nout;
+        for (i = 0; i < nout; i++) {
+                strncpy(sh_lines[i], new_lines[i], SH_MAX_LINELEN - 1);
+                sh_lines[i][SH_MAX_LINELEN - 1] = 0;
+        }
+
+        sh_switch.active = 0;
+}
+
 static void sh_interleave_pool(void) {
         int i, j, k;
         int last_pool_ref = -1;
@@ -3238,6 +3419,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         sh_rename_r14_var(r14_rename_to);
         }
 
+        sh_emit_switch_dispatch();
         sh_result_to_arg_reg();
         sh_elim_dead_branches();
         sh_elim_dead_byte_ext();
@@ -3583,6 +3765,7 @@ Interface shIR = {
         segment,
         space,
         0, 0, 0, stabinit, stabline, stabsym, 0,
+        sh_switchjump,
         {
                 4,  /* max_unaligned_load */
                 rmap,

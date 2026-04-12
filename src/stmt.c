@@ -436,6 +436,12 @@ void swcode(Swtch swp, int b[], int lb, int ub) {
 				branch(lolab);
 			walk(NULL, 0, 0);
 		}
+	else if (IR->switchjump
+	         && (*IR->switchjump)(swp, v, l, u,
+	                              swp->labels, swp->deflab,
+	                              lolab, hilab)) {
+		/* Backend handled the entire table dispatch. */
+	}
 	else {
 		Tree e;
 		Type ty = signedint(swp->sym->type);

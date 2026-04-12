@@ -146,6 +146,7 @@ void (*stabinit) (char *, int, char *[]);
 void (*stabline) (Coordinate *);
 void (*stabsym)  (Symbol);
 void (*stabtype) (Symbol);
+int  (*switchjump)(Swtch, long *v, int l, int u, Symbol *labels, Symbol deflab, int lolab, int hilab);
 	Xinterface x;
 } Interface;
 typedef struct binding {
