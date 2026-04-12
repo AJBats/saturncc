@@ -52,12 +52,13 @@ extern int ext_func(unsigned short, const char *, void *);
 extern unsigned short dat_06039FC8;
 extern const char daytona96_str[];     /* 0x06036808 */
 extern char ram_06036F58_base;         /* 0x06036F58 */
-extern char cnt_06036F37;              /* 0x06036F37 */
+extern unsigned char cnt_06036F37;     /* 0x06036F37 */
 
 int FUN_06000AF8(void) {
     int result;
     result = ext_func(dat_06039FC8, daytona96_str,
                       (void *)&ram_06036F58_base);
+    if (result) { }
     cnt_06036F37 = cnt_06036F37 + 1;
     return result;
 }

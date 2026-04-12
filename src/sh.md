@@ -1737,6 +1737,98 @@ copy_line:
         }
 }
 
+/* Reorder pre-call argument loads to match Hitachi SHC's right-to-
+ * left evaluation. Scans backward from each `jsr` to find pool
+ * loads to arg registers (r4-r7) and the function pointer, then
+ * sorts them in descending register order with any dereferences
+ * (mov.w @rN,rN) placed after all pool loads. */
+static void sh_reorder_pre_call_args(void) {
+        int i, j, k;
+        for (i = 0; i < sh_nlines; i++) {
+                int jsr_line, first_arg_line;
+                struct { int line; int reg; int is_deref; } loads[16];
+                int nloads = 0;
+
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "jsr")) continue;
+                jsr_line = i;
+
+                /* Scan backward to collect pool loads and derefs. */
+                for (j = i - 1; j >= 0 && nloads < 16; j--) {
+                        if (sh_lines[j][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[j])) break;
+                        if (sh_is_branch_line(sh_lines[j])) break;
+                        if (sh_has_prefix(sh_lines[j], "sts.l")) break;
+                        if (sh_has_prefix(sh_lines[j], "mov.l")
+                            || sh_has_prefix(sh_lines[j], "mov.w")) {
+                                int dst = -1;
+                                const char *r = NULL, *s = sh_lines[j];
+                                while (*s) {
+                                        if (*s == 'r' && s[1] >= '0'
+                                            && s[1] <= '9')
+                                                r = s;
+                                        s++;
+                                }
+                                if (r) {
+                                        r++;
+                                        dst = *r - '0';
+                                        if (r[1] >= '0' && r[1] <= '9')
+                                                dst = dst*10 + (r[1]-'0');
+                                }
+                                loads[nloads].line = j;
+                                loads[nloads].reg = dst;
+                                loads[nloads].is_deref =
+                                        (strstr(sh_lines[j], "@r") != NULL
+                                         && !sh_is_pc_rel_load(sh_lines[j]));
+                                nloads++;
+                        } else if (sh_has_prefix(sh_lines[j], "extu.w")
+                                   || sh_has_prefix(sh_lines[j], "extu.b")) {
+                                /* Extension — treat as deref. */
+                                loads[nloads].line = j;
+                                loads[nloads].reg = -1;
+                                loads[nloads].is_deref = 1;
+                                nloads++;
+                        } else {
+                                break;
+                        }
+                }
+
+                if (nloads < 3) continue;
+                first_arg_line = loads[nloads - 1].line;
+
+                /* Sort: pool loads (non-deref) by descending register,
+                 * then derefs at the end. Simple insertion sort. */
+                {
+                        char sorted[16][SH_MAX_LINELEN];
+                        int ns = 0, m;
+                        /* First: non-deref pool loads, highest reg first */
+                        for (k = 7; k >= 0; k--) {
+                                for (m = nloads - 1; m >= 0; m--) {
+                                        if (!loads[m].is_deref
+                                            && loads[m].reg == k) {
+                                                strncpy(sorted[ns++],
+                                                        sh_lines[loads[m].line],
+                                                        SH_MAX_LINELEN - 1);
+                                        }
+                                }
+                        }
+                        /* Then: derefs in original order */
+                        for (m = nloads - 1; m >= 0; m--) {
+                                if (loads[m].is_deref) {
+                                        strncpy(sorted[ns++],
+                                                sh_lines[loads[m].line],
+                                                SH_MAX_LINELEN - 1);
+                                }
+                        }
+                        /* Write back */
+                        for (m = 0; m < ns; m++) {
+                                strncpy(sh_lines[first_arg_line + m],
+                                        sorted[m], SH_MAX_LINELEN - 1);
+                        }
+                }
+        }
+}
+
 /* Swap `extu.b rA,rB; mov #imm,rC` to `mov #imm,rC; extu.b rA,rB`
  * when the two instructions are independent (no register overlap).
  * Matches Hitachi SHC's evaluation order where comparison constants
@@ -2769,6 +2861,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                   usedmask[IREG]);
         }
 
+        sh_reorder_pre_call_args();
         sh_reorder_extu_mov();
         sh_restructure_eq_chain();
         sh_fold_conditional_delays();
