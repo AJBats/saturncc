@@ -745,6 +745,11 @@ static void target(Node p) {
         case RET+I: case RET+U: case RET+P:
                 rtarget(p, 0, ireg[0]);
                 break;
+        /* LOAD target propagation skipped — VREG symbols can't
+         * be passed to rtarget (assertion). The register coalescing
+         * peephole in sh_coalesce_move_chains() handles this case
+         * instead by collapsing mov rA,rB; <op> rX,rB; mov rB,rC
+         * sequences in the captured body. */
         case ARG+I: case ARG+P: case ARG+U: {
                 Symbol q = argreg(p->x.argno);
                 if (q) {
@@ -1446,6 +1451,88 @@ static void sh_fold_conditional_delays(void) {
         }
 }
 
+/* Coalesce `mov rA,rB; <op> rX,rB; mov rB,rC` into
+ * `mov rA,rC; <op> rX,rC` — eliminates the dead temporary rB.
+ * Fires on the `return CONST + c` pattern where LCC routes
+ * through an intermediate register instead of targeting the
+ * return register directly. */
+static void sh_coalesce_move_chains(void) {
+        int i, j, k;
+        for (i = 0; i < sh_nlines; i++) {
+                int rA, rB, rX, rY, rP, rQ;
+                char buf[SH_MAX_LINELEN];
+                char *dst;
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_parse_regmov(sh_lines[i], &rA, &rB))
+                        continue;
+                if (rA == rB) continue;
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_writes_reg(sh_lines[j], rB)) continue;
+                if (sh_is_branch_line(sh_lines[j])) continue;
+                if (sh_is_label_line(sh_lines[j])) continue;
+                for (k = j + 1; k < sh_nlines; k++)
+                        if (sh_lines[k][0] != 0) break;
+                if (k >= sh_nlines) continue;
+                if (!sh_parse_regmov(sh_lines[k], &rP, &rQ))
+                        continue;
+                if (rP != rB) continue;
+                if (rQ == rB) continue;
+                /* Pattern matched. Replace rB → rQ in lines i and j.
+                 * Delete line k. */
+                {
+                        char old_reg[8], new_reg[8];
+                        const char *in;
+                        snprintf(old_reg, sizeof old_reg, "r%d", rB);
+                        snprintf(new_reg, sizeof new_reg, "r%d", rQ);
+                        /* Rewrite line i: mov rA,rB → mov rA,rQ */
+                        in = sh_lines[i];
+                        dst = buf;
+                        while (*in) {
+                                if (*in == 'r'
+                                    && strncmp(in, old_reg,
+                                               strlen(old_reg)) == 0
+                                    && !(in[strlen(old_reg)] >= '0'
+                                         && in[strlen(old_reg)] <= '9')
+                                    && in > sh_lines[i]
+                                    && in[-1] == ',') {
+                                        int n = snprintf(dst,
+                                                sizeof buf - (size_t)(dst - buf),
+                                                "%s", new_reg);
+                                        dst += n;
+                                        in += strlen(old_reg);
+                                } else {
+                                        *dst++ = *in++;
+                                }
+                        }
+                        *dst = 0;
+                        strncpy(sh_lines[i], buf, SH_MAX_LINELEN - 1);
+                        /* Rewrite line j: replace all rB with rQ */
+                        in = sh_lines[j];
+                        dst = buf;
+                        while (*in) {
+                                if (*in == 'r'
+                                    && strncmp(in, old_reg,
+                                               strlen(old_reg)) == 0
+                                    && !(in[strlen(old_reg)] >= '0'
+                                         && in[strlen(old_reg)] <= '9')) {
+                                        int n = snprintf(dst,
+                                                sizeof buf - (size_t)(dst - buf),
+                                                "%s", new_reg);
+                                        dst += n;
+                                        in += strlen(old_reg);
+                                } else {
+                                        *dst++ = *in++;
+                                }
+                        }
+                        *dst = 0;
+                        strncpy(sh_lines[j], buf, SH_MAX_LINELEN - 1);
+                        sh_lines[k][0] = 0;
+                }
+        }
+}
+
 /* Eliminate redundant `mov rA,r0` in cmp/eq #imm chains. When
  * multiple equality comparisons test the same variable against
  * different constants, each emits `mov rA,r0; cmp/eq #imm,r0`.
@@ -1465,8 +1552,10 @@ static void sh_elim_redundant_mov_r0(void) {
                 int rA, rB;
                 if (sh_lines[i][0] == 0)
                         continue;
-                if (sh_is_label_line(sh_lines[i]))
+                if (sh_is_label_line(sh_lines[i])) {
+                        r0_src = -1;
                         continue;
+                }
                 if (sh_has_prefix(sh_lines[i], "cmp")
                     || sh_has_prefix(sh_lines[i], "tst"))
                         continue;
@@ -2039,6 +2128,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
 
         sh_fold_conditional_delays();
+        sh_coalesce_move_chains();
         sh_elim_redundant_mov_r0();
         sh_interleave_pool();
 

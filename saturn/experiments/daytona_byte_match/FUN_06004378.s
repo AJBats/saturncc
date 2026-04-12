@@ -11,9 +11,8 @@ _FUN_06004378:
 	cmp/hs	r1,r14
 	bt	L2
 	mov.w	L14,r1
-	mov	r4,r2
-	add	r1,r2
-	mov	r2,r0
+	mov	r4,r0
+	add	r1,r0
 	rts
 	mov.l	@r15+,r14
 L2:
@@ -24,9 +23,8 @@ L2:
 	cmp/hs	r1,r14
 	bt	L4
 	mov.w	L15,r1
-	mov	r4,r2
-	add	r1,r2
-	mov	r2,r0
+	mov	r4,r0
+	add	r1,r0
 	rts
 	mov.l	@r15+,r14
 	.align 2
@@ -40,18 +38,21 @@ L4:
 	rts
 	mov.l	@r15+,r14
 L6:
+	mov	r14,r0
 	cmp/eq	#39,r0
 	bf	L8
 	mov	#36,r0
 	rts
 	mov.l	@r15+,r14
 L8:
+	mov	r14,r0
 	cmp/eq	#45,r0
 	bf	L10
 	mov	#38,r0
 	rts
 	mov.l	@r15+,r14
 L10:
+	mov	r14,r0
 	cmp/eq	#46,r0
 	bt	L12
 	mov	#41,r0
