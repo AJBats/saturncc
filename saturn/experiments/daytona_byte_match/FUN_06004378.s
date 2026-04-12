@@ -4,27 +4,25 @@
 _FUN_06004378:
 	mov.l	r14,@-r15
 	extu.b	r4,r14
-	mov	#47,r1
-	cmp/hs	r14,r1
+	mov	#48,r2
+	cmp/ge	r2,r14
+	bf	L2
+	mov	#57,r2
+	cmp/gt	r2,r14
 	bt	L2
-	mov	#58,r1
-	cmp/hs	r1,r14
-	bt	L2
-	mov.w	L14,r1
-	mov	r4,r0
-	add	r1,r0
+	mov.w	L14,r0
+	add	r4,r0
 	rts
 	mov.l	@r15+,r14
 L2:
-	mov	#64,r1
-	cmp/hs	r14,r1
+	mov	#65,r2
+	cmp/ge	r2,r14
+	bf	L4
+	mov	#90,r2
+	cmp/gt	r2,r14
 	bt	L4
-	mov	#91,r1
-	cmp/hs	r1,r14
-	bt	L4
-	mov.w	L15,r1
-	mov	r4,r0
-	add	r1,r0
+	mov.w	L15,r0
+	add	r4,r0
 	rts
 	mov.l	@r15+,r14
 	.align 2

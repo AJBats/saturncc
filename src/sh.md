@@ -514,12 +514,12 @@ stmt: EQI4(reg,immi8)  "# cmp_eq_imm_bt\n"  1
 stmt: EQU4(reg,immu8)  "# cmp_eq_imm_bt\n"  1
 stmt: NEI4(reg,immi8)  "# cmp_eq_imm_bf\n"  1
 stmt: NEU4(reg,immu8)  "# cmp_eq_imm_bf\n"  1
-stmt: LTI4(reg,reg)  "\tcmp/gt\tr%0,r%1\n\tbt\t%a\n"  2
-stmt: LEI4(reg,reg)  "\tcmp/ge\tr%0,r%1\n\tbt\t%a\n"  2
+stmt: LTI4(reg,reg)  "\tcmp/ge\tr%1,r%0\n\tbf\t%a\n"  2
+stmt: LEI4(reg,reg)  "\tcmp/gt\tr%1,r%0\n\tbf\t%a\n"  2
 stmt: GTI4(reg,reg)  "\tcmp/gt\tr%1,r%0\n\tbt\t%a\n"  2
 stmt: GEI4(reg,reg)  "\tcmp/ge\tr%1,r%0\n\tbt\t%a\n"  2
-stmt: LTU4(reg,reg)  "\tcmp/hi\tr%0,r%1\n\tbt\t%a\n"  2
-stmt: LEU4(reg,reg)  "\tcmp/hs\tr%0,r%1\n\tbt\t%a\n"  2
+stmt: LTU4(reg,reg)  "\tcmp/hs\tr%1,r%0\n\tbf\t%a\n"  2
+stmt: LEU4(reg,reg)  "\tcmp/hi\tr%1,r%0\n\tbf\t%a\n"  2
 stmt: GTU4(reg,reg)  "\tcmp/hi\tr%1,r%0\n\tbt\t%a\n"  2
 stmt: GEU4(reg,reg)  "\tcmp/hs\tr%1,r%0\n\tbt\t%a\n"  2
 
@@ -1533,6 +1533,109 @@ static void sh_coalesce_move_chains(void) {
         }
 }
 
+/* Collapse `<pool_load> rA; mov rB,rC; add rA,rC` into
+ * `<pool_load> rC; add rB,rC`. Swaps the pool load destination
+ * into the result register and uses the other operand directly
+ * in the add, saving one instruction. Only fires when the pool
+ * load is a mov.w or mov.l with a label (PC-relative). */
+static void sh_swap_pool_add(void) {
+        int i, j, k;
+        for (i = 0; i < sh_nlines; i++) {
+                int rA_load, rB, rC, rA_add, rX;
+                char *p;
+                char old_reg[8], new_reg[8];
+
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "mov.w")
+                    && !sh_has_prefix(sh_lines[i], "mov.l"))
+                        continue;
+                p = sh_lines[i];
+                while (*p == ' ' || *p == '\t') p++;
+                p += 5;
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p != 'L') continue;
+                /* This is a pool load. Find dest register. */
+                {
+                        const char *r = NULL, *s = sh_lines[i];
+                        while (*s) {
+                                if (*s == 'r' && s[1] >= '0' && s[1] <= '9')
+                                        r = s;
+                                s++;
+                        }
+                        if (!r) continue;
+                        r++;
+                        rA_load = *r - '0';
+                        if (r[1] >= '0' && r[1] <= '9')
+                                rA_load = rA_load * 10 + (r[1] - '0');
+                }
+
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_parse_regmov(sh_lines[j], &rB, &rC))
+                        continue;
+                if (rC == rA_load) continue;
+
+                for (k = j + 1; k < sh_nlines; k++)
+                        if (sh_lines[k][0] != 0) break;
+                if (k >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[k], "add")) continue;
+                if (!sh_writes_reg(sh_lines[k], rC)) continue;
+                {
+                        unsigned regs = sh_regs_used(sh_lines[k]);
+                        if (!(regs & (1u << rA_load))) continue;
+                }
+
+                /* Check for trailing `mov rC,rD` — if present,
+                 * target rD instead and delete the mov. */
+                {
+                        int m, rP, rQ;
+                        for (m = k + 1; m < sh_nlines; m++)
+                                if (sh_lines[m][0] != 0) break;
+                        if (m < sh_nlines
+                            && sh_parse_regmov(sh_lines[m], &rP, &rQ)
+                            && rP == rC && rQ != rC) {
+                                rC = rQ;
+                                sh_lines[m][0] = 0;
+                        }
+                }
+
+                /* Pattern matched. Rewrite pool load dest rA → rC,
+                 * replace mov+add with just add rB,rC. */
+                snprintf(old_reg, sizeof old_reg, "r%d", rA_load);
+                snprintf(new_reg, sizeof new_reg, "r%d", rC);
+                {
+                        char buf[SH_MAX_LINELEN];
+                        const char *in = sh_lines[i];
+                        char *out = buf;
+                        int replaced = 0;
+                        while (*in) {
+                                if (!replaced && *in == 'r'
+                                    && strncmp(in, old_reg,
+                                               strlen(old_reg)) == 0
+                                    && !(in[strlen(old_reg)] >= '0'
+                                         && in[strlen(old_reg)] <= '9')
+                                    && in > sh_lines[i]
+                                    && in[-1] == ',') {
+                                        int n = snprintf(out,
+                                                sizeof buf - (size_t)(out - buf),
+                                                "%s", new_reg);
+                                        out += n;
+                                        in += strlen(old_reg);
+                                        replaced = 1;
+                                } else {
+                                        *out++ = *in++;
+                                }
+                        }
+                        *out = 0;
+                        strncpy(sh_lines[i], buf, SH_MAX_LINELEN - 1);
+                }
+                snprintf(sh_lines[j], SH_MAX_LINELEN,
+                         "\tadd\tr%d,r%d\n", rB, rC);
+                sh_lines[k][0] = 0;
+        }
+}
+
 /* Eliminate redundant `mov rA,r0` in cmp/eq #imm chains. When
  * multiple equality comparisons test the same variable against
  * different constants, each emits `mov rA,r0; cmp/eq #imm,r0`.
@@ -2171,6 +2274,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
 
         sh_fold_conditional_delays();
+        sh_swap_pool_add();
         sh_coalesce_move_chains();
         sh_elim_redundant_mov_r0();
         sh_interleave_pool();
