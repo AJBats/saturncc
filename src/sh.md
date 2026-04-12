@@ -509,6 +509,10 @@ stmt: EQI4(reg,zeroi)  "\ttst\tr%0,r%0\n\tbt\t%a\n"  1
 stmt: EQU4(reg,zerou)  "\ttst\tr%0,r%0\n\tbt\t%a\n"  1
 stmt: NEI4(reg,zeroi)  "\ttst\tr%0,r%0\n\tbf\t%a\n"  1
 stmt: NEU4(reg,zerou)  "\ttst\tr%0,r%0\n\tbf\t%a\n"  1
+stmt: EQI4(reg,immi8)  "# cmp_eq_imm_bt\n"  1
+stmt: EQU4(reg,immu8)  "# cmp_eq_imm_bt\n"  1
+stmt: NEI4(reg,immi8)  "# cmp_eq_imm_bf\n"  1
+stmt: NEU4(reg,immu8)  "# cmp_eq_imm_bf\n"  1
 stmt: LTI4(reg,reg)  "\tcmp/gt\tr%0,r%1\n\tbt\t%a\n"  2
 stmt: LEI4(reg,reg)  "\tcmp/ge\tr%0,r%1\n\tbt\t%a\n"  2
 stmt: GTI4(reg,reg)  "\tcmp/gt\tr%1,r%0\n\tbt\t%a\n"  2
@@ -730,6 +734,15 @@ static void target(Node p) {
                         rtarget(p, 0, q);
                 break;
                 }
+        case EQ+I: case NE+I: case EQ+U: case NE+U: {
+                Node k1 = p->kids[1];
+                if (k1 && generic(k1->op) == CNST) {
+                        int v = (int)k1->syms[0]->u.c.v.i;
+                        if (v != 0 && v >= -128 && v <= 127)
+                                rtarget(p, 0, ireg[0]);
+                }
+                break;
+                }
         }
 }
 
@@ -940,6 +953,16 @@ static void emit2(Node p) {
                 src = getregnum(p->x.kids[0]);
                 print("\tmov.l\tr%d,@(%d,r15)\n",
                       src, (int)p->syms[2]->u.c.v.i - 16);
+                break;
+        case EQ+I: case EQ+U: case NE+I: case NE+U:
+                src = getregnum(p->kids[0]);
+                if (src != 0)
+                        print("\tmov\tr%d,r0\n", src);
+                print("\tcmp/eq\t#%d,r0\n",
+                      (int)p->kids[1]->syms[0]->u.c.v.i);
+                print("\t%s\t%s\n",
+                      (generic(p->op) == EQ) ? "bt" : "bf",
+                      p->syms[0]->x.name);
                 break;
         }
 }

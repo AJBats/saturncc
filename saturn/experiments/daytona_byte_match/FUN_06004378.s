@@ -30,26 +30,26 @@ L2:
 	bra	L1
 	mov	r1,r0
 L4:
-	mov	#34,r1
-	cmp/eq	r1,r14
+	mov	r14,r0
+	cmp/eq	#34,r0
 	bf	L6
 	bra	L1
 	mov	#37,r0
 L6:
-	mov	#39,r1
-	cmp/eq	r1,r14
+	mov	r14,r0
+	cmp/eq	#39,r0
 	bf	L8
 	bra	L1
 	mov	#36,r0
 L8:
-	mov	#45,r1
-	cmp/eq	r1,r14
+	mov	r14,r0
+	cmp/eq	#45,r0
 	bf	L10
 	bra	L1
 	mov	#38,r0
 L10:
-	mov	#46,r1
-	cmp/eq	r1,r14
+	mov	r14,r0
+	cmp/eq	#46,r0
 	bt	L12
 	bra	L1
 	mov	#41,r0
