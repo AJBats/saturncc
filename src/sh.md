@@ -455,25 +455,30 @@ reg:  SUBP4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 reg:  MULI4(reg,reg)  "# mul32\n"  3
 reg:  MULU4(reg,reg)  "# mul32\n"  3
 
-con1: CNSTI4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
-con1: CNSTU4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
-con2: CNSTI4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
-con2: CNSTU4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
-con8i: CNSTI4  "%a"  (range(a, 8, 8) == 0 ? 0 : SH_GBR_REJECT)
+con1:  CNSTI4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
+con1:  CNSTU4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
+con2:  CNSTI4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
+con2:  CNSTU4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
+con8i:  CNSTI4  "%a"  (range(a, 8, 8) == 0 ? 0 : SH_GBR_REJECT)
 con16i: CNSTI4  "%a"  (range(a, 16, 16) == 0 ? 0 : SH_GBR_REJECT)
 
-reg:  LSHI4(reg,con1)   "?\tmov\tr%0,r%c\n\tshll\tr%c\n"    1
-reg:  LSHU4(reg,con1)   "?\tmov\tr%0,r%c\n\tshll\tr%c\n"    1
-reg:  LSHI4(reg,con2)   "?\tmov\tr%0,r%c\n\tshll2\tr%c\n"   1
-reg:  LSHU4(reg,con2)   "?\tmov\tr%0,r%c\n\tshll2\tr%c\n"   1
-reg:  LSHI4(reg,con8i)  "?\tmov\tr%0,r%c\n\tshll8\tr%c\n"   1
-reg:  LSHU4(reg,con8i)  "?\tmov\tr%0,r%c\n\tshll8\tr%c\n"   1
-reg:  LSHI4(reg,con16i) "?\tmov\tr%0,r%c\n\tshll16\tr%c\n"  1
-reg:  LSHU4(reg,con16i) "?\tmov\tr%0,r%c\n\tshll16\tr%c\n"  1
-reg:  RSHI4(reg,con1)   "?\tmov\tr%0,r%c\n\tshar\tr%c\n"    1
-reg:  RSHU4(reg,con1)   "?\tmov\tr%0,r%c\n\tshlr\tr%c\n"    1
-reg:  RSHI4(reg,con2)   "?\tmov\tr%0,r%c\n\tshar\tr%c\n\tshar\tr%c\n"  2
-reg:  RSHU4(reg,con2)   "?\tmov\tr%0,r%c\n\tshlr2\tr%c\n"   1
+/* Left shifts — all handled in emit2() to support composite
+ * shift counts (3, 4, 5, etc.) via shll/shll2/shll8/shll16
+ * decomposition. The con1 nonterminal matches any constant
+ * (with high cost for non-1 values), so this catch-all works. */
+reg:  LSHI4(reg,con1)   "# lsh\n"  1
+reg:  LSHU4(reg,con1)   "# lsh\n"  1
+reg:  LSHI4(reg,con2)   "# lsh\n"  1
+reg:  LSHU4(reg,con2)   "# lsh\n"  1
+reg:  LSHI4(reg,con8i)  "# lsh\n"  1
+reg:  LSHU4(reg,con8i)  "# lsh\n"  1
+reg:  LSHI4(reg,con16i) "# lsh\n"  1
+reg:  LSHU4(reg,con16i) "# lsh\n"  1
+/* Right shifts — all handled in emit2() like left shifts. */
+reg:  RSHI4(reg,con1)   "# rsh\n"  1
+reg:  RSHU4(reg,con1)   "# rsh\n"  1
+reg:  RSHI4(reg,con2)   "# rsh\n"  1
+reg:  RSHU4(reg,con2)   "# rsh\n"  1
 
 reg:  BANDI4(reg,bmask)  "\textu.b\tr%0,r%c\n"  0
 reg:  BANDU4(reg,bmasu)  "\textu.b\tr%0,r%c\n"  0
@@ -1171,6 +1176,46 @@ static void emit2(Node p) {
                 }
                 print("\tsts\tmacl,r%d\n", dst);
                 break;
+        case LSH+I: case LSH+U: {
+                /* Composite left shift — decompose into shll/shll2/
+                 * shll8/shll16 sequences. */
+                int n;
+                dst = getregnum(p);
+                src = getregnum(p->kids[0]);
+                n = (int)p->kids[1]->syms[0]->u.c.v.i;
+                if (dst != src)
+                        print("\tmov\tr%d,r%d\n", src, dst);
+                while (n >= 16) { print("\tshll16\tr%d\n", dst); n -= 16; }
+                while (n >= 8)  { print("\tshll8\tr%d\n", dst);  n -= 8; }
+                while (n >= 2)  { print("\tshll2\tr%d\n", dst);  n -= 2; }
+                while (n >= 1)  { print("\tshll\tr%d\n", dst);   n -= 1; }
+                break;
+        }
+        case RSH+I: case RSH+U: {
+                /* Composite right shift. Unsigned uses shlr/shlr2/
+                 * shlr8/shlr16; signed uses repeated shar (no
+                 * multi-bit arithmetic right shift on SH-2). */
+                int n, is_signed;
+                dst = getregnum(p);
+                src = getregnum(p->kids[0]);
+                n = (int)p->kids[1]->syms[0]->u.c.v.i;
+                is_signed = (generic(p->op) == RSH)
+                            && (optype(p->op) == I);
+                if (dst != src)
+                        print("\tmov\tr%d,r%d\n", src, dst);
+                if (is_signed) {
+                        while (n >= 1) {
+                                print("\tshar\tr%d\n", dst);
+                                n -= 1;
+                        }
+                } else {
+                        while (n >= 16) { print("\tshlr16\tr%d\n", dst); n -= 16; }
+                        while (n >= 8)  { print("\tshlr8\tr%d\n", dst);  n -= 8; }
+                        while (n >= 2)  { print("\tshlr2\tr%d\n", dst);  n -= 2; }
+                        while (n >= 1)  { print("\tshlr\tr%d\n", dst);   n -= 1; }
+                }
+                break;
+        }
         }
 }
 
