@@ -434,6 +434,29 @@ reg:  SUBI4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 reg:  SUBU4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 reg:  SUBP4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 
+reg:  MULI4(reg,reg)  "# mul32\n"  3
+reg:  MULU4(reg,reg)  "# mul32\n"  3
+
+con1: CNSTI4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
+con1: CNSTU4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
+con2: CNSTI4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
+con2: CNSTU4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
+con8i: CNSTI4  "%a"  (range(a, 8, 8) == 0 ? 0 : SH_GBR_REJECT)
+con16i: CNSTI4  "%a"  (range(a, 16, 16) == 0 ? 0 : SH_GBR_REJECT)
+
+reg:  LSHI4(reg,con1)   "?\tmov\tr%0,r%c\n\tshll\tr%c\n"    1
+reg:  LSHU4(reg,con1)   "?\tmov\tr%0,r%c\n\tshll\tr%c\n"    1
+reg:  LSHI4(reg,con2)   "?\tmov\tr%0,r%c\n\tshll2\tr%c\n"   1
+reg:  LSHU4(reg,con2)   "?\tmov\tr%0,r%c\n\tshll2\tr%c\n"   1
+reg:  LSHI4(reg,con8i)  "?\tmov\tr%0,r%c\n\tshll8\tr%c\n"   1
+reg:  LSHU4(reg,con8i)  "?\tmov\tr%0,r%c\n\tshll8\tr%c\n"   1
+reg:  LSHI4(reg,con16i) "?\tmov\tr%0,r%c\n\tshll16\tr%c\n"  1
+reg:  LSHU4(reg,con16i) "?\tmov\tr%0,r%c\n\tshll16\tr%c\n"  1
+reg:  RSHI4(reg,con1)   "?\tmov\tr%0,r%c\n\tshar\tr%c\n"    1
+reg:  RSHU4(reg,con1)   "?\tmov\tr%0,r%c\n\tshlr\tr%c\n"    1
+reg:  RSHI4(reg,con2)   "?\tmov\tr%0,r%c\n\tshar\tr%c\n\tshar\tr%c\n"  2
+reg:  RSHU4(reg,con2)   "?\tmov\tr%0,r%c\n\tshlr2\tr%c\n"   1
+
 reg:  BANDI4(reg,bmask)  "\textu.b\tr%0,r%c\n"  0
 reg:  BANDU4(reg,bmasu)  "\textu.b\tr%0,r%c\n"  0
 reg:  BANDI4(reg,wmask)  "\textu.w\tr%0,r%c\n"  0
@@ -1014,6 +1037,13 @@ static void emit2(Node p) {
                 print("\t%s\t%s\n",
                       (generic(p->op) == EQ) ? "bt" : "bf",
                       p->syms[0]->x.name);
+                break;
+        case MUL+I: case MUL+U:
+                dst = getregnum(p);
+                print("\tmul.l\tr%d,r%d\n",
+                      getregnum(p->kids[1]),
+                      getregnum(p->kids[0]));
+                print("\tsts\tmacl,r%d\n", dst);
                 break;
         }
 }
