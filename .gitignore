@@ -1,6 +1,9 @@
 # Build artifacts (saturn/tools/build.sh writes here)
 build/
 
+# Object files
+*.o
+
 # Local test scratch
 test_add.*
 *.swp
