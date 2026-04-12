@@ -1547,13 +1547,55 @@ static void sh_coalesce_move_chains(void) {
 static void sh_elim_redundant_mov_r0(void) {
         int i, j;
         int r0_src = -1;
+        int r0_estab = -1;
 
         for (i = 0; i < sh_nlines; i++) {
                 int rA, rB;
                 if (sh_lines[i][0] == 0)
                         continue;
                 if (sh_is_label_line(sh_lines[i])) {
-                        r0_src = -1;
+                        if (r0_src >= 0) {
+                                /* Check if any branch to this label
+                                 * comes from before the establishment
+                                 * point. If so, r0 is stale. */
+                                char lname[64];
+                                char search[68];
+                                const char *lp = sh_lines[i];
+                                int len = 0, safe = 1;
+                                while (*lp == ' ' || *lp == '\t') lp++;
+                                while (lp[len] && lp[len] != ':'
+                                       && lp[len] != '\n') len++;
+                                if (len > 0
+                                    && len < (int)sizeof lname) {
+                                        memcpy(lname, lp, (size_t)len);
+                                        lname[len] = 0;
+                                        snprintf(search, sizeof search,
+                                                 "%s\n", lname);
+                                        for (j = 0; j < sh_nlines; j++) {
+                                                if (sh_lines[j][0] == 0)
+                                                        continue;
+                                                if (j == i) continue;
+                                                if (!sh_is_branch_line(
+                                                        sh_lines[j])
+                                                    && !sh_has_prefix(
+                                                        sh_lines[j], "bt")
+                                                    && !sh_has_prefix(
+                                                        sh_lines[j], "bf"))
+                                                        continue;
+                                                if (!strstr(sh_lines[j],
+                                                            search))
+                                                        continue;
+                                                if (j < r0_estab) {
+                                                        safe = 0;
+                                                        break;
+                                                }
+                                        }
+                                } else {
+                                        safe = 0;
+                                }
+                                if (!safe)
+                                        r0_src = -1;
+                        }
                         continue;
                 }
                 if (sh_has_prefix(sh_lines[i], "cmp")
@@ -1601,6 +1643,7 @@ static void sh_elim_redundant_mov_r0(void) {
                         sh_lines[i][0] = 0;
                 } else {
                         r0_src = rA;
+                        r0_estab = i;
                 }
         }
 }

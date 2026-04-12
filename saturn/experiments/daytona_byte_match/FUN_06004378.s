@@ -38,21 +38,18 @@ L4:
 	rts
 	mov.l	@r15+,r14
 L6:
-	mov	r14,r0
 	cmp/eq	#39,r0
 	bf	L8
 	mov	#36,r0
 	rts
 	mov.l	@r15+,r14
 L8:
-	mov	r14,r0
 	cmp/eq	#45,r0
 	bf	L10
 	mov	#38,r0
 	rts
 	mov.l	@r15+,r14
 L10:
-	mov	r14,r0
 	cmp/eq	#46,r0
 	bt	L12
 	mov	#41,r0
