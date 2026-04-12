@@ -1029,16 +1029,32 @@ static void emit2(Node p) {
                 print("\tmov.l\tr%d,@(%d,r15)\n",
                       src, (int)p->syms[2]->u.c.v.i - 16);
                 break;
-        case EQ+I: case EQ+U: case NE+I: case NE+U:
+        case EQ+I: case EQ+U: case NE+I: case NE+U: {
+                /* Get the immediate value from kids[1].  Normally
+                 * kids[1] is a CNSTI4 with the value in syms[0].
+                 * When the same constant appears in a short-circuit
+                 * && chain, LCC CSEs it into a VREG; kids[1] becomes
+                 * INDIRI4(VREG+P) and syms[0] is NULL.  Recover the
+                 * value by following the VREG's CSE pointer back to
+                 * the original CNSTI4 node. */
+                Node imm = p->kids[1];
+                if (imm->syms[0] == NULL
+                    && generic(imm->op) == INDIR
+                    && imm->kids[0]
+                    && imm->kids[0]->syms[0]
+                    && imm->kids[0]->syms[0]->u.t.cse)
+                        imm = imm->kids[0]->syms[0]->u.t.cse;
+                assert(imm->syms[0]);
                 src = getregnum(p->kids[0]);
                 if (src != 0)
                         print("\tmov\tr%d,r0\n", src);
                 print("\tcmp/eq\t#%d,r0\n",
-                      (int)p->kids[1]->syms[0]->u.c.v.i);
+                      (int)imm->syms[0]->u.c.v.i);
                 print("\t%s\t%s\n",
                       (generic(p->op) == EQ) ? "bt" : "bf",
                       p->syms[0]->x.name);
                 break;
+                }
         case MUL+I: case MUL+U:
                 dst = getregnum(p);
                 sh_uses_macl = 1;

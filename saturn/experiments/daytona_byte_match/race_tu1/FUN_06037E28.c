@@ -29,22 +29,13 @@ int FUN_06037E28(int param_1) {
         return 10;
     }
 
-    /* Pre-switch guard: skip call block for states 6, 7, 8.
-     * Nested ifs avoid the && crash with cmp/eq #imm chains. */
+    /* Pre-switch guard: skip call block for states 6, 7, 8 */
     state = *(int *)((char *)gs + 0x5C);
-    if (state != 6) {
-        if (state != 7) {
-            if (state != 8) {
-                if (*(char *)((char *)gs + 0x12) == 1) {
-                    if (dat_060540B4 == 1) {
-                        sub_06037EA4();
-                    } else {
-                        sub_06037ED4((int)*(char *)((char *)gs + 0x12));
-                    }
-                } else {
-                    sub_06037ED4((int)*(char *)((char *)gs + 0x12));
-                }
-            }
+    if (state != 6 && state != 7 && state != 8) {
+        if (*(char *)((char *)gs + 0x12) == 1 && dat_060540B4 == 1) {
+            sub_06037EA4();
+        } else {
+            sub_06037ED4((int)*(char *)((char *)gs + 0x12));
         }
     }
 
