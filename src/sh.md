@@ -1534,6 +1534,35 @@ static void sh_coalesce_move_chains(void) {
         }
 }
 
+/* Swap `extu.b rA,rB; mov #imm,rC` to `mov #imm,rC; extu.b rA,rB`
+ * when the two instructions are independent (no register overlap).
+ * Matches Hitachi SHC's evaluation order where comparison constants
+ * are loaded before the byte extraction. */
+static void sh_reorder_extu_mov(void) {
+        int i, j;
+        for (i = 0; i < sh_nlines - 1; i++) {
+                unsigned regs_a, regs_b;
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "extu.b")) continue;
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[j], "mov")) continue;
+                if (sh_has_prefix(sh_lines[j], "mov.")) continue;
+                regs_a = sh_regs_used(sh_lines[i]);
+                regs_b = sh_regs_used(sh_lines[j]);
+                if (regs_a & regs_b) continue;
+                {
+                        char tmp[SH_MAX_LINELEN];
+                        strncpy(tmp, sh_lines[i], SH_MAX_LINELEN - 1);
+                        tmp[SH_MAX_LINELEN - 1] = 0;
+                        strncpy(sh_lines[i], sh_lines[j],
+                                SH_MAX_LINELEN - 1);
+                        strncpy(sh_lines[j], tmp, SH_MAX_LINELEN - 1);
+                }
+        }
+}
+
 /* Restructure cmp/eq chains from interleaved test-return blocks
  * into a dispatch table followed by gathered return blocks.
  *
@@ -2513,6 +2542,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                   usedmask[IREG]);
         }
 
+        sh_reorder_extu_mov();
         sh_restructure_eq_chain();
         sh_fold_conditional_delays();
         sh_swap_pool_add();

@@ -3,8 +3,8 @@
 	.align 2
 _FUN_06004378:
 	mov.l	r14,@-r15
-	extu.b	r4,r14
 	mov	#48,r2
+	extu.b	r4,r14
 	cmp/ge	r2,r14
 	bf	L2
 	mov	#57,r2
