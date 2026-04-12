@@ -1737,6 +1737,69 @@ copy_line:
         }
 }
 
+/* After a jsr, if the call result is saved to a callee-saved reg
+ * (mov r0,rN) and only used to return later (mov rN,r0), rename
+ * to r4 (the freed first arg register). This avoids a callee-saved
+ * push/pop and matches Hitachi SHC's pattern of reusing the arg
+ * register for the result. */
+static void sh_result_to_arg_reg(void) {
+        int i, j;
+        for (i = 0; i < sh_nlines; i++) {
+                int rA, rB;
+                int jsr_found = 0;
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "jsr")) continue;
+                /* Skip delay slot. */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                j++;
+                /* Look for `mov r0,rN` where rN is callee-saved. */
+                for (; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_parse_regmov(sh_lines[j], &rA, &rB)) continue;
+                if (rA != 0) continue;
+                if (rB < 8 || rB > 14) continue;
+                /* rB is the callee-saved result reg. Rename to r4
+                 * throughout the rest of the body. */
+                {
+                        char old_r[8], new_r[4];
+                        int k;
+                        snprintf(old_r, sizeof old_r, "r%d", rB);
+                        snprintf(new_r, sizeof new_r, "r4");
+                        for (k = j; k < sh_nlines; k++) {
+                                char buf[SH_MAX_LINELEN];
+                                const char *in;
+                                char *out;
+                                if (sh_lines[k][0] == 0) continue;
+                                if (!strstr(sh_lines[k], old_r)) continue;
+                                in = sh_lines[k];
+                                out = buf;
+                                while (*in) {
+                                        if (*in == 'r'
+                                            && strncmp(in, old_r,
+                                                       strlen(old_r)) == 0
+                                            && !(in[strlen(old_r)] >= '0'
+                                                 && in[strlen(old_r)] <= '9')) {
+                                                int n = snprintf(out,
+                                                        sizeof buf-(size_t)(out-buf),
+                                                        "%s", new_r);
+                                                out += n;
+                                                in += strlen(old_r);
+                                        } else {
+                                                *out++ = *in++;
+                                        }
+                                }
+                                *out = 0;
+                                strncpy(sh_lines[k], buf,
+                                        SH_MAX_LINELEN - 1);
+                        }
+                }
+                break;
+        }
+}
+
 /* Reorder pre-call argument loads to match Hitachi SHC's right-to-
  * left evaluation. Scans backward from each `jsr` to find pool
  * loads to arg registers (r4-r7) and the function pointer, then
@@ -2813,6 +2876,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 if (need_r14_rename)
                         sh_rename_r14_var(r14_rename_to);
         }
+
+        sh_result_to_arg_reg();
 
         /* Rebuild usedmask from surviving body lines so dead-after-
          * peephole registers drop off the save/restore list. This is
