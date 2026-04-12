@@ -730,8 +730,28 @@ static void target(Node p) {
                 break;
         case ARG+I: case ARG+P: case ARG+U: {
                 Symbol q = argreg(p->x.argno);
-                if (q)
+                if (q) {
                         rtarget(p, 0, q);
+                        /* Propagate the arg register down through
+                         * simple convert/load chains so the entire
+                         * expression uses the arg register, enabling
+                         * the delay-slot filler to move the final
+                         * convert across pool loads into a jsr delay
+                         * slot without register conflicts. */
+                        {
+                                Node n = p->kids[0];
+                                while (n && n->kids[0]) {
+                                        int g = generic(n->op);
+                                        if (g == CVI || g == CVU
+                                            || g == CVP || g == INDIR
+                                            || g == LOAD)
+                                                rtarget(n, 0, q);
+                                        else
+                                                break;
+                                        n = n->kids[0];
+                                }
+                        }
+                }
                 break;
                 }
         case EQ+I: case NE+I: case EQ+U: case NE+U: {

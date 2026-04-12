@@ -3,14 +3,13 @@
 	.align 2
 _FUN_06000AF8:
 	sts.l	pr,@-r15
-	mov.l	L2,r1
-	mov.w	@r1,r1
-	extu.w	r1,r4
+	mov.l	L2,r4
+	mov.w	@r4,r4
 	mov.l	L3,r5
 	mov.l	L4,r6
 	mov.l	L5,r1
 	jsr	@r1
-	nop
+	extu.w	r4,r4
 	mov.l	L6,r1
 	mov.b	@r1,r2
 	exts.b	r2,r2
