@@ -109,6 +109,7 @@ static struct {
         int min_val;              /* minimum case value */
         char labels[SH_MAX_SWITCH_LABELS][64]; /* case label names */
         char deflabel[64];        /* default label name */
+        char hilabel[64];         /* upper bounds-check label name */
 } sh_switch;
 
 /* Literal pool: per-function table of 32-bit constants and symbol
@@ -690,22 +691,25 @@ static int sh_switchjump(Swtch swp, long *v, int l, int u,
         int i, tablesize;
         Type ty = signedint(swp->sym->type);
 
-        /* Only handle the case where lo/hi both go to default
-         * (single dense bucket — the common case for Daytona). */
-        if (lolab != deflab->u.l.label || hilab != deflab->u.l.label)
-                return 0;
-
         tablesize = (int)(v[u] - v[l] + 1);
         if (tablesize > SH_MAX_SWITCH_LABELS)
                 return 0;
 
-        /* Emit bounds check: if state > max, goto default. */
+        /* Emit bounds checks. For a single dense bucket (lo/hi
+         * both point to default), one GT check suffices. For split
+         * buckets, emit both LT and GT. */
         {
                 Type ty = signedint(swp->sym->type);
+                if (lolab != deflab->u.l.label) {
+                        listnodes(eqtree(LT,
+                                cast(idtree(swp->sym), ty),
+                                cnsttree(ty, v[l])),
+                                lolab, 0);
+                }
                 listnodes(eqtree(GT,
                         cast(idtree(swp->sym), ty),
                         cnsttree(ty, v[u])),
-                        deflab->u.l.label, 0);
+                        hilab, 0);
                 walk(NULL, 0, 0);
         }
 
@@ -719,6 +723,8 @@ static int sh_switchjump(Swtch swp, long *v, int l, int u,
         sh_switch.ncases = tablesize;
         snprintf(sh_switch.deflabel, sizeof sh_switch.deflabel,
                  "%s", deflab->x.name);
+        snprintf(sh_switch.hilabel, sizeof sh_switch.hilabel,
+                 "%s", findlabel(hilab)->x.name);
         {
                 int idx = 0;
                 long val;
@@ -3046,9 +3052,9 @@ static void sh_emit_switch_dispatch(void) {
 
         snprintf(table_label, sizeof table_label,
                  "Lswt%d", sh_switch.dispatch_lab);
-        /* Match either bt (from GE/GT) for the bounds check. */
+        /* Match the upper bounds-check bt (GT → bt hilabel). */
         snprintf(bt_pattern, sizeof bt_pattern,
-                 "\tbt\t%s\n", sh_switch.deflabel);
+                 "\tbt\t%s\n", sh_switch.hilabel);
 
         /* Find the bounds-check bt instruction. The braf dispatch
          * replaces the bra+nop that follows it. */
