@@ -3,10 +3,10 @@
 	.align 2
 _FUN_00280710:
 	mov.l	r14,@-r15
-	mov.l	L5,r3
-	mov.w	@r3,r3
-	extu.w	r3,r3
-	tst	r3,r3
+	mov.l	L5,r1
+	mov.w	@r1,r1
+	extu.w	r1,r1
+	tst	r1,r1
 	bt	L3
 	bra	L4
 	mov	#1,r14

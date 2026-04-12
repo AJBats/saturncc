@@ -81,6 +81,7 @@ extern void (*shc_pragma_hook)(char *name);
  * slots 0-15, but the tail slots must be readable (NULL) or the
  * allocator dereferences past the end and segfaults. */
 static Symbol ireg[32];
+static Symbol ireg_prio[32];
 static Symbol iregw;
 static int tmpregs[] = {1, 2, 3};
 static int cseg;
@@ -667,7 +668,32 @@ static void progbeg(int argc, char *argv[]) {
         for (i = 0; i < 16; i++)
                 ireg[i] = mkreg("%d", i, 1, IREG);
         ireg[15]->x.name = "15";
-        iregw = mkwildcard(ireg);
+        /* Build a priority-ordered wildcard array so askreg's 31→0
+         * scan picks registers in the order Hitachi SHC uses:
+         *   INTTMP ascending: r1, r2, r3  (slots 31-29)
+         *   INTVAR descending: r14..r8    (slots 28-22)
+         * Other regs (r0 return, r4-r7 args, r15 SP) are placed
+         * at lower indices — they're rarely allocated through the
+         * wildcard but must be present for spill/reload paths. */
+        for (i = 0; i < 32; i++)
+                ireg_prio[i] = NULL;
+        ireg_prio[31] = ireg[1];
+        ireg_prio[30] = ireg[2];
+        ireg_prio[29] = ireg[3];
+        ireg_prio[28] = ireg[14];
+        ireg_prio[27] = ireg[13];
+        ireg_prio[26] = ireg[12];
+        ireg_prio[25] = ireg[11];
+        ireg_prio[24] = ireg[10];
+        ireg_prio[23] = ireg[9];
+        ireg_prio[22] = ireg[8];
+        ireg_prio[21] = ireg[0];
+        ireg_prio[20] = ireg[4];
+        ireg_prio[19] = ireg[5];
+        ireg_prio[18] = ireg[6];
+        ireg_prio[17] = ireg[7];
+        ireg_prio[16] = ireg[15];
+        iregw = mkwildcard(ireg_prio);
         tmask[IREG] = INTTMP;
         vmask[IREG] = INTVAR;
         tmask[FREG] = 0;
