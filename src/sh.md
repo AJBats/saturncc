@@ -1276,6 +1276,8 @@ static int bitcount(unsigned mask) {
 static char sh_lines[SH_MAX_LINES][SH_MAX_LINELEN];
 static int sh_nlines;
 
+static int sh_is_uncond_branch(const char *);  /* forward decl */
+
 static int sh_is_label_line(const char *s) {
         const char *p;
         while (*s == ' ' || *s == '\t') s++;
@@ -1520,6 +1522,99 @@ static void sh_peephole(void) {
                         }
                         mask = sh_regs_used(sh_lines[j]);
                         if (mask & ((1u << rA) | (1u << rB)))
+                                break;
+                }
+        }
+}
+
+/* Fold `add #-1,rN; tst rN,rN` into `dt rN`.
+ * SH-2's dt instruction decrements and sets T if the result is zero.
+ * Handles the case where an independent instruction sits between the
+ * add and tst (reorders them to make the fold possible). */
+static void sh_fold_dt(void) {
+        int i, j, k;
+        for (i = 0; i < sh_nlines; i++) {
+                int reg_add;
+                const char *p;
+                char tst_pat[32];
+
+                if (sh_lines[i][0] == 0)
+                        continue;
+                /* Match `add #-1,rN` */
+                p = sh_lines[i];
+                while (*p == ' ' || *p == '\t') p++;
+                if (!(p[0]=='a' && p[1]=='d' && p[2]=='d'))
+                        continue;
+                p += 3;
+                while (*p == ' ' || *p == '\t') p++;
+                if (!(p[0]=='#' && p[1]=='-' && p[2]=='1' && p[3]==','))
+                        continue;
+                p += 4;
+                if (*p != 'r') continue;
+                reg_add = atoi(p + 1);
+
+                /* Look for `tst rN,rN` within the next few lines. */
+                snprintf(tst_pat, sizeof tst_pat,
+                         "\ttst\tr%d,r%d\n", reg_add, reg_add);
+                for (j = i + 1; j < sh_nlines && j <= i + 3; j++) {
+                        if (sh_lines[j][0] == 0)
+                                continue;
+                        if (strcmp(sh_lines[j], tst_pat) == 0) {
+                                /* Check any intervening instruction
+                                 * doesn't use rN. */
+                                int safe = 1;
+                                for (k = i + 1; k < j; k++) {
+                                        if (sh_lines[k][0] == 0)
+                                                continue;
+                                        if (sh_regs_used(sh_lines[k])
+                                            & (1u << reg_add)) {
+                                                safe = 0;
+                                                break;
+                                        }
+                                }
+                                if (!safe)
+                                        break;
+                                /* Replace add with dt, delete tst. */
+                                snprintf(sh_lines[i], SH_MAX_LINELEN,
+                                         "\tdt\tr%d\n", reg_add);
+                                sh_lines[j][0] = 0;
+                                break;
+                        }
+                        /* If we hit a branch, stop. If we hit a label,
+                         * check whether it's referenced anywhere — dead
+                         * labels (from LCC codegen) are safe to skip. */
+                        if (sh_is_uncond_branch(sh_lines[j]))
+                                break;
+                        if (sh_has_prefix(sh_lines[j], "bt")
+                            || sh_has_prefix(sh_lines[j], "bf"))
+                                break;
+                        if (sh_is_label_line(sh_lines[j])) {
+                                /* Extract label name and check if any
+                                 * line in the body references it. */
+                                char lbl[64];
+                                int m, referenced = 0;
+                                const char *lp = sh_lines[j];
+                                int li = 0;
+                                while (*lp && *lp != ':' && li < 62)
+                                        lbl[li++] = *lp++;
+                                lbl[li] = 0;
+                                for (m = 0; m < sh_nlines; m++) {
+                                        if (m == j || sh_lines[m][0] == 0)
+                                                continue;
+                                        if (sh_is_label_line(sh_lines[m]))
+                                                continue;
+                                        if (strstr(sh_lines[m], lbl)) {
+                                                referenced = 1;
+                                                break;
+                                        }
+                                }
+                                if (referenced)
+                                        break;
+                                /* Dead label — safe to skip over. */
+                                continue;
+                        }
+                        if (sh_has_prefix(sh_lines[j], "bt")
+                            || sh_has_prefix(sh_lines[j], "bf"))
                                 break;
                 }
         }
@@ -3707,6 +3802,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         sh_diversify_range_regs();
         sh_reorder_extu_mov();
         sh_restructure_eq_chain();
+        sh_fold_dt();
         sh_fold_conditional_delays();
         sh_rewrite_bool_fp(need_fp);
         sh_swap_pool_add();

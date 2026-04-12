@@ -24,10 +24,9 @@ L2:
 	mov.w	@r1,r1
 	exts.w	r1,r4
 L5:
-	add	#-1,r6
+	dt	r6
 	add	#-4,r5
 L3:
-	tst	r6,r6
 	bf	L2
 	mov	r4,r0
 L1:
