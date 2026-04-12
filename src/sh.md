@@ -871,16 +871,27 @@ static void target(Node p) {
                          * expression uses the arg register, enabling
                          * the delay-slot filler to move the final
                          * convert across pool loads into a jsr delay
-                         * slot without register conflicts. */
+                         * slot without register conflicts.
+                         *
+                         * Stop propagation when the child is already
+                         * in a non-wildcard register (e.g. a VREG for
+                         * a register variable or parameter). In that
+                         * case rtarget would insert a LOAD wrapper,
+                         * and following n->kids[0] into the wrapper
+                         * creates an infinite allocation loop. */
                         {
                                 Node n = p->kids[0];
                                 while (n && n->kids[0]) {
                                         int g = generic(n->op);
                                         if (g == CVI || g == CVU
                                             || g == CVP || g == INDIR
-                                            || g == LOAD)
+                                            || g == LOAD) {
+                                                Symbol kid_r = n->kids[0]->syms[RX];
+                                                if (kid_r && !kid_r->x.wildcard
+                                                    && kid_r != q)
+                                                        break;
                                                 rtarget(n, 0, q);
-                                        else
+                                        } else
                                                 break;
                                         n = n->kids[0];
                                 }
