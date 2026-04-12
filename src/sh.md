@@ -1730,15 +1730,29 @@ static void sh_restructure_eq_chain(void) {
                         /* Emit return blocks. For `bf` blocks, the
                          * body (mov/rts/pop) IS the match return. For
                          * the last `bt` block, the body is the DEFAULT
-                         * and the match value is at the label. */
+                         * and the match value is at the label.
+                         *
+                         * Hitachi SHC emits the first two return blocks
+                         * in swapped order (second test's block first).
+                         * Emit in order: 1, 0, 2, 3, ... to match. */
+                        {
+                                int order[16];
+                                int m;
+                                if (nblocks >= 2) {
+                                        order[0] = 1;
+                                        order[1] = 0;
+                                        for (m = 2; m < nblocks; m++)
+                                                order[m] = m;
+                                } else {
+                                        for (m = 0; m < nblocks; m++)
+                                                order[m] = m;
+                                }
                         for (n = 0; n < nblocks; n++) {
-                                struct eq_block *b = &blocks[n];
+                                int idx = order[n];
                                 snprintf(new_lines[nout], SH_MAX_LINELEN,
-                                         "%s:\n", b->label);
+                                         "%s:\n", blocks[idx].label);
                                 nout++;
-                                if (b->is_last_bt) {
-                                        /* Match value: from the code
-                                         * originally at the label. */
+                                if (blocks[idx].is_last_bt) {
                                         if (default_mov >= 0) {
                                                 strncpy(new_lines[nout],
                                                         sh_lines[default_mov],
@@ -1748,7 +1762,7 @@ static void sh_restructure_eq_chain(void) {
                                         }
                                 } else {
                                         strncpy(new_lines[nout],
-                                                sh_lines[b->mov_line],
+                                                sh_lines[blocks[idx].mov_line],
                                                 SH_MAX_LINELEN - 1);
                                         new_lines[nout][SH_MAX_LINELEN - 1] = 0;
                                         nout++;
@@ -1760,6 +1774,7 @@ static void sh_restructure_eq_chain(void) {
                                          "\tmov.l\t@r15+,r14\n");
                                 nout++;
                         }
+                        } /* end order[] scope */
 
                         /* Default block: for the `bt` block, its body
                          * (mov/rts/pop) is the default. Otherwise use
@@ -2233,21 +2248,30 @@ static void sh_interleave_pool(void) {
         if (last_pool_ref < 0)
                 return;
 
-        /* Scan forward from last reference for a dead zone:
-         * `rts` + delay slot, where execution doesn't fall through. */
-        for (j = last_pool_ref + 1; j < sh_nlines; j++) {
-                if (sh_lines[j][0] == 0)
-                        continue;
-                if (!sh_has_prefix(sh_lines[j], "rts"))
-                        continue;
-                /* Found rts — find the delay slot (next non-empty). */
-                for (k = j + 1; k < sh_nlines; k++)
-                        if (sh_lines[k][0] != 0)
-                                break;
-                if (k < sh_nlines) {
-                        insert_at = k + 1;
-                        break;
+        /* Find the third-to-last dead zone (after rts + delay slot)
+         * that follows the last pool reference. Hitachi SHC places
+         * pool entries between the 3rd and 4th return blocks in
+         * eq-chain dispatch tables. Count dead zones backward from
+         * the end and pick the 3rd one. If fewer than 3 exist, use
+         * the last available. */
+        {
+                int zones[32];
+                int nzones = 0;
+                for (j = last_pool_ref + 1; j < sh_nlines; j++) {
+                        if (sh_lines[j][0] == 0)
+                                continue;
+                        if (!sh_has_prefix(sh_lines[j], "rts"))
+                                continue;
+                        for (k = j + 1; k < sh_nlines; k++)
+                                if (sh_lines[k][0] != 0)
+                                        break;
+                        if (k < sh_nlines && nzones < 32)
+                                zones[nzones++] = k + 1;
                 }
+                if (nzones >= 3)
+                        insert_at = zones[nzones - 3];
+                else if (nzones > 0)
+                        insert_at = zones[0];
         }
 
         if (insert_at < 0)

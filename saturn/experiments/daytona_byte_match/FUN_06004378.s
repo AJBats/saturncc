@@ -25,9 +25,6 @@ L2:
 	add	r4,r0
 	rts
 	mov.l	@r15+,r14
-	.align 2
-L14:	.short	208
-L15:	.short	201
 L4:
 	mov	r14,r0
 	cmp/eq	#34,r0
@@ -40,18 +37,21 @@ L4:
 	bt	L12
 	bra	Ld26
 	nop
-L6:
-	mov	#37,r0
-	rts
-	mov.l	@r15+,r14
 L8:
 	mov	#36,r0
+	rts
+	mov.l	@r15+,r14
+L6:
+	mov	#37,r0
 	rts
 	mov.l	@r15+,r14
 L10:
 	mov	#38,r0
 	rts
 	mov.l	@r15+,r14
+	.align 2
+L14:	.short	208
+L15:	.short	201
 L12:
 	mov	#39,r0
 	rts
