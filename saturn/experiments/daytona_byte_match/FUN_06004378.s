@@ -31,6 +31,9 @@ L2:
 	mov	r1,r0
 	rts
 	mov.l	@r15+,r14
+	.align 2
+L14:	.long	_sRam0602c3cc
+L15:	.long	_sRam0602c3ce
 L4:
 	mov	r14,r0
 	cmp/eq	#34,r0
@@ -64,6 +67,3 @@ L12:
 L1:
 	rts
 	mov.l	@r15+,r14
-	.align 2
-L14:	.long	_sRam0602c3cc
-L15:	.long	_sRam0602c3ce

@@ -1453,6 +1453,90 @@ static void sh_inline_returns(const char *exit_label,
         sh_nlines = nout;
 }
 
+/* Move literal pool entries from the end of the function into the
+ * body at the first dead zone (after an rts + delay slot) that
+ * follows all pool references. SH-2's `mov.l @(disp,PC)` can only
+ * reach forward, so pool entries must come AFTER their last
+ * referencing instruction.
+ *
+ * If no dead zone exists in the body (no inline returns), the pool
+ * stays at the end and shlit_flush() handles it as before. */
+static void sh_interleave_pool(void) {
+        int i, j, k;
+        int last_pool_ref = -1;
+        char labstr[32];
+        int insert_at = -1;
+        int pool_lines;
+
+        if (nshlit == 0)
+                return;
+
+        for (i = 0; i < nshlit; i++) {
+                snprintf(labstr, sizeof labstr, "L%d",
+                         shlits[i].label);
+                for (j = sh_nlines - 1; j >= 0; j--) {
+                        if (sh_lines[j][0] != 0
+                            && strstr(sh_lines[j], labstr)) {
+                                if (j > last_pool_ref)
+                                        last_pool_ref = j;
+                                break;
+                        }
+                }
+        }
+
+        if (last_pool_ref < 0)
+                return;
+
+        /* Scan forward from last reference for a dead zone:
+         * `rts` + delay slot, where execution doesn't fall through. */
+        for (j = last_pool_ref + 1; j < sh_nlines; j++) {
+                if (sh_lines[j][0] == 0)
+                        continue;
+                if (!sh_has_prefix(sh_lines[j], "rts"))
+                        continue;
+                /* Found rts — find the delay slot (next non-empty). */
+                for (k = j + 1; k < sh_nlines; k++)
+                        if (sh_lines[k][0] != 0)
+                                break;
+                if (k < sh_nlines) {
+                        insert_at = k + 1;
+                        break;
+                }
+        }
+
+        if (insert_at < 0)
+                return;
+
+        pool_lines = 1 + nshlit;
+        if (sh_nlines + pool_lines > SH_MAX_LINES)
+                return;
+
+        /* Shift existing lines to make room. */
+        for (j = sh_nlines - 1; j >= insert_at; j--) {
+                strncpy(sh_lines[j + pool_lines], sh_lines[j],
+                        SH_MAX_LINELEN - 1);
+                sh_lines[j + pool_lines][SH_MAX_LINELEN - 1] = 0;
+        }
+
+        /* Insert .align + pool entries. */
+        snprintf(sh_lines[insert_at], SH_MAX_LINELEN,
+                 "\t.align 2\n");
+        for (i = 0; i < nshlit; i++) {
+                if (shlits[i].is_symbol)
+                        snprintf(sh_lines[insert_at + 1 + i],
+                                 SH_MAX_LINELEN,
+                                 "L%d:\t.long\t%s\n",
+                                 shlits[i].label, shlits[i].name);
+                else
+                        snprintf(sh_lines[insert_at + 1 + i],
+                                 SH_MAX_LINELEN,
+                                 "L%d:\t.long\t%d\n",
+                                 shlits[i].label, shlits[i].value);
+        }
+        sh_nlines += pool_lines;
+        nshlit = 0;
+}
+
 static int sh_is_delay_safe(const char *s) {
         /* Conservative whitelist: simple ALU and data moves only.
          * Excludes any branch, jmp/jsr/rts/bsr/bra/bt/bf, and the
@@ -1705,6 +1789,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_inline_returns(exit_lab, need_fp, ncalls,
                                   usedmask[IREG]);
         }
+
+        sh_interleave_pool();
 
         segment(CODE);
         print("\t.align 2\n");
