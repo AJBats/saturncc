@@ -49,9 +49,6 @@ L10:
 	mov	#38,r0
 	rts
 	mov.l	@r15+,r14
-	.align 2
-L14:	.short	208
-L15:	.short	201
 L12:
 	mov	#39,r0
 	rts
@@ -60,3 +57,6 @@ Ld26:
 	mov	#41,r0
 	rts
 	mov.l	@r15+,r14
+	.align 2
+L14:	.short	208
+L15:	.short	201

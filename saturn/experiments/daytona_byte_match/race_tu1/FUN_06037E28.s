@@ -44,6 +44,11 @@ _FUN_06037E28:
 	mov.l	@r15+,r13
 	rts
 	mov.l	@r15+,r14
+	.align 2
+L38:	.long	_setup_func
+L39:	.short	472
+L40:	.long	_base_array
+L41:	.short	352
 L2:
 	mov	r14,r1
 	add	#92,r1
@@ -75,6 +80,9 @@ L2:
 	nop
 	bra	L7
 	nop
+	.align 2
+L42:	.long	_dat_060540B4
+L43:	.long	_sub_06037EA4
 L6:
 	mov	r14,r1
 	mov	r1,r4
@@ -108,6 +116,12 @@ L4:
 	mov.w	@(r0,r1),r0
 	braf	r0
 	nop
+	.align 2
+L44:	.long	_sub_06037ED4
+L45:	.long	_sub_06037ED8
+L46:	.long	_sub_06037EE4
+L47:	.long	_sub_06037EDC
+L48:	.long	_sub_06037EE0
 Lswt0:
 	.short	L11 - Lswt0
 	.short	L11 - Lswt0
@@ -235,6 +249,16 @@ L11:
 	jsr	@r1
 	bra	L9
 	mov	r14,r4
+	.align 2
+L49:	.long	_sub_06038014
+L50:	.long	_sub_06038018
+L52:	.long	_dat_0603800C
+L53:	.long	_dat_0603800E
+L54:	.long	_dat_06038010
+L60:	.long	_sub_0603801C
+L61:	.long	_sub_06038020
+L63:	.long	_sub_06038024
+L64:	.long	_sub_06038028
 L12:
 	mov.l	L65,r1
 	jsr	@r1
@@ -390,6 +414,15 @@ L13:
 	jsr	@r1
 	bra	L9
 	mov	r14,r4
+	.align 2
+L66:	.long	_dat_0603813E
+L67:	.long	_dat_06038140
+L68:	.long	_dat_06038142
+L70:	.long	_sub_0603814C
+L71:	.long	_sub_06038150
+L72:	.long	_sub_06038154
+L73:	.long	_sub_06038158
+L74:	.long	_sub_0603815C
 L14:
 	mov.l	L75,r1
 	jsr	@r1
@@ -416,6 +449,11 @@ L14:
 	exts.w	r1,r1
 	bra	L17
 	mov.l	r1,@(16,r15)
+	.align 2
+L75:	.long	_sub_06038160
+L76:	.long	_dat_06038146
+L77:	.long	_dat_06038164
+L78:	.long	_dat_06038148
 L16:
 	mov.l	L79,r1
 	mov.w	@r1,r1
@@ -609,6 +647,16 @@ L19:
 	jsr	@r1
 	bra	L9
 	mov	r14,r4
+	.align 2
+L79:	.long	_dat_06038252
+L80:	.long	_sub_06038260
+L81:	.long	_dat_06038254
+L82:	.long	_sub_06038264
+L83:	.long	_sub_06038268
+L84:	.long	_dat_06038256
+L85:	.long	_dat_06038258
+L86:	.long	_dat_0603825A
+L87:	.long	_dat_0603825C
 L23:
 	mov.l	L90,r1
 	jsr	@r1
@@ -692,6 +740,8 @@ L27:
 	jsr	@r1
 	bra	L9
 	mov	r14,r4
+	.align 2
+L51:	.long	_FUN_06038dd8
 L28:
 	mov.l	L65,r1
 	jsr	@r1
@@ -736,6 +786,9 @@ L28:
 	nop
 	bra	L9
 	nop
+	.align 2
+L65:	.long	_func_06038bc4
+L69:	.long	_sub_06038390
 L29:
 	mov.l	L101,r1
 	mov.w	@r1,r1
@@ -823,6 +876,8 @@ L29:
 	mov.l	@(4,r15),r2
 	bra	L31
 	mov.l	r1,@r2
+	.align 2
+L55:	.short	-65
 L30:
 	mov	r14,r1
 	mov.l	r1,@(8,r15)
@@ -1092,56 +1147,11 @@ L1:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L38:	.long	_setup_func
-L39:	.short	472
-L40:	.long	_base_array
-L41:	.short	352
-L42:	.long	_dat_060540B4
-L43:	.long	_sub_06037EA4
-L44:	.long	_sub_06037ED4
-L45:	.long	_sub_06037ED8
-L46:	.long	_sub_06037EE4
-L47:	.long	_sub_06037EDC
-L48:	.long	_sub_06037EE0
-L49:	.long	_sub_06038014
-L50:	.long	_sub_06038018
-L51:	.long	_FUN_06038dd8
-L52:	.long	_dat_0603800C
-L53:	.long	_dat_0603800E
-L54:	.long	_dat_06038010
-L55:	.short	-65
 L56:	.long	_FUN_060384c4
 L57:	.long	_func_06038a82
 L58:	.long	_func_060385ce
 L59:	.long	_func_060386d8
-L60:	.long	_sub_0603801C
-L61:	.long	_sub_06038020
 L62:	.long	_FUN_06038c64
-L63:	.long	_sub_06038024
-L64:	.long	_sub_06038028
-L65:	.long	_func_06038bc4
-L66:	.long	_dat_0603813E
-L67:	.long	_dat_06038140
-L68:	.long	_dat_06038142
-L69:	.long	_sub_06038390
-L70:	.long	_sub_0603814C
-L71:	.long	_sub_06038150
-L72:	.long	_sub_06038154
-L73:	.long	_sub_06038158
-L74:	.long	_sub_0603815C
-L75:	.long	_sub_06038160
-L76:	.long	_dat_06038146
-L77:	.long	_dat_06038164
-L78:	.long	_dat_06038148
-L79:	.long	_dat_06038252
-L80:	.long	_sub_06038260
-L81:	.long	_dat_06038254
-L82:	.long	_sub_06038264
-L83:	.long	_sub_06038268
-L84:	.long	_dat_06038256
-L85:	.long	_dat_06038258
-L86:	.long	_dat_0603825A
-L87:	.long	_dat_0603825C
 L88:	.long	_sub_0603826C
 L89:	.long	_sub_06038270
 L90:	.long	_sub_06038274

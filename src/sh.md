@@ -3186,94 +3186,188 @@ static void sh_emit_switch_dispatch(void) {
         sh_switch.active = 0;
 }
 
+/* Range-aware pool interleaving.
+ *
+ * SH-2 PC-relative loads have limited reach:
+ *   mov.l @(disp,PC),Rn  — 8-bit unsigned disp * 4 → max 1020 bytes
+ *   mov.w @(disp,PC),Rn  — 8-bit unsigned disp * 2 → max  510 bytes
+ *
+ * For small functions where all literals can reach the tail, we leave
+ * them for shlit_flush() (matches production's tail-pool pattern).
+ * For large functions, we flush literals that would go out of range
+ * at the next unconditional branch after their first reference.
+ *
+ * Each sh_lines[] entry is roughly one 2-byte SH-2 instruction, so
+ * (sh_nlines - ref_line) * 2 approximates the byte distance from a
+ * reference to the function tail.
+ */
+#define SH_REACH_LONG  1020
+#define SH_REACH_WORD   510
+
+static int sh_is_uncond_branch(const char *s) {
+        while (*s == ' ' || *s == '\t') s++;
+        if (s[0] == 'b' && s[1] == 'r' && s[2] == 'a'
+            && (s[3] == ' ' || s[3] == '\t' || s[3] == '\n'))
+                return 1;
+        if (s[0] == 'b' && s[1] == 'r' && s[2] == 'a'
+            && s[3] == 'f' && (s[4] == ' ' || s[4] == '\t' || s[4] == '\n'))
+                return 1;
+        if (s[0] == 'r' && s[1] == 't' && s[2] == 's'
+            && (s[3] == '\n' || s[3] == '\0' || s[3] == ' ' || s[3] == '\t'))
+                return 1;
+        if (s[0] == 'j' && s[1] == 'm' && s[2] == 'p'
+            && (s[3] == ' ' || s[3] == '\t'))
+                return 1;
+        return 0;
+}
+
 static void sh_interleave_pool(void) {
         int i, j, k;
-        int last_pool_ref = -1;
+        int first_ref[SH_MAX_LITERALS];
+        int last_ref[SH_MAX_LITERALS];
         char labstr[32];
-        int insert_at = -1;
-        int pool_lines;
+        int flushed[SH_MAX_LITERALS];
 
         if (nshlit == 0)
                 return;
 
+        /* Step 1: for each literal, find first and last reference. */
         for (i = 0; i < nshlit; i++) {
+                first_ref[i] = -1;
+                last_ref[i] = -1;
+                flushed[i] = 0;
                 snprintf(labstr, sizeof labstr, "L%d",
                          shlits[i].label);
-                for (j = sh_nlines - 1; j >= 0; j--) {
+                for (j = 0; j < sh_nlines; j++) {
                         if (sh_lines[j][0] != 0
                             && strstr(sh_lines[j], labstr)) {
-                                if (j > last_pool_ref)
-                                        last_pool_ref = j;
-                                break;
+                                if (first_ref[i] < 0)
+                                        first_ref[i] = j;
+                                last_ref[i] = j;
                         }
                 }
         }
 
-        if (last_pool_ref < 0)
-                return;
+        /* Step 2: walk forward, flushing at unconditional branches.
+         *
+         * At each branch+delay, check: would any pending literal go
+         * out of range if deferred to the tail? If so, flush it now.
+         * This naturally produces tail pools for small functions
+         * (range is never violated) and multi-island for large ones. */
+        for (j = 0; j < sh_nlines; j++) {
+                int flush_count, pool_lines, insert_at;
 
-        /* Find the third-to-last dead zone (after rts + delay slot)
-         * that follows the last pool reference. Hitachi SHC places
-         * pool entries between the 3rd and 4th return blocks in
-         * eq-chain dispatch tables. Count dead zones backward from
-         * the end and pick the 3rd one. If fewer than 3 exist, use
-         * the last available. */
-        {
-                int zones[32];
-                int nzones = 0;
-                for (j = last_pool_ref + 1; j < sh_nlines; j++) {
-                        if (sh_lines[j][0] == 0)
-                                continue;
-                        if (!sh_has_prefix(sh_lines[j], "rts"))
-                                continue;
-                        for (k = j + 1; k < sh_nlines; k++)
-                                if (sh_lines[k][0] != 0)
-                                        break;
-                        if (k < sh_nlines && nzones < 32)
-                                zones[nzones++] = k + 1;
-                }
-                if (nzones >= 3)
-                        insert_at = zones[nzones - 3];
-                else if (nzones > 0)
-                        insert_at = zones[0];
-        }
+                if (sh_lines[j][0] == 0)
+                        continue;
+                if (!sh_is_uncond_branch(sh_lines[j]))
+                        continue;
 
-        if (insert_at < 0)
-                return;
-
-        pool_lines = 1 + nshlit;
-        if (sh_nlines + pool_lines > SH_MAX_LINES)
-                return;
-
-        /* Shift existing lines to make room. */
-        for (j = sh_nlines - 1; j >= insert_at; j--) {
-                strncpy(sh_lines[j + pool_lines], sh_lines[j],
-                        SH_MAX_LINELEN - 1);
-                sh_lines[j + pool_lines][SH_MAX_LINELEN - 1] = 0;
-        }
-
-        /* Insert .align + pool entries. */
-        snprintf(sh_lines[insert_at], SH_MAX_LINELEN,
-                 "\t.align 2\n");
-        for (i = 0; i < nshlit; i++) {
-                if (shlits[i].is_symbol)
-                        snprintf(sh_lines[insert_at + 1 + i],
-                                 SH_MAX_LINELEN,
-                                 "L%d:\t.long\t%s\n",
-                                 shlits[i].label, shlits[i].name);
-                else if (shlits[i].is_word)
-                        snprintf(sh_lines[insert_at + 1 + i],
-                                 SH_MAX_LINELEN,
-                                 "L%d:\t.short\t%d\n",
-                                 shlits[i].label, shlits[i].value);
+                /* Skip the delay slot to find the insertion point.
+                 * k lands on the delay-slot instruction; insert
+                 * AFTER it (k+1) so the branch+delay pair stays
+                 * intact. */
+                for (k = j + 1; k < sh_nlines; k++)
+                        if (sh_lines[k][0] != 0)
+                                break;
+                if (k >= sh_nlines)
+                        insert_at = sh_nlines;
                 else
-                        snprintf(sh_lines[insert_at + 1 + i],
-                                 SH_MAX_LINELEN,
-                                 "L%d:\t.long\t%d\n",
-                                 shlits[i].label, shlits[i].value);
+                        insert_at = k + 1;
+
+                /* Count literals that (a) have their last ref at or
+                 * before this branch, AND (b) would be out of range
+                 * if deferred to the tail. */
+                flush_count = 0;
+                for (i = 0; i < nshlit; i++) {
+                        int reach, dist;
+                        if (flushed[i] || last_ref[i] < 0
+                            || last_ref[i] > k)
+                                continue;
+                        reach = shlits[i].is_word
+                                ? SH_REACH_WORD : SH_REACH_LONG;
+                        dist = (sh_nlines - first_ref[i]) * 2;
+                        if (dist > reach)
+                                flush_count++;
+                }
+                if (flush_count == 0)
+                        continue;
+
+                /* Make room: .align + flush_count entries. */
+                pool_lines = 1 + flush_count;
+                if (sh_nlines + pool_lines > SH_MAX_LINES)
+                        return;
+
+                /* Shift lines from insert_at onward. */
+                for (k = sh_nlines - 1; k >= insert_at; k--) {
+                        strncpy(sh_lines[k + pool_lines],
+                                sh_lines[k], SH_MAX_LINELEN - 1);
+                        sh_lines[k + pool_lines][SH_MAX_LINELEN - 1] = 0;
+                }
+
+                /* Insert the island. */
+                snprintf(sh_lines[insert_at], SH_MAX_LINELEN,
+                         "\t.align 2\n");
+                {
+                        int slot = 1;
+                        for (i = 0; i < nshlit; i++) {
+                                int reach, dist;
+                                if (flushed[i] || last_ref[i] < 0
+                                    || last_ref[i] > insert_at - 1)
+                                        continue;
+                                reach = shlits[i].is_word
+                                        ? SH_REACH_WORD : SH_REACH_LONG;
+                                dist = (sh_nlines - first_ref[i]) * 2;
+                                if (dist <= reach)
+                                        continue;
+                                if (shlits[i].is_symbol)
+                                        snprintf(sh_lines[insert_at + slot],
+                                                 SH_MAX_LINELEN,
+                                                 "L%d:\t.long\t%s\n",
+                                                 shlits[i].label,
+                                                 shlits[i].name);
+                                else if (shlits[i].is_word)
+                                        snprintf(sh_lines[insert_at + slot],
+                                                 SH_MAX_LINELEN,
+                                                 "L%d:\t.short\t%d\n",
+                                                 shlits[i].label,
+                                                 shlits[i].value);
+                                else
+                                        snprintf(sh_lines[insert_at + slot],
+                                                 SH_MAX_LINELEN,
+                                                 "L%d:\t.long\t%d\n",
+                                                 shlits[i].label,
+                                                 shlits[i].value);
+                                flushed[i] = 1;
+                                slot++;
+                        }
+                }
+                sh_nlines += pool_lines;
+
+                /* Adjust ref indices for un-flushed literals. */
+                for (i = 0; i < nshlit; i++) {
+                        if (!flushed[i]) {
+                                if (first_ref[i] >= insert_at)
+                                        first_ref[i] += pool_lines;
+                                if (last_ref[i] >= insert_at)
+                                        last_ref[i] += pool_lines;
+                        }
+                }
+                j = insert_at + pool_lines - 1;
         }
-        sh_nlines += pool_lines;
-        nshlit = 0;
+
+        /* Step 4: compact shlits[], keeping only un-flushed entries
+         * for shlit_flush() at the tail. */
+        {
+                int dst = 0;
+                for (i = 0; i < nshlit; i++) {
+                        if (!flushed[i]) {
+                                if (dst != i)
+                                        shlits[dst] = shlits[i];
+                                dst++;
+                        }
+                }
+                nshlit = dst;
+        }
 }
 
 static int sh_is_delay_safe(const char *s) {
