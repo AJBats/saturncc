@@ -1318,6 +1318,141 @@ static void sh_rename_r14_var(int new_reg) {
         }
 }
 
+/* Replace each `bra <exit_label>; <delay_insn>` in the body with an
+ * inline copy of the function epilogue: `<delay_insn>; [FP teardown];
+ * [pops]; rts; <last_pop_as_delay_slot>`. This matches Hitachi SHC's
+ * pattern of duplicating the epilogue at each return point instead of
+ * branching to a shared exit block.
+ *
+ * The original exit label and function()-emitted epilogue remain for
+ * the fall-through case at the end of the function body. */
+static void sh_inline_returns(const char *exit_label,
+                              int need_fp, int ncalls,
+                              unsigned umask)
+{
+        char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        int nout = 0;
+        int i, j, k;
+        char bra_pat[64];
+
+        snprintf(bra_pat, sizeof bra_pat, "\tbra\t%s\n", exit_label);
+
+        for (i = 0; i < sh_nlines && nout < SH_MAX_LINES - 16; i++) {
+                if (sh_lines[i][0] == 0)
+                        continue;
+                if (strcmp(sh_lines[i], bra_pat) != 0) {
+                        strncpy(new_lines[nout], sh_lines[i],
+                                SH_MAX_LINELEN - 1);
+                        new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                        nout++;
+                        continue;
+                }
+                /* Found `bra <exit>`. Next non-empty line is delay. */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0)
+                                break;
+                if (j >= sh_nlines)
+                        break;
+                /* Emit the delay instruction as a regular line. */
+                strncpy(new_lines[nout], sh_lines[j],
+                        SH_MAX_LINELEN - 1);
+                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                nout++;
+                /* Emit inline epilogue. */
+                if (need_fp)
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\tmov\tr14,r15\n");
+                if (ncalls) {
+                        int has_reg_pop = 0;
+                        for (k = 8; k <= 14; k++)
+                                if (umask & (1u << k))
+                                        has_reg_pop = 1;
+                        if (!has_reg_pop) {
+                                /* PR is the only restore — can't go in
+                                 * rts delay slot, emit before rts. */
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tlds.l\t@r15+,pr\n");
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\trts\n");
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tnop\n");
+                        } else {
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tlds.l\t@r15+,pr\n");
+                                for (k = 8; k <= 14; k++) {
+                                        if (!(umask & (1u << k)))
+                                                continue;
+                                        if (k == 14 && !(umask & 0x3f00)) {
+                                                /* r14 is the only reg pop —
+                                                 * it goes in rts delay. */
+                                                break;
+                                        }
+                                        /* Check if this is the last reg
+                                         * pop — save it for delay slot. */
+                                        {
+                                                int last = 1;
+                                                int m;
+                                                for (m = k+1; m <= 14; m++)
+                                                        if (umask & (1u<<m))
+                                                                last = 0;
+                                                if (last) break;
+                                        }
+                                        snprintf(new_lines[nout++],
+                                                 SH_MAX_LINELEN,
+                                                 "\tmov.l\t@r15+,r%d\n", k);
+                                }
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\trts\n");
+                                /* Last reg pop as delay slot. */
+                                for (k = 14; k >= 8; k--)
+                                        if (umask & (1u << k)) {
+                                                snprintf(new_lines[nout++],
+                                                         SH_MAX_LINELEN,
+                                                         "\tmov.l\t@r15+,r%d\n", k);
+                                                break;
+                                        }
+                        }
+                } else {
+                        /* No calls — just reg pops + rts. */
+                        int last_pop = -1;
+                        for (k = 14; k >= 8; k--)
+                                if (umask & (1u << k)) {
+                                        last_pop = k;
+                                        break;
+                                }
+                        for (k = 8; k <= 14; k++) {
+                                if (!(umask & (1u << k)))
+                                        continue;
+                                if (k == last_pop)
+                                        continue;
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tmov.l\t@r15+,r%d\n", k);
+                        }
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\trts\n");
+                        if (last_pop >= 0)
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tmov.l\t@r15+,r%d\n", last_pop);
+                        else
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tnop\n");
+                }
+                /* Skip the original delay line. */
+                i = j;
+        }
+        /* Copy remaining lines (exit label, etc.). */
+        for (; i < sh_nlines; i++) {
+                if (nout >= SH_MAX_LINES) break;
+                strncpy(new_lines[nout], sh_lines[i], SH_MAX_LINELEN - 1);
+                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                nout++;
+        }
+        /* Copy back. */
+        for (i = 0; i < nout; i++)
+                strncpy(sh_lines[i], new_lines[i], SH_MAX_LINELEN - 1);
+        sh_nlines = nout;
+}
+
 static int sh_is_delay_safe(const char *s) {
         /* Conservative whitelist: simple ALU and data moves only.
          * Excludes any branch, jmp/jsr/rts/bsr/bra/bt/bf, and the
@@ -1559,6 +1694,17 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
 
         has_prologue = need_fp || ncalls || usedmask[IREG] != 0;
+
+        /* Inline epilogues at each `bra <exit>` to match Hitachi's
+         * duplicated-return pattern. The exit label comes from the
+         * function's return label allocated by the front end. */
+        if (has_prologue) {
+                char exit_lab[32];
+                snprintf(exit_lab, sizeof exit_lab, "L%d",
+                         f->u.f.label);
+                sh_inline_returns(exit_lab, need_fp, ncalls,
+                                  usedmask[IREG]);
+        }
 
         segment(CODE);
         print("\t.align 2\n");
