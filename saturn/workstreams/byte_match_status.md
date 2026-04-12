@@ -22,11 +22,11 @@ output for three Daytona CCE functions.
 
 ## Current byte-match scores
 
-| Function | Our bytes | Ref bytes | Matching | Match % |
-|----------|-----------|-----------|----------|---------|
-| FUN_06004378 | 100 | 100 | 79 | **79%** |
-| FUN_00280710 | 22 | 26 | 10 | **45%** |
-| FUN_06000AF8 | 30 | 34 | 4 | **13%** |
+| Function | Our bytes | Ref bytes | Matching | Match % | Notes |
+|----------|-----------|-----------|----------|---------|-------|
+| FUN_06004378 | 100 | 100 | ~83 | **~83%** | int type fix freed r1, 4+ bytes fixed |
+| FUN_00280710 | 22 | 26 | 10 | **45%** | |
+| FUN_06000AF8 | 30 | 34 | 4 | **13%** | |
 
 ## FUN_06004378 — remaining 21 mismatched bytes
 
@@ -38,13 +38,11 @@ output for three Daytona CCE functions.
   order, or it was a switch statement with Hitachi-specific case
   ordering. Try reordering the if-chain in the C source.
 
-- [ ] **Unsigned cast creating LOAD** (contributes to scratch reg
-  issue). The `(int)u` cast in comparisons creates an LCC LOAD
-  node that consumes a scratch register, shifting subsequent
-  allocations. The original C may not have needed the cast — if
-  `u` was declared as `int` from the start, or if Hitachi SHC
-  treats `unsigned char` range values as signed for comparisons
-  implicitly. Try declaring `u` as `int` directly.
+- [x] **Unsigned cast creating LOAD** — FIXED (cb8dce3). Changed
+  C source to `int c` / `int u`, eliminating the LOAD node.
+  Constants now get r1 (first scratch) instead of r2. Second
+  constant in each range (0x39, 0x5A) now byte-matches perfectly.
+  First constant still r1 vs reference's r3.
 
 ### Compiler gaps
 
