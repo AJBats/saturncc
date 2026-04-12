@@ -6,9 +6,9 @@ _FUN_06000AF8:
 	mov.l	L6,r6
 	mov.l	L5,r5
 	mov.l	L4,r4
-	mov.l	L7,r1
+	mov.l	L7,r3
 	mov.w	@r4,r4
-	jsr	@r1
+	jsr	@r3
 	extu.w	r4,r4
 	mov	r0,r4
 	tst	r4,r4

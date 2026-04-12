@@ -742,6 +742,7 @@ static void target(Node p) {
         switch (specific(p->op)) {
         case CALL+I: case CALL+P: case CALL+U:
                 setreg(p, ireg[0]);
+                rtarget(p, 0, ireg[3]);
                 break;
         case RET+I: case RET+U: case RET+P:
                 rtarget(p, 0, ireg[0]);
