@@ -42,12 +42,19 @@ for cfile in "$EXPDIR"/FUN_*.c "$EXPDIR"/race_tu1/FUN_*.c; do
     [ -f "$cfile" ] || continue
     sfile="${cfile%.c}.s"
     name="$(basename "$cfile")"
-    if "$RCC" -target=sh/hitachi "$cfile" "$sfile" 2>/dev/null; then
+    # Preprocess first (rcc doesn't handle #define/#include)
+    if cpp -P "$cfile" > /tmp/validate_pp.c 2>/dev/null; then
+        input=/tmp/validate_pp.c
+    else
+        input="$cfile"
+    fi
+    if "$RCC" -target=sh/hitachi "$input" "$sfile" 2>/dev/null; then
         pass "compile $name"
     else
         fail "compile $name"
     fi
 done
+rm -f /tmp/validate_pp.c
 
 # ── 3. Stable outputs (diff against last commit) ─────────
 # Add new stable files here as functions reach their match ceiling.

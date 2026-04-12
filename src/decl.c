@@ -858,6 +858,11 @@ void compound(int loop, struct swtch *swp, int lev) {
 		statement(loop, swp, lev);
 	walk(NULL, 0, 0);
 	foreach(identifiers, level, checkref, NULL);
+	/* LCC normally sorts locals by ref count (most-used gets
+	 * highest-priority register). Disabled for Hitachi SHC
+	 * byte-matching: we need declaration-order allocation so
+	 * the source can control which local lands in which reg. */
+#if 0
 	{
 		int i = nregs, j;
 		Symbol p;
@@ -868,6 +873,7 @@ void compound(int loop, struct swtch *swp, int lev) {
 			cp->u.block.locals[j] = p;
 		}
 	}
+#endif
 	if (level == LOCAL) {
 		Code cp;
 		for (cp = codelist; cp->kind < Label; cp = cp->prev)

@@ -94,6 +94,7 @@ static int cseg;
 static int sh_sizeisave;
 static int sh_localsize;
 static int sh_fp_active;
+static int sh_sp_locals_only;  /* locals exist but FP is not used (SP-relative) */
 static int sh_all_returns_inlined;
 static int sh_uses_macl;
 
@@ -1020,6 +1021,8 @@ static void emit2(Node p) {
                 off = s ? s->x.offset : 0;
                 if (kop == ADDRF) {
                         disp = off + sh_sizeisave;
+                        if (!sh_fp_active && sh_sp_locals_only)
+                                disp += sh_localsize;
                         base = sh_fp_active ? "r14" : "r15";
                 } else {
                         disp = sh_localsize + off;
@@ -1083,6 +1086,8 @@ static void emit2(Node p) {
                 off = s ? s->x.offset : 0;
                 if (kop == ADDRF) {
                         disp = off + sh_sizeisave;
+                        if (!sh_fp_active && sh_sp_locals_only)
+                                disp += sh_localsize;
                         base = sh_fp_active ? "r14" : "r15";
                 } else {
                         disp = sh_localsize + off;
@@ -2958,6 +2963,9 @@ static void sh_inline_returns(const char *exit_label,
                 if (need_fp)
                         snprintf(new_lines[nout++], SH_MAX_LINELEN,
                                  "\tmov\tr14,r15\n");
+                else if (sh_sp_locals_only && sh_localsize > 0)
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\tadd\t#%d,r15\n", sh_localsize);
                 if (sh_uses_macl)
                         snprintf(new_lines[nout++], SH_MAX_LINELEN,
                                  "\tlds.l\t@r15+,macl\n");
@@ -3339,6 +3347,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         nshlit = 0;
         sh_all_returns_inlined = 0;
         sh_uses_macl = 0;
+        sh_sp_locals_only = 0;
 
         usedmask[0] = usedmask[1] = 0;
         freemask[0] = freemask[1] = ~(unsigned)0;
@@ -3425,7 +3434,16 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
          * out to need FP, that's a conflict: r14 can't be both the
          * frame pointer and a var at the same time. We steal the
          * highest-numbered free callee-saved reg as the new var home
-         * and rewrite the captured body after peephole (see below). */
+         * and rewrite the captured body after peephole (see below).
+         *
+         * If ALL callee-saved regs are in use (no free rename target),
+         * we resolve the conflict the other way: keep r14 as a var
+         * and skip the FP entirely. Locals are already accessed via
+         * r15 in our emit paths; the only FP duties are (a) saving
+         * the pre-local SP for the epilogue — replaced by an explicit
+         * `add #localsize,r15` — and (b) ADDRFP4 displacements for
+         * stack-passed params, which get a localsize adjustment. */
+        sh_sp_locals_only = 0;
         if (need_fp && (usedmask[IREG] & (1u << 14))) {
                 int j;
                 for (j = 13; j >= 8; j--) {
@@ -3434,10 +3452,19 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                 break;
                         }
                 }
-                assert(r14_rename_to >= 0);
-                need_r14_rename = 1;
-                usedmask[IREG] &= ~(1u << 14);
-                usedmask[IREG] |= 1u << r14_rename_to;
+                if (r14_rename_to >= 0) {
+                        need_r14_rename = 1;
+                        usedmask[IREG] &= ~(1u << 14);
+                        usedmask[IREG] |= 1u << r14_rename_to;
+                } else {
+                        /* No free register — drop FP, keep r14 as var.
+                         * The prologue will still allocate local space
+                         * via SP, and the epilogue restores SP with an
+                         * explicit add instead of mov r14,r15. */
+                        need_fp = 0;
+                        sh_fp_active = 0;
+                        sh_sp_locals_only = 1;
+                }
         }
 
         if (need_fp)
@@ -3568,6 +3595,9 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         if (localsize > 0)
                                 print("\tadd\t#%d,r15\n",
                                       -localsize);
+                } else if (sh_sp_locals_only && localsize > 0) {
+                        /* No FP — allocate local space via SP only. */
+                        print("\tadd\t#%d,r15\n", -localsize);
                 }
         }
 
@@ -3631,6 +3661,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                          * fall through to a body line or nop. */
                         if (need_fp)
                                 print("\tmov\tr14,r15\n");
+                        else if (sh_sp_locals_only && localsize > 0)
+                                print("\tadd\t#%d,r15\n", localsize);
                         if (sh_uses_macl)
                                 print("\tlds.l\t@r15+,macl\n");
                         for (i = 0; i < npops; i++) {

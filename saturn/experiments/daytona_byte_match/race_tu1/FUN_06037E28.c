@@ -103,26 +103,40 @@ extern short dat_060384AC;
 extern int   dat_060384BC;
 extern int   dat_060384C0;
 
+/* After setup_func(), param_1 is overwritten with the gs address.
+ * This macro lets us use 'gs' in the source while sharing param_1's
+ * register — matching production's reuse of r14 for both roles. */
+#define gs ((int *)param_1)
+
+/* Function pointer call macros — locals are int to control register
+ * allocation order (LCC reorders mixed types unpredictably). */
+#define CALL2(fptr, a)          ((void (*)(int *))(fptr))((a))
+#define CALL3(fptr, a, b)       ((void (*)(int, int *))(fptr))((a), (b))
+#define CALL5(fptr, a, b, c, d) ((void (*)(int, int *, int, int))(fptr))((a), (b), (c), (d))
+
 int FUN_06037E28(int param_1) {
-    int *gs;
     int *secondary;
-    int state;
+    int puVar5;
+    int zero;
+    int puVar4;
+    int puVar3;
+    int puVar2;
 
     setup_func();
 
-    /* Original types: (unsigned short)param_1 * (short)0x01D8 */
-    gs = (int *)((short)((unsigned short)param_1 * (short)0x01D8) + base_array);
+    /* Compute gs address into param_1 — production reuses r14 */
+    param_1 = (int)((short)((unsigned short)param_1 * (short)0x01D8) + base_array);
 
     secondary = *(int **)((char *)gs + 0x0160);
 
-    state = *(int *)((char *)gs + 0x5C);
-    if (state == 10) {
+    if (*(int *)((char *)gs + 0x5C) == 10) {
         return 10;
     }
 
     /* Pre-switch guard: skip call block for states 6, 7, 8 */
-    state = *(int *)((char *)gs + 0x5C);
-    if (state != 6 && state != 7 && state != 8) {
+    if (*(int *)((char *)gs + 0x5C) != 6
+        && *(int *)((char *)gs + 0x5C) != 7
+        && *(int *)((char *)gs + 0x5C) != 8) {
         if (*(char *)((char *)gs + 0x12) == 1 && dat_060540B4 == 1) {
             sub_06037EA4();
         } else {
@@ -130,26 +144,32 @@ int FUN_06037E28(int param_1) {
         }
     }
 
-    switch (state) {
+    puVar2 = (int)sub_06037ED8;
+    zero = 0;
+    puVar5 = (int)sub_06037EE4;
+    puVar3 = (int)sub_06037EDC;
+    puVar4 = (int)sub_06037EE0;
+
+    switch (*(int *)((char *)gs + 0x5C)) {
     case 0:
     case 1:
         sub_06038014(gs);
         sub_06038018(gs);
-        sub_06037EDC(gs);
+        CALL2(puVar3, gs);
         FUN_06038dd8(gs);
         gs[0xc] = gs[0xc] & (int)dat_0603800C & (int)dat_0603800E
                            & (int)dat_06038010 & 0xffffffbf;
         FUN_060384c4(gs);
         func_06038a82(gs);
         func_060385ce(gs);
-        sub_06037EE4(secondary[0], gs, secondary[4], 0);
-        sub_06037EE4(secondary[1], gs, secondary[5], 4);
-        sub_06037EE4(secondary[2], gs, secondary[6], 8);
-        sub_06037EE4(secondary[3], gs, secondary[7], 0xc);
-        sub_06037EE0(0, gs);
+        CALL5(puVar5, secondary[0], gs, secondary[4], 0);
+        CALL5(puVar5, secondary[1], gs, secondary[5], 4);
+        CALL5(puVar5, secondary[2], gs, secondary[6], 8);
+        CALL5(puVar5, secondary[3], gs, secondary[7], 0xc);
+        CALL3(puVar4, zero, gs);
         func_060386d8(gs);
         sub_0603801C(gs);
-        sub_06037ED8(gs);
+        CALL2(puVar2, gs);
         sub_06038020(gs);
         FUN_06038c64(gs);
         sub_06038024(gs);
@@ -157,7 +177,7 @@ int FUN_06037E28(int param_1) {
         break;
     case 2:
         func_06038bc4(gs);
-        sub_06037EDC(gs);
+        CALL2(puVar3, gs);
         gs[0xc] = gs[0xc] & (int)dat_0603813E & (int)dat_06038140
                            & (int)dat_06038142 & 0xffffffbf;
         func_06038a82(gs);
@@ -165,89 +185,77 @@ int FUN_06037E28(int param_1) {
         FUN_06038c64(gs);
         /* Shared tail with case 8 (LAB_06038304 in reference) */
         sub_06038390(gs);
-        sub_06037ED8(gs);
+        CALL2(puVar2, gs);
         break;
     case 3:
         sub_0603814C(gs);
         sub_06038150(gs);
-        sub_06037EDC(gs);
+        CALL2(puVar3, gs);
         FUN_06038dd8(gs);
         gs[0xc] = gs[0xc] & (int)dat_0603813E & (int)dat_06038140
                            & (int)dat_06038142 & 0xffffffbf;
         FUN_060384c4(gs);
         func_06038a82(gs);
         func_060385ce(gs);
-        sub_06037EE4(secondary[0], gs, secondary[4], 0);
-        sub_06037EE4(secondary[1], gs, secondary[5], 4);
-        sub_06037EE4(secondary[2], gs, secondary[6], 8);
-        sub_06037EE4(secondary[3], gs, secondary[7], 0xc);
-        sub_06037EE0(0, gs);
+        CALL5(puVar5, secondary[0], gs, secondary[4], 0);
+        CALL5(puVar5, secondary[1], gs, secondary[5], 4);
+        CALL5(puVar5, secondary[2], gs, secondary[6], 8);
+        CALL5(puVar5, secondary[3], gs, secondary[7], 0xc);
+        CALL3(puVar4, zero, gs);
         func_060386d8(gs);
         FUN_06038c64(gs);
         sub_06038154(gs);
-        sub_06037ED8(gs);
+        CALL2(puVar2, gs);
         sub_06038158(gs);
         sub_0603815C(gs);
         break;
-    case 4: {
-        short sVar1;
+    case 4:
         sub_06038160(gs);
         *(short *)((char *)gs + (int)dat_06038146) = 0;
         gs[0x17] = 5;
-        sVar1 = dat_06038252;
-        if (*dat_06038164 == 2) {
-            sVar1 = dat_06038148;
-        }
-        sub_06038260((int)sVar1);
-    }
+        sub_06038260(*dat_06038164 == 2 ? (int)dat_06038148 : (int)dat_06038252);
     /* fall through */
     case 5:
         *(char *)((char *)gs + (int)dat_06038254) = 0;
         sub_06038264(gs);
         sub_06038268(gs);
-        sub_06037EDC(gs);
+        CALL2(puVar3, gs);
         FUN_06038dd8(gs);
         gs[0xc] = gs[0xc] & (int)dat_06038256 & (int)dat_06038258
                            & (int)dat_0603825A & 0xffffffbf;
         FUN_060384c4(gs);
         func_06038a82(gs);
         func_060385ce(gs);
-        sub_06037EE4(secondary[0], gs, secondary[4], 0);
-        sub_06037EE4(secondary[1], gs, secondary[5], 4);
-        sub_06037EE4(secondary[2], gs, secondary[6], 8);
-        sub_06037EE4(secondary[3], gs, secondary[7], 0xc);
+        CALL5(puVar5, secondary[0], gs, secondary[4], 0);
+        CALL5(puVar5, secondary[1], gs, secondary[5], 4);
+        CALL5(puVar5, secondary[2], gs, secondary[6], 8);
+        CALL5(puVar5, secondary[3], gs, secondary[7], 0xc);
         if (3 < *(unsigned short *)((char *)gs + (int)dat_0603825C)) {
-            sub_06037EE0(0, gs);
+            CALL3(puVar4, zero, gs);
             if (*(char *)((char *)gs + (int)dat_06038254) == 1) {
                 FUN_060384c4(gs);
-                sub_06037EE4(secondary[0], gs, secondary[4], 0);
-                sub_06037EE4(secondary[1], gs, secondary[5], 4);
-                sub_06037EE4(secondary[2], gs, secondary[6], 8);
-                sub_06037EE4(secondary[3], gs, secondary[7], 0xc);
+                CALL5(puVar5, secondary[0], gs, secondary[4], 0);
+                CALL5(puVar5, secondary[1], gs, secondary[5], 4);
+                CALL5(puVar5, secondary[2], gs, secondary[6], 8);
+                CALL5(puVar5, secondary[3], gs, secondary[7], 0xc);
             }
         }
         func_060386d8(gs);
         FUN_06038c64(gs);
         sub_0603826C(gs);
-        sub_06037ED8(gs);
+        CALL2(puVar2, gs);
         sub_06038270(gs);
         break;
-    case 6: {
-        short sVar1;
+    case 6:
         sub_06038274(gs);
         gs[0x17] = 7;
-        sVar1 = dat_06038378;
-        if (*dat_06038278 == 2) {
-            sVar1 = dat_0603825E;
-        }
-        sub_06038384((int)sVar1);
-    }
+        sub_06038384(*dat_06038278 == 2 ? (int)dat_0603825E : (int)dat_06038378);
     /* fall through */
     case 7:
         func_06038bc4(gs);
         sub_06038388(gs);
         sub_0603838C(gs);
-        sub_06037EDC(gs);
+        CALL2(puVar3, gs);
         FUN_06038dd8(gs);
         gs[0xc] = gs[0xc] & (int)dat_0603837A & (int)dat_0603837C
                            & (int)dat_0603837E & 0xffffffbf;
@@ -255,12 +263,12 @@ int FUN_06037E28(int param_1) {
         func_060385ce(gs);
         FUN_06038c64(gs);
         sub_06038390(gs);
-        sub_06037ED8(gs);
+        CALL2(puVar2, gs);
         sub_06038394(gs);
         break;
     case 8:
         func_06038bc4(gs);
-        sub_06037EDC(gs);
+        CALL2(puVar3, gs);
         gs[0xc] = gs[0xc] & (int)dat_0603837A & (int)dat_0603837C
                            & (int)dat_0603837E & 0xffffffbf;
         func_06038a82(gs);
@@ -268,65 +276,58 @@ int FUN_06037E28(int param_1) {
         FUN_06038c64(gs);
         /* Shared tail (LAB_06038304) */
         sub_06038390(gs);
-        sub_06037ED8(gs);
+        CALL2(puVar2, gs);
         break;
-    case 9: {
-        char *pcVar7;
+    case 9:
         *(char *)((char *)gs + (int)dat_06038380) = 0;
         gs[9] = 0;
-        sub_06037EDC(gs);
+        CALL2(puVar3, gs);
         gs[0xc] = gs[0xc] & (int)dat_0603837A & (int)dat_0603837C
                            & (int)dat_0603837E & 0xffffffbf;
         sub_06038398(gs);
-        pcVar7 = dat_0603839C;
         if (*(char *)((char *)gs + 0x12) == 1 && dat_060383A4 == 1) {
             gs[0] = *(int *)(dat_060383A0 + (char)(*dat_0603839C * 12));
-            gs[2] = *(int *)(dat_060383A0 + (char)(*pcVar7 * 12) + 8);
+            gs[2] = *(int *)(dat_060383A0 + (char)(*dat_0603839C * 12) + 8);
         } else {
             gs[0] = *(int *)(dat_060383A0
                     + (int)(char)(*dat_0603839C * 12)
                     + *(char *)((char *)gs + 0x12) * 0x3c);
             gs[2] = *(int *)(dat_060384B0
-                    + (int)(char)(*pcVar7 * 12)
+                    + (int)(char)(*dat_0603839C * 12)
                     + *(char *)((char *)gs + 0x12) * 0x3c + 8);
         }
         FUN_060384c4(gs);
         func_06038a82(gs);
         func_060385ce(gs);
-        sub_06037EE4(secondary[0], gs, secondary[4], 0);
-        sub_06037EE4(secondary[1], gs, secondary[5], 4);
-        sub_06037EE4(secondary[2], gs, secondary[6], 8);
-        sub_06037EE4(secondary[3], gs, secondary[7], 0xc);
-        sub_06037EE0(0, gs);
+        CALL5(puVar5, secondary[0], gs, secondary[4], 0);
+        CALL5(puVar5, secondary[1], gs, secondary[5], 4);
+        CALL5(puVar5, secondary[2], gs, secondary[6], 8);
+        CALL5(puVar5, secondary[3], gs, secondary[7], 0xc);
+        CALL3(puVar4, zero, gs);
         if (*(char *)((char *)gs + (int)dat_060384AC) == 1) {
             FUN_060384c4(gs);
-            sub_06037EE4(secondary[0], gs, secondary[4], 0);
-            sub_06037EE4(secondary[1], gs, secondary[5], 4);
-            sub_06037EE4(secondary[2], gs, secondary[6], 8);
-            sub_06037EE4(secondary[3], gs, secondary[7], 0xc);
+            CALL5(puVar5, secondary[0], gs, secondary[4], 0);
+            CALL5(puVar5, secondary[1], gs, secondary[5], 4);
+            CALL5(puVar5, secondary[2], gs, secondary[6], 8);
+            CALL5(puVar5, secondary[3], gs, secondary[7], 0xc);
         }
         func_060386d8(gs);
         FUN_06038c64(gs);
         break;
-    }
     }
 
     /* Post-switch epilogue — shared by all paths */
     sub_060384B4(gs);
     gs[0xc] = gs[0xc] & dat_060384B8;
     gs[0xb] = gs[0xb] + gs[0xd];
-    {
-        int addr = dat_060384BC;
-        int idx;
-        if (*(short *)(addr + *(char *)((char *)gs + 0x12) * 2) != 0) {
-            idx = *(char *)((char *)gs + 0x12) * 2;
-            *(short *)(addr + idx) = *(short *)(addr + idx) + -1;
-        }
-        idx = *(char *)((char *)gs + 0x12) * 2;
-        if (*(short *)(dat_060384C0 + idx) != 0) {
-            idx = *(char *)((char *)gs + 0x12) * 2;
-            *(short *)(dat_060384C0 + idx) = *(short *)(dat_060384C0 + idx) + -1;
-        }
-        return idx;
+    if (*(short *)(dat_060384BC + *(char *)((char *)gs + 0x12) * 2) != 0) {
+        *(short *)(dat_060384BC + *(char *)((char *)gs + 0x12) * 2) =
+            *(short *)(dat_060384BC + *(char *)((char *)gs + 0x12) * 2) + -1;
     }
+    if (*(short *)(dat_060384C0 + *(char *)((char *)gs + 0x12) * 2) != 0) {
+        *(short *)(dat_060384C0 + *(char *)((char *)gs + 0x12) * 2) =
+            *(short *)(dat_060384C0 + *(char *)((char *)gs + 0x12) * 2) + -1;
+    }
+    return *(char *)((char *)gs + 0x12) * 2;
 }
+#undef gs
