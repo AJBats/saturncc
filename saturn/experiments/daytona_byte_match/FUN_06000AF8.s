@@ -12,7 +12,6 @@ _FUN_06000AF8:
 	extu.w	r4,r4
 	mov	r0,r4
 	tst	r4,r4
-	bt	L2
 L2:
 	mov.l	L8,r1
 	mov.b	@r1,r2

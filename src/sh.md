@@ -1737,6 +1737,40 @@ copy_line:
         }
 }
 
+/* Delete `bt/bf Label` when Label is the immediately next non-empty
+ * line. This is dead code from empty if-bodies like `if (x) {}`. */
+static void sh_elim_dead_branches(void) {
+        int i, j;
+        for (i = 0; i < sh_nlines; i++) {
+                char label[64], expected[68];
+                const char *p;
+                int len;
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "bt")
+                    && !sh_has_prefix(sh_lines[i], "bf"))
+                        continue;
+                if (sh_has_prefix(sh_lines[i], "bt/s")
+                    || sh_has_prefix(sh_lines[i], "bf/s"))
+                        continue;
+                p = sh_lines[i];
+                while (*p == ' ' || *p == '\t') p++;
+                p += 2;
+                while (*p == ' ' || *p == '\t') p++;
+                len = 0;
+                while (p[len] && p[len] != '\n' && p[len] != ' '
+                       && p[len] != '\t') len++;
+                if (len <= 0 || len >= (int)sizeof label) continue;
+                memcpy(label, p, (size_t)len);
+                label[len] = 0;
+                snprintf(expected, sizeof expected, "%s:\n", label);
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j < sh_nlines
+                    && strcmp(sh_lines[j], expected) == 0)
+                        sh_lines[i][0] = 0;
+        }
+}
+
 /* After a jsr, if the call result is saved to a callee-saved reg
  * (mov r0,rN) and only used to return later (mov rN,r0), rename
  * to r4 (the freed first arg register). This avoids a callee-saved
@@ -2878,6 +2912,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
 
         sh_result_to_arg_reg();
+        sh_elim_dead_branches();
 
         /* Rebuild usedmask from surviving body lines so dead-after-
          * peephole registers drop off the save/restore list. This is
