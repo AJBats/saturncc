@@ -1534,6 +1534,209 @@ static void sh_coalesce_move_chains(void) {
         }
 }
 
+/* Rewrite the boolean bf/s pattern to match Hitachi SHC's always-FP
+ * idiom. Detects:
+ *   bf/s L; mov #X,rN; mov #Y,rN; L: mov rN,r0; [exit]: rts; pop
+ * Rewrites to:
+ *   bf/s L_new; mov r15,r14; bra L_merge; mov #Y,r0; L_new:
+ *   mov #X,r0; L_merge: mov r14,r15; rts; pop
+ *
+ * This adds FP setup/teardown (matching Hitachi's always-FP idiom)
+ * and moves the boolean directly to r0. Only fires when the function
+ * wouldn't otherwise need FP (need_fp == 0). */
+static void sh_rewrite_bool_fp(int need_fp) {
+        int i, j, k, m, n;
+        int rA, rB, rX, rY, rP, rQ;
+        char label_bfs[64], label_merge[64];
+        char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        int nout = 0;
+
+        if (need_fp) return;
+
+        for (i = 0; i < sh_nlines; i++) {
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "bf/s")
+                    && !sh_has_prefix(sh_lines[i], "bt/s")) {
+                        strncpy(new_lines[nout], sh_lines[i],
+                                SH_MAX_LINELEN - 1);
+                        new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                        nout++;
+                        continue;
+                }
+                /* Found bf/s or bt/s. Check pattern:
+                 * next: mov #X,rN (delay slot)
+                 * next: mov #Y,rN (overwrite, same dest)
+                 * next: Label:
+                 * next: mov rN,r0 */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) goto copy_line;
+                if (!sh_parse_regmov(sh_lines[j], &rA, &rB)) {
+                        /* Check if it's a mov #imm,rN */
+                        const char *p = sh_lines[j];
+                        while (*p == ' ' || *p == '\t') p++;
+                        if (!(p[0]=='m'&&p[1]=='o'&&p[2]=='v'
+                              &&(p[3]==' '||p[3]=='\t')))
+                                goto copy_line;
+                        p += 3;
+                        while (*p == ' ' || *p == '\t') p++;
+                        if (*p != '#') goto copy_line;
+                        /* Get dest register */
+                        {
+                                const char *r = NULL, *s = sh_lines[j];
+                                while (*s) {
+                                        if (*s == 'r' && s[1] >= '0'
+                                            && s[1] <= '9')
+                                                r = s;
+                                        s++;
+                                }
+                                if (!r) goto copy_line;
+                                r++;
+                                rB = *r - '0';
+                                if (r[1] >= '0' && r[1] <= '9')
+                                        rB = rB * 10 + (r[1] - '0');
+                        }
+                }
+                /* j = delay slot: mov #X,rN (rN = rB) */
+                /* Skip any intermediate labels to find overwrite. */
+                for (k = j + 1; k < sh_nlines; k++) {
+                        if (sh_lines[k][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[k])) continue;
+                        break;
+                }
+                if (k >= sh_nlines) goto copy_line;
+                /* k = overwrite: mov #Y,rN (same rB) */
+                if (!sh_writes_reg(sh_lines[k], rB)) goto copy_line;
+                for (m = k + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) goto copy_line;
+                /* m = label */
+                if (!sh_is_label_line(sh_lines[m])) goto copy_line;
+                {
+                        const char *lp = sh_lines[m];
+                        int len = 0;
+                        while (*lp == ' ' || *lp == '\t') lp++;
+                        while (lp[len] && lp[len] != ':'
+                               && lp[len] != '\n') len++;
+                        if (len <= 0 || len >= (int)sizeof label_bfs)
+                                goto copy_line;
+                        memcpy(label_bfs, lp, (size_t)len);
+                        label_bfs[len] = 0;
+                }
+                for (n = m + 1; n < sh_nlines; n++)
+                        if (sh_lines[n][0] != 0) break;
+                if (n >= sh_nlines) goto copy_line;
+                /* n = mov rN,r0 */
+                if (!sh_parse_regmov(sh_lines[n], &rP, &rQ))
+                        goto copy_line;
+                if (rP != rB || rQ != 0) goto copy_line;
+
+                /* Pattern matched! Rewrite. Generate a merge label. */
+                snprintf(label_merge, sizeof label_merge,
+                         "Lm%d", i);
+
+                /* bf/s → bf/s <new_true_label> */
+                {
+                        const char *p = sh_lines[i];
+                        char prefix[8];
+                        while (*p == ' ' || *p == '\t') p++;
+                        if (p[1] == 'f') strncpy(prefix, "bf/s", 5);
+                        else strncpy(prefix, "bt/s", 5);
+                        /* Keep the same branch — it goes to the
+                         * TRUE case label (reuse original). */
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\t%s\t%s\n", prefix, label_bfs);
+                }
+                /* Delay slot: mov r15,r14 (FP setup) */
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tmov\tr15,r14\n");
+                /* bra merge; mov #Y,r0 (false in delay slot) */
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tbra\t%s\n", label_merge);
+                /* Replace rN with r0 in the overwrite line */
+                {
+                        char buf[SH_MAX_LINELEN];
+                        char old_r[8], new_r[4];
+                        const char *in;
+                        char *out;
+                        snprintf(old_r, sizeof old_r, "r%d", rB);
+                        snprintf(new_r, sizeof new_r, "r0");
+                        in = sh_lines[k];
+                        out = buf;
+                        while (*in) {
+                                if (*in == 'r'
+                                    && strncmp(in, old_r,
+                                               strlen(old_r)) == 0
+                                    && !(in[strlen(old_r)] >= '0'
+                                         && in[strlen(old_r)] <= '9')) {
+                                        int nn = snprintf(out,
+                                                sizeof buf-(size_t)(out-buf),
+                                                "%s", new_r);
+                                        out += nn;
+                                        in += strlen(old_r);
+                                } else {
+                                        *out++ = *in++;
+                                }
+                        }
+                        *out = 0;
+                        strncpy(new_lines[nout++], buf,
+                                SH_MAX_LINELEN - 1);
+                }
+                /* Label: true case */
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "%s:\n", label_bfs);
+                /* mov #X,r0 (true value, replace rN with r0) */
+                {
+                        char buf[SH_MAX_LINELEN];
+                        char old_r[8], new_r[4];
+                        const char *in;
+                        char *out;
+                        snprintf(old_r, sizeof old_r, "r%d", rB);
+                        snprintf(new_r, sizeof new_r, "r0");
+                        in = sh_lines[j];
+                        out = buf;
+                        while (*in) {
+                                if (*in == 'r'
+                                    && strncmp(in, old_r,
+                                               strlen(old_r)) == 0
+                                    && !(in[strlen(old_r)] >= '0'
+                                         && in[strlen(old_r)] <= '9')) {
+                                        int nn = snprintf(out,
+                                                sizeof buf-(size_t)(out-buf),
+                                                "%s", new_r);
+                                        out += nn;
+                                        in += strlen(old_r);
+                                } else {
+                                        *out++ = *in++;
+                                }
+                        }
+                        *out = 0;
+                        strncpy(new_lines[nout++], buf,
+                                SH_MAX_LINELEN - 1);
+                }
+                /* Merge label + FP teardown */
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "%s:\n", label_merge);
+                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                         "\tmov\tr14,r15\n");
+                /* Skip the original lines we consumed */
+                i = n;
+                continue;
+copy_line:
+                strncpy(new_lines[nout], sh_lines[i],
+                        SH_MAX_LINELEN - 1);
+                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                nout++;
+                continue;
+        }
+        if (nout != sh_nlines) {
+                for (i = 0; i < nout; i++)
+                        strncpy(sh_lines[i], new_lines[i],
+                                SH_MAX_LINELEN - 1);
+                sh_nlines = nout;
+        }
+}
+
 /* Swap `extu.b rA,rB; mov #imm,rC` to `mov #imm,rC; extu.b rA,rB`
  * when the two instructions are independent (no register overlap).
  * Matches Hitachi SHC's evaluation order where comparison constants
@@ -2569,6 +2772,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         sh_reorder_extu_mov();
         sh_restructure_eq_chain();
         sh_fold_conditional_delays();
+        sh_rewrite_bool_fp(need_fp);
         sh_swap_pool_add();
         sh_coalesce_move_chains();
         sh_elim_redundant_mov_r0();

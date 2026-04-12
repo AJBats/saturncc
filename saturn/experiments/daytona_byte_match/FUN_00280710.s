@@ -8,11 +8,13 @@ _FUN_00280710:
 	extu.w	r1,r1
 	tst	r1,r1
 	bf/s	L4
-	mov	#1,r14
-L3:
-	mov	#0,r14
+	mov	r15,r14
+	bra	Lm4
+	mov	#0,r0
 L4:
-	mov	r14,r0
+	mov	#1,r0
+Lm4:
+	mov	r14,r15
 L1:
 	rts
 	mov.l	@r15+,r14
