@@ -7,8 +7,7 @@ _FUN_00280710:
 	mov.w	@r1,r1
 	extu.w	r1,r1
 	tst	r1,r1
-	bt	L3
-	bra	L4
+	bf/s	L4
 	mov	#1,r14
 L3:
 	mov	#0,r14

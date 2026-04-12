@@ -111,6 +111,7 @@ static int sh_fp_active;
 struct shlit {
         int label;
         int is_symbol;          /* 0 = numeric, 1 = symbol name */
+        int is_word;            /* 1 = .word (16-bit), 0 = .long  */
         int value;
         char *name;
 };
@@ -552,6 +553,19 @@ static int shlit_num(int val) {
         return shlits[nshlit++].label;
 }
 
+static int shlit_word(int val) {
+        int i;
+        for (i = 0; i < nshlit; i++)
+                if (shlits[i].is_word && shlits[i].value == val)
+                        return shlits[i].label;
+        assert(nshlit < SH_MAX_LITERALS);
+        shlits[nshlit].label = genlabel(1);
+        shlits[nshlit].is_symbol = 0;
+        shlits[nshlit].is_word = 1;
+        shlits[nshlit].value = val;
+        return shlits[nshlit++].label;
+}
+
 static int shlit_sym(char *name) {
         int i;
         for (i = 0; i < nshlit; i++)
@@ -573,6 +587,9 @@ static void shlit_flush(void) {
                 if (shlits[i].is_symbol)
                         print("L%d:\t.long\t%s\n",
                               shlits[i].label, shlits[i].name);
+                else if (shlits[i].is_word)
+                        print("L%d:\t.short\t%d\n",
+                              shlits[i].label, shlits[i].value);
                 else
                         print("L%d:\t.long\t%d\n",
                               shlits[i].label, shlits[i].value);
@@ -785,11 +802,18 @@ static void emit2(Node p) {
         Symbol s;
         char *base;
         switch (specific(p->op)) {
-        case CNST+I: case CNST+U: case CNST+P:
-                lab = shlit_num((int)p->syms[0]->u.c.v.i);
+        case CNST+I: case CNST+U: case CNST+P: {
+                int val = (int)p->syms[0]->u.c.v.i;
                 dst = getregnum(p);
-                print("\tmov.l\tL%d,r%d\n", lab, dst);
+                if ((int)(short)val == val) {
+                        lab = shlit_word(val);
+                        print("\tmov.w\tL%d,r%d\n", lab, dst);
+                } else {
+                        lab = shlit_num(val);
+                        print("\tmov.l\tL%d,r%d\n", lab, dst);
+                }
                 break;
+                }
         case ADDRG+P:
                 lab = shlit_sym(p->syms[0]->x.name);
                 dst = getregnum(p);
@@ -1293,6 +1317,205 @@ static void sh_peephole(void) {
         }
 }
 
+/* Fold `bt/bf L1; bra L2; <insn>; L1: <overwrite>` into
+ * `bf/s/bt/s L2; <insn>; L1: <overwrite>` when <insn> and
+ * <overwrite> write the same destination register. The delay slot
+ * of bf/s always executes; on the fall-through path, <overwrite>
+ * replaces the delay slot's result. Saves one instruction (bra). */
+static void sh_fold_conditional_delays(void) {
+        int i, j, k, m, n;
+        for (i = 0; i < sh_nlines; i++) {
+                int is_bt, is_bf;
+                char label1[64], label2[64];
+                int ds_dst, ow_dst;
+                char *p;
+
+                if (sh_lines[i][0] == 0)
+                        continue;
+                is_bt = sh_has_prefix(sh_lines[i], "bt");
+                is_bf = sh_has_prefix(sh_lines[i], "bf");
+                if (!is_bt && !is_bf)
+                        continue;
+                /* Don't match bt/s or bf/s (already delayed). */
+                p = sh_lines[i];
+                while (*p == ' ' || *p == '\t') p++;
+                if ((p[2] == '/' && p[3] == 's')
+                    || (p[2] == '.' && p[3] == 's'))
+                        continue;
+
+                /* Extract bt/bf target label. */
+                p += 2;
+                while (*p == ' ' || *p == '\t') p++;
+                {
+                        int len = 0;
+                        while (p[len] && p[len] != '\n'
+                               && p[len] != ' ' && p[len] != '\t')
+                                len++;
+                        if (len == 0 || len >= (int)sizeof label1)
+                                continue;
+                        memcpy(label1, p, (size_t)len);
+                        label1[len] = 0;
+                }
+
+                /* Next non-empty: must be `bra <label2>`. */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines
+                    || !sh_has_prefix(sh_lines[j], "bra"))
+                        continue;
+                p = sh_lines[j];
+                while (*p == ' ' || *p == '\t') p++;
+                p += 3;
+                while (*p == ' ' || *p == '\t') p++;
+                {
+                        int len = 0;
+                        while (p[len] && p[len] != '\n'
+                               && p[len] != ' ' && p[len] != '\t')
+                                len++;
+                        if (len == 0 || len >= (int)sizeof label2)
+                                continue;
+                        memcpy(label2, p, (size_t)len);
+                        label2[len] = 0;
+                }
+
+                /* Next non-empty: delay slot of bra. */
+                for (k = j + 1; k < sh_nlines; k++)
+                        if (sh_lines[k][0] != 0) break;
+                if (k >= sh_nlines
+                    || !sh_is_delay_safe(sh_lines[k]))
+                        continue;
+
+                /* Next non-empty: must be `label1:`. */
+                for (m = k + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines
+                    || !sh_is_label_line(sh_lines[m]))
+                        continue;
+                {
+                        char expected[64];
+                        snprintf(expected, sizeof expected,
+                                 "%s:\n", label1);
+                        if (strcmp(sh_lines[m], expected) != 0)
+                                continue;
+                }
+
+                /* Next non-empty: overwrite instruction. */
+                for (n = m + 1; n < sh_nlines; n++)
+                        if (sh_lines[n][0] != 0) break;
+                if (n >= sh_nlines)
+                        continue;
+
+                /* Both delay insn and overwrite must write the
+                 * same destination register. */
+                {
+                        const char *s1 = sh_lines[k];
+                        const char *s2 = sh_lines[n];
+                        const char *r1 = NULL, *r2 = NULL;
+                        while (*s1) {
+                                if (*s1 == 'r' && s1[1] >= '0'
+                                    && s1[1] <= '9')
+                                        r1 = s1;
+                                s1++;
+                        }
+                        while (*s2) {
+                                if (*s2 == 'r' && s2[1] >= '0'
+                                    && s2[1] <= '9')
+                                        r2 = s2;
+                                s2++;
+                        }
+                        if (!r1 || !r2) continue;
+                        r1++; r2++;
+                        ds_dst = *r1 - '0';
+                        if (r1[1] >= '0' && r1[1] <= '9')
+                                ds_dst = ds_dst * 10 + (r1[1] - '0');
+                        ow_dst = *r2 - '0';
+                        if (r2[1] >= '0' && r2[1] <= '9')
+                                ow_dst = ow_dst * 10 + (r2[1] - '0');
+                        if (ds_dst != ow_dst) continue;
+                }
+
+                /* Transform: replace bt→bf/s or bf→bt/s,
+                 * targeting label2 (the bra target). */
+                snprintf(sh_lines[i], SH_MAX_LINELEN,
+                         "\t%s\t%s\n",
+                         is_bt ? "bf/s" : "bt/s", label2);
+                /* Move delay insn into slot after the new bf/s.
+                 * (It's already at position k, which is right
+                 * after j. Blank the old bra line.) */
+                sh_lines[j][0] = 0;
+        }
+}
+
+/* Eliminate redundant `mov rA,r0` in cmp/eq #imm chains. When
+ * multiple equality comparisons test the same variable against
+ * different constants, each emits `mov rA,r0; cmp/eq #imm,r0`.
+ * On the fall-through path (bf not taken), r0 still holds rA from
+ * the first mov — subsequent movs are dead. The taken-match path
+ * terminates via rts and doesn't reach the next comparison.
+ *
+ * Linear scan: track which register r0 mirrors. When we see a
+ * `mov rA,r0` and r0 already holds rA, delete it. Instructions
+ * that write r0 on a path ending in rts don't invalidate r0 for
+ * the fall-through. */
+static void sh_elim_redundant_mov_r0(void) {
+        int i, j;
+        int r0_src = -1;
+
+        for (i = 0; i < sh_nlines; i++) {
+                int rA, rB;
+                if (sh_lines[i][0] == 0)
+                        continue;
+                if (sh_is_label_line(sh_lines[i]))
+                        continue;
+                if (sh_has_prefix(sh_lines[i], "cmp")
+                    || sh_has_prefix(sh_lines[i], "tst"))
+                        continue;
+                if (sh_has_prefix(sh_lines[i], "bt")
+                    || sh_has_prefix(sh_lines[i], "bf"))
+                        continue;
+                if (sh_has_prefix(sh_lines[i], "rts")) {
+                        for (j = i + 1; j < sh_nlines; j++)
+                                if (sh_lines[j][0] != 0) break;
+                        if (j < sh_nlines) i = j;
+                        continue;
+                }
+                if (!sh_parse_regmov(sh_lines[i], &rA, &rB)) {
+                        /* If this insn writes the register r0
+                         * is mirroring, the mirror is stale. */
+                        if (r0_src >= 0
+                            && sh_writes_reg(sh_lines[i], r0_src))
+                                r0_src = -1;
+                        if (sh_writes_reg(sh_lines[i], 0)) {
+                                int k, terminates = 0;
+                                for (k = i + 1; k < sh_nlines; k++) {
+                                        if (sh_lines[k][0] == 0)
+                                                continue;
+                                        if (sh_has_prefix(sh_lines[k], "rts")) {
+                                                terminates = 1;
+                                                break;
+                                        }
+                                        if (sh_is_label_line(sh_lines[k])
+                                            || sh_is_branch_line(sh_lines[k]))
+                                                break;
+                                }
+                                if (!terminates)
+                                        r0_src = -1;
+                        }
+                        continue;
+                }
+                if (rB != 0) {
+                        if (rB == r0_src)
+                                r0_src = -1;
+                        continue;
+                }
+                if (rA == r0_src) {
+                        sh_lines[i][0] = 0;
+                } else {
+                        r0_src = rA;
+                }
+        }
+}
+
 /* Rename every non-FP use of r14 in the captured body to r<new_reg>.
  * An r14 token is considered an FP-indirect use iff it appears inside
  * `@(disp,r14)` — i.e., preceded by `,` and followed by `)`. Every
@@ -1547,6 +1770,11 @@ static void sh_interleave_pool(void) {
                                  SH_MAX_LINELEN,
                                  "L%d:\t.long\t%s\n",
                                  shlits[i].label, shlits[i].name);
+                else if (shlits[i].is_word)
+                        snprintf(sh_lines[insert_at + 1 + i],
+                                 SH_MAX_LINELEN,
+                                 "L%d:\t.short\t%d\n",
+                                 shlits[i].label, shlits[i].value);
                 else
                         snprintf(sh_lines[insert_at + 1 + i],
                                  SH_MAX_LINELEN,
@@ -1810,6 +2038,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                   usedmask[IREG]);
         }
 
+        sh_fold_conditional_delays();
+        sh_elim_redundant_mov_r0();
         sh_interleave_pool();
 
         segment(CODE);

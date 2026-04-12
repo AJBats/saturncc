@@ -21,15 +21,17 @@
  * too long to inline here. See the file directly.
  */
 
-extern short sRam0602c3cc;
-extern short sRam0602c3ce;
+/* The Ghidra decompilation declared these as `extern short`, but the
+ * reference binary loads them as compile-time constants via
+ * `mov.w @(disp,PC)`. The actual values from the binary are 0x00D0
+ * and 0x00C9 — known short constants, not runtime dereferences. */
 
 int FUN_06004378(unsigned int c) {
     unsigned int u = c & 0xff;
     if (u > 0x2f && u < 0x3a)
-        return (int)sRam0602c3cc + c;
+        return 0x00D0 + c;
     if (u > 0x40 && u < 0x5b)
-        return (int)sRam0602c3ce + c;
+        return 0x00C9 + c;
     if (u == 0x22) return 0x25;
     if (u == 0x27) return 0x24;
     if (u == 0x2d) return 0x26;
