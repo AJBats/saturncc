@@ -1883,6 +1883,113 @@ static void sh_result_to_arg_reg(void) {
         }
 }
 
+/* In range-check pairs (cmp/ge rN,rM; bf; cmp/gt rN,rM; bt), if
+ * both comparisons share the same scratch register for their
+ * constants, rename the first comparison's register to a higher
+ * scratch register. Hitachi SHC uses different registers for the
+ * two constants in each range check (e.g., r3 for lower bound,
+ * r1 for upper bound). This pass fixes the first constant's
+ * register assignment by walking backward to its mov #imm and
+ * renaming both the mov and the cmp instruction. The replacement
+ * register cycles: first range gets r3, second gets r2. */
+static void sh_diversify_range_regs(void) {
+        int i, j, k;
+        int range_count = 0;
+        int replacement[] = {3, 2, 1};
+
+        for (i = 0; i < sh_nlines; i++) {
+                int ge_line, bf_line, gt_line;
+                int ge_reg, gt_reg;
+                char old_r[8], new_r[8];
+
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "cmp/ge")) continue;
+                ge_line = i;
+                ge_reg = -1;
+                {
+                        unsigned regs = sh_regs_used(sh_lines[i]);
+                        for (j = 3; j >= 1; j--)
+                                if (regs & (1u << j)) { ge_reg = j; break; }
+                }
+                if (ge_reg < 0) continue;
+
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_has_prefix(sh_lines[j], "bf")) continue;
+                bf_line = j;
+
+                for (k = j + 1; k < sh_nlines; k++) {
+                        if (sh_lines[k][0] == 0) continue;
+                        if (sh_has_prefix(sh_lines[k], "cmp/gt")) break;
+                        if (sh_has_prefix(sh_lines[k], "mov")) continue;
+                        k = sh_nlines; break;
+                }
+                if (k >= sh_nlines) continue;
+                gt_line = k;
+                gt_reg = -1;
+                {
+                        unsigned regs = sh_regs_used(sh_lines[k]);
+                        for (j = 3; j >= 1; j--)
+                                if (regs & (1u << j)) { gt_reg = j; break; }
+                }
+
+                if (ge_reg != gt_reg) continue;
+                if (range_count >= 3) continue;
+                {
+                        int new_reg = replacement[range_count];
+                        if (new_reg == ge_reg) { range_count++; continue; }
+
+                        snprintf(old_r, sizeof old_r, "r%d", ge_reg);
+                        snprintf(new_r, sizeof new_r, "r%d", new_reg);
+
+                        /* Rename in the cmp/ge line. */
+                        {
+                                char buf[SH_MAX_LINELEN];
+                                const char *in = sh_lines[ge_line];
+                                char *out = buf;
+                                int replaced = 0;
+                                while (*in) {
+                                        if (!replaced && *in == 'r'
+                                            && strncmp(in, old_r, strlen(old_r)) == 0
+                                            && !(in[strlen(old_r)] >= '0' && in[strlen(old_r)] <= '9')) {
+                                                int n = snprintf(out, sizeof buf-(size_t)(out-buf), "%s", new_r);
+                                                out += n;
+                                                in += strlen(old_r);
+                                                replaced = 1;
+                                        } else { *out++ = *in++; }
+                                }
+                                *out = 0;
+                                strncpy(sh_lines[ge_line], buf, SH_MAX_LINELEN-1);
+                        }
+                        /* Rename in the mov #imm preceding cmp/ge. */
+                        for (j = ge_line - 1; j >= 0; j--) {
+                                if (sh_lines[j][0] == 0) continue;
+                                if (sh_writes_reg(sh_lines[j], ge_reg)) {
+                                        char buf[SH_MAX_LINELEN];
+                                        const char *in = sh_lines[j];
+                                        char *out = buf;
+                                        while (*in) {
+                                                if (*in == 'r'
+                                                    && strncmp(in, old_r, strlen(old_r)) == 0
+                                                    && !(in[strlen(old_r)] >= '0' && in[strlen(old_r)] <= '9')
+                                                    && in > sh_lines[j] && in[-1] == ',') {
+                                                        int n = snprintf(out, sizeof buf-(size_t)(out-buf), "%s", new_r);
+                                                        out += n;
+                                                        in += strlen(old_r);
+                                                } else { *out++ = *in++; }
+                                        }
+                                        *out = 0;
+                                        strncpy(sh_lines[j], buf, SH_MAX_LINELEN-1);
+                                        break;
+                                }
+                                break;
+                        }
+                }
+                range_count++;
+        }
+}
+
 /* Reorder pre-call argument loads to match Hitachi SHC's right-to-
  * left evaluation. Scans backward from each `jsr` to find pool
  * loads to arg registers (r4-r7) and the function pointer, then
@@ -3012,6 +3119,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
 
         sh_reorder_pre_call_args();
+        sh_diversify_range_regs();
         sh_reorder_extu_mov();
         sh_restructure_eq_chain();
         sh_fold_conditional_delays();

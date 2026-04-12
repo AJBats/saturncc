@@ -3,9 +3,9 @@
 	.align 2
 _FUN_06004378:
 	mov.l	r14,@-r15
-	mov	#48,r1
+	mov	#48,r3
 	extu.b	r4,r14
-	cmp/ge	r1,r14
+	cmp/ge	r3,r14
 	bf	L2
 	mov	#57,r1
 	cmp/gt	r1,r14
@@ -15,8 +15,8 @@ _FUN_06004378:
 	rts
 	mov.l	@r15+,r14
 L2:
-	mov	#65,r1
-	cmp/ge	r1,r14
+	mov	#65,r2
+	cmp/ge	r2,r14
 	bf	L4
 	mov	#90,r1
 	cmp/gt	r1,r14
