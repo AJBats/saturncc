@@ -377,6 +377,7 @@ void emit(Node p) {
 }
 static int moveself(Node p) {
 	return p->x.copy
+	&& p->x.kids[0]
 	&& p->syms[RX]->x.name == p->x.kids[0]->syms[RX]->x.name;
 }
 int move(Node p) {
@@ -384,8 +385,10 @@ int move(Node p) {
 	return 1;
 }
 static int requate(Node q) {
-	Symbol src = q->x.kids[0]->syms[RX];
-	Symbol tmp = q->syms[RX];
+	Symbol src, tmp;
+	if (!q->x.kids[0]) return 0;
+	src = q->x.kids[0]->syms[RX];
+	tmp = q->syms[RX];
 	Node p;
 	int n = 0;
 

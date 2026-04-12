@@ -124,7 +124,7 @@ static struct {
  * furthest load that references it. For short functions dumping once
  * at the tail is fine; long functions that overflow the range are a
  * Phase 1C+ problem. */
-#define SH_MAX_LITERALS 64
+#define SH_MAX_LITERALS 256
 
 struct shlit {
         int label;

@@ -128,6 +128,17 @@ void test(int x) { bar(x + 1); }
 EOF
 regtest_grep "no MACL without multiply" "macl" no
 
+# 4f. Multiple calls with array-deref args (was segfault in moveself, NULL x.kids[0])
+cat > /tmp/regtest.c <<'EOF'
+extern void f(int, int, int);
+int test(int *p) { f(p[0], 1, 2); f(p[1], 3, 4); return 0; }
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>/dev/null; then
+    pass "regtest: multi-call with array deref args"
+else
+    fail "regtest: multi-call with array deref args (crash)"
+fi
+
 # ── Summary ───────────────────────────────────────────────
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
