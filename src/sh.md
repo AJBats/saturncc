@@ -1706,6 +1706,14 @@ static void sh_rewrite_bool_fp(int need_fp) {
         if (need_fp) return;
 
         for (i = 0; i < sh_nlines; i++) {
+                if (nout >= SH_MAX_LINES - 10) {
+                        fprintf(stderr,
+                                "sh_rewrite_bool_fp: "
+                                "line buffer overflow "
+                                "(%d/%d), output truncated\n",
+                                nout, SH_MAX_LINES);
+                        break;
+                }
                 if (sh_lines[i][0] == 0) continue;
                 if (!sh_has_prefix(sh_lines[i], "bf/s")
                     && !sh_has_prefix(sh_lines[i], "bt/s")) {
@@ -2488,8 +2496,15 @@ static void sh_restructure_eq_chain(void) {
                 int default_mov = -1, default_rts = -1, default_pop = -1;
 
                 /* Copy everything before the chain. */
-                for (j = 0; j <= estab_line && nout < SH_MAX_LINES - 64;
-                     j++) {
+                for (j = 0; j <= estab_line; j++) {
+                        if (nout >= SH_MAX_LINES - 64) {
+                                fprintf(stderr,
+                                        "sh_restructure_eq_chain: "
+                                        "line buffer overflow "
+                                        "(%d/%d), output truncated\n",
+                                        nout, SH_MAX_LINES);
+                                break;
+                        }
                         strncpy(new_lines[nout], sh_lines[j],
                                 SH_MAX_LINELEN - 1);
                         new_lines[nout][SH_MAX_LINELEN - 1] = 0;
@@ -2910,7 +2925,15 @@ static void sh_inline_returns(const char *exit_label,
 
         snprintf(bra_pat, sizeof bra_pat, "\tbra\t%s\n", exit_label);
 
-        for (i = 0; i < sh_nlines && nout < SH_MAX_LINES - 16; i++) {
+        for (i = 0; i < sh_nlines; i++) {
+                if (nout >= SH_MAX_LINES - 16) {
+                        fprintf(stderr,
+                                "sh_inline_returns: "
+                                "line buffer overflow "
+                                "(%d/%d), output truncated\n",
+                                nout, SH_MAX_LINES);
+                        break;
+                }
                 if (sh_lines[i][0] == 0)
                         continue;
                 if (strcmp(sh_lines[i], bra_pat) != 0) {
@@ -3081,7 +3104,15 @@ static void sh_emit_switch_dispatch(void) {
                 return;
         }
 
-        for (i = 0; i < sh_nlines && nout < SH_MAX_LINES - 32; i++) {
+        for (i = 0; i < sh_nlines; i++) {
+                if (nout >= SH_MAX_LINES - 32) {
+                        fprintf(stderr,
+                                "sh_emit_switch_dispatch: "
+                                "line buffer overflow "
+                                "(%d/%d), output truncated\n",
+                                nout, SH_MAX_LINES);
+                        break;
+                }
                 if (sh_lines[i][0] == 0)
                         continue;
                 strncpy(new_lines[nout], sh_lines[i],
@@ -3122,10 +3153,19 @@ static void sh_emit_switch_dispatch(void) {
                 /* Emit the .short offset table. */
                 snprintf(new_lines[nout++], SH_MAX_LINELEN,
                          "%s:\n", table_label);
-                for (j = 0; j < sh_switch.ncases; j++)
+                for (j = 0; j < sh_switch.ncases; j++) {
+                        if (nout >= SH_MAX_LINES) {
+                                fprintf(stderr,
+                                        "sh_emit_switch_dispatch: "
+                                        "line buffer overflow "
+                                        "(%d/%d), output truncated\n",
+                                        nout, SH_MAX_LINES);
+                                break;
+                        }
                         snprintf(new_lines[nout++], SH_MAX_LINELEN,
                                  "\t.short\t%s - %s\n",
                                  sh_switch.labels[j], table_label);
+                }
         }
 
         /* Copy back. */
@@ -3274,18 +3314,20 @@ static int sh_capture_begin(FILE **tmp_out) {
 }
 
 static void sh_capture_end(int savfd, FILE *tmp) {
-        long pos;
         fflush(stdout);
         dup2(savfd, 1);
         close(savfd);
-        pos = ftell(tmp);
         rewind(tmp);
         sh_nlines = 0;
         while (sh_nlines < SH_MAX_LINES
             && fgets(sh_lines[sh_nlines], SH_MAX_LINELEN, tmp))
                 sh_nlines++;
+        if (sh_nlines >= SH_MAX_LINES && !feof(tmp))
+                fprintf(stderr,
+                        "sh_capture_end: line buffer overflow "
+                        "(%d/%d), output truncated\n",
+                        sh_nlines, SH_MAX_LINES);
         fclose(tmp);
-        (void)pos;
 }
 
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {

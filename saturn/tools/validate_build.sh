@@ -21,7 +21,7 @@ TOTAL=0
 pass() { PASS=$((PASS+1)); TOTAL=$((TOTAL+1)); printf "  PASS  %s\n" "$1"; }
 fail() { FAIL=$((FAIL+1)); TOTAL=$((TOTAL+1)); printf "  FAIL  %s\n" "$1"; }
 
-trap 'rm -f /tmp/regtest_and.c /tmp/regtest.c /tmp/regtest.s' EXIT
+trap 'rm -f /tmp/regtest_and.c /tmp/regtest.c /tmp/regtest.s /tmp/regtest_overflow.c /tmp/regtest_overflow_err.txt' EXIT
 
 echo "=== validate_build.sh ==="
 echo ""
@@ -138,6 +138,24 @@ if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>/dev/null; then
 else
     fail "regtest: multi-call with array deref args (crash)"
 fi
+
+# 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
+{
+    echo "extern void f(void);"
+    echo "void test(void) {"
+    for i in $(seq 1 800); do echo "    f();"; done
+    echo "}"
+} > /tmp/regtest_overflow.c
+if "$RCC" -target=sh/hitachi /tmp/regtest_overflow.c /dev/null 2>/tmp/regtest_overflow_err.txt; then
+    if grep -q "line buffer overflow" /tmp/regtest_overflow_err.txt 2>/dev/null; then
+        pass "regtest: body overflow diagnostic"
+    else
+        fail "regtest: body overflow diagnostic (no warning on stderr)"
+    fi
+else
+    fail "regtest: body overflow diagnostic (crash)"
+fi
+rm -f /tmp/regtest_overflow.c /tmp/regtest_overflow_err.txt
 
 # ── Summary ───────────────────────────────────────────────
 echo ""
