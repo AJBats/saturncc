@@ -186,6 +186,7 @@ static int ngbr_pool;
 
 static int gbr_is_eligible(Node p);
 static char *gbr_base_asmname(void);
+static int sh_disp_cost(Node a, int sz);
 %}
 %start stmt
 
@@ -462,10 +463,6 @@ con2:  CNSTU4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
 con8i:  CNSTI4  "%a"  (range(a, 8, 8) == 0 ? 0 : SH_GBR_REJECT)
 con16i: CNSTI4  "%a"  (range(a, 16, 16) == 0 ? 0 : SH_GBR_REJECT)
 
-/* Left shifts — all handled in emit2() to support composite
- * shift counts (3, 4, 5, etc.) via shll/shll2/shll8/shll16
- * decomposition. The con1 nonterminal matches any constant
- * (with high cost for non-1 values), so this catch-all works. */
 reg:  LSHI4(reg,con1)   "# lsh\n"  1
 reg:  LSHU4(reg,con1)   "# lsh\n"  1
 reg:  LSHI4(reg,con2)   "# lsh\n"  1
@@ -474,7 +471,6 @@ reg:  LSHI4(reg,con8i)  "# lsh\n"  1
 reg:  LSHU4(reg,con8i)  "# lsh\n"  1
 reg:  LSHI4(reg,con16i) "# lsh\n"  1
 reg:  LSHU4(reg,con16i) "# lsh\n"  1
-/* Right shifts — all handled in emit2() like left shifts. */
 reg:  RSHI4(reg,con1)   "# rsh\n"  1
 reg:  RSHU4(reg,con1)   "# rsh\n"  1
 reg:  RSHI4(reg,con2)   "# rsh\n"  1
@@ -520,6 +516,28 @@ reg:  INDIRI4(ADDRGP4)  "# gbr_load_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_
 reg:  INDIRU4(ADDRGP4)  "# gbr_load_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
 reg:  INDIRP4(ADDRGP4)  "# gbr_load_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
 
+reg:  INDIRI1(ADDI4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,1)
+reg:  INDIRU1(ADDI4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,1)
+reg:  INDIRI2(ADDI4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,2)
+reg:  INDIRU2(ADDI4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,2)
+reg:  INDIRI4(ADDI4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRU4(ADDI4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRP4(ADDI4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRI1(ADDU4(reg,immu8))  "# dispload\n"  sh_disp_cost(a,1)
+reg:  INDIRU1(ADDU4(reg,immu8))  "# dispload\n"  sh_disp_cost(a,1)
+reg:  INDIRI2(ADDU4(reg,immu8))  "# dispload\n"  sh_disp_cost(a,2)
+reg:  INDIRU2(ADDU4(reg,immu8))  "# dispload\n"  sh_disp_cost(a,2)
+reg:  INDIRI4(ADDU4(reg,immu8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRU4(ADDU4(reg,immu8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRP4(ADDU4(reg,immu8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRI1(ADDP4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,1)
+reg:  INDIRU1(ADDP4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,1)
+reg:  INDIRI2(ADDP4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,2)
+reg:  INDIRU2(ADDP4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,2)
+reg:  INDIRI4(ADDP4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRU4(ADDP4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,4)
+reg:  INDIRP4(ADDP4(reg,immi8))  "# dispload\n"  sh_disp_cost(a,4)
+
 stmt: ASGNI1(reg,reg)  "\tmov.b\tr%1,@r%0\n"  1
 stmt: ASGNU1(reg,reg)  "\tmov.b\tr%1,@r%0\n"  1
 stmt: ASGNI2(reg,reg)  "\tmov.w\tr%1,@r%0\n"  1
@@ -535,6 +553,28 @@ stmt: ASGNU2(ADDRGP4,reg)  "# gbr_store_w\n"  (gbr_is_eligible(a->kids[0]) ? 1 :
 stmt: ASGNI4(ADDRGP4,reg)  "# gbr_store_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
 stmt: ASGNU4(ADDRGP4,reg)  "# gbr_store_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
 stmt: ASGNP4(ADDRGP4,reg)  "# gbr_store_l\n"  (gbr_is_eligible(a->kids[0]) ? 1 : SH_GBR_REJECT)
+
+stmt: ASGNI1(ADDI4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,1)
+stmt: ASGNU1(ADDI4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,1)
+stmt: ASGNI2(ADDI4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,2)
+stmt: ASGNU2(ADDI4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,2)
+stmt: ASGNI4(ADDI4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNU4(ADDI4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNP4(ADDI4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNI1(ADDU4(reg,immu8),reg)  "# dispstore\n"  sh_disp_cost(a,1)
+stmt: ASGNU1(ADDU4(reg,immu8),reg)  "# dispstore\n"  sh_disp_cost(a,1)
+stmt: ASGNI2(ADDU4(reg,immu8),reg)  "# dispstore\n"  sh_disp_cost(a,2)
+stmt: ASGNU2(ADDU4(reg,immu8),reg)  "# dispstore\n"  sh_disp_cost(a,2)
+stmt: ASGNI4(ADDU4(reg,immu8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNU4(ADDU4(reg,immu8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNP4(ADDU4(reg,immu8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNI1(ADDP4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,1)
+stmt: ASGNU1(ADDP4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,1)
+stmt: ASGNI2(ADDP4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,2)
+stmt: ASGNU2(ADDP4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,2)
+stmt: ASGNI4(ADDP4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNU4(ADDP4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
+stmt: ASGNP4(ADDP4(reg,immi8),reg)  "# dispstore\n"  sh_disp_cost(a,4)
 
 reg:  CVII4(reg)  "\texts.b\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==1?1:LBURG_MAX)
 reg:  CVII4(reg)  "\texts.w\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==2?1:LBURG_MAX)
@@ -666,6 +706,26 @@ static int gbr_is_eligible(Node p) {
         if (isfunc(s->type))
                 return 0;
         return 1;
+}
+
+/* Cost function for displacement addressing compound rules.
+ * Returns 0 when the ADD's constant child fits the SH-2
+ * displacement range for the given access size, SH_GBR_REJECT
+ * otherwise. Ranges: byte 0..15, word 0..30 (even), long 0..60
+ * (4-aligned). Node `a` is the INDIR or ASGN root; the ADD is
+ * a->kids[0] and the constant is a->kids[0]->kids[1]. */
+static int sh_disp_cost(Node a, int sz) {
+        int v;
+        if (!a->kids[0] || !a->kids[0]->kids[1]
+            || !a->kids[0]->kids[1]->syms[0])
+                return SH_GBR_REJECT;
+        v = (int)a->kids[0]->kids[1]->syms[0]->u.c.v.i;
+        if (v < 0)
+                return SH_GBR_REJECT;
+        if (sz == 1 && v <= 15)  return 0;
+        if (sz == 2 && v <= 30 && (v & 1) == 0)  return 0;
+        if (sz == 4 && v <= 60 && (v & 3) == 0)  return 0;
+        return SH_GBR_REJECT;
 }
 
 /* #pragma handler wired up through the input.c hook. Recognizes
@@ -993,8 +1053,30 @@ static void emit2(Node p) {
                 /* INDIR(VREGP) uses a `# read register` template
                  * that routes through emit2 but is intentionally a
                  * no-op: the value already lives in the register
-                 * assigned to the node. Only ADDRG/ADDRF/ADDRL kids
-                 * want real code emission here. */
+                 * assigned to the node. Only ADDRG/ADDRF/ADDRL/ADD
+                 * kids want real code emission here. */
+                if (kop == ADD) {
+                        /* Displacement load: mov.b/w @(disp,Rn),R0
+                         * or mov.l @(disp,Rn),Rm. Byte/word forms
+                         * require dest=R0; emit a mov if the
+                         * allocator chose a different register. */
+                        int breg = getregnum(p->x.kids[0]);
+                        int dval = (int)p->kids[0]->kids[1]
+                                        ->syms[0]->u.c.v.i;
+                        dst = getregnum(p);
+                        sz = opsize(p->op);
+                        suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                        if (sz == 4) {
+                                print("\tmov.l\t@(%d,r%d),r%d\n",
+                                      dval, breg, dst);
+                        } else {
+                                print("\tmov.%s\t@(%d,r%d),r0\n",
+                                      suf, dval, breg);
+                                if (dst != 0)
+                                        print("\tmov\tr0,r%d\n", dst);
+                        }
+                        break;
+                }
                 if (kop != ADDRG && kop != ADDRF && kop != ADDRL)
                         break;
                 s = p->kids[0]->syms[0];
@@ -1074,6 +1156,27 @@ static void emit2(Node p) {
                 /* Same no-op bail-out as INDIR: ASGN(VREGP,reg)
                  * routes through emit2 but doesn't need any output
                  * — the value is already in the destination register. */
+                if (kop == ADD) {
+                        /* Displacement store: mov.b/w R0,@(disp,Rn)
+                         * or mov.l Rm,@(disp,Rn). Byte/word forms
+                         * require src=R0; emit a mov if needed. */
+                        int breg = getregnum(p->x.kids[0]);
+                        int dval = (int)p->kids[0]->kids[1]
+                                        ->syms[0]->u.c.v.i;
+                        sz = opsize(p->op);
+                        suf = sz == 1 ? "b" : sz == 2 ? "w" : "l";
+                        src = getregnum(p->kids[1]);
+                        if (sz == 4) {
+                                print("\tmov.l\tr%d,@(%d,r%d)\n",
+                                      src, dval, breg);
+                        } else {
+                                if (src != 0)
+                                        print("\tmov\tr%d,r0\n", src);
+                                print("\tmov.%s\tr0,@(%d,r%d)\n",
+                                      suf, dval, breg);
+                        }
+                        break;
+                }
                 if (kop != ADDRG && kop != ADDRF && kop != ADDRL)
                         break;
                 s = p->kids[0]->syms[0];

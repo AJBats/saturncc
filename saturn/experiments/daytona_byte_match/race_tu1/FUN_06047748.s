@@ -19,9 +19,8 @@ L2:
 	mov.w	r2,@r1
 	mov	#0,r1
 	mov.w	r1,@r5
-	mov	r5,r1
-	add	#2,r1
-	mov.w	@r1,r1
+	mov.w	@(2,r5),r0
+	mov	r0,r1
 	exts.w	r1,r4
 L5:
 	dt	r6

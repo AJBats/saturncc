@@ -164,6 +164,22 @@ else
 fi
 rm -f /tmp/regtest_overflow.c /tmp/regtest_overflow_err.txt
 
+# 4h. Displacement addressing modes (mov.w @(disp,Rn),R0 etc.)
+cat > /tmp/regtest.c <<'EOF'
+short test_disp_load(short *p) { return p[7]; }
+void test_disp_store(int *p, int v) { p[2] = v; }
+EOF
+rm -f /tmp/regtest.s
+if ! "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    fail "regtest: displacement addressing (crash)"
+else
+    ok=1
+    grep -q '@(14,r' /tmp/regtest.s 2>/dev/null || ok=0
+    grep -q '@(8,r' /tmp/regtest.s 2>/dev/null || ok=0
+    [ "$ok" = "1" ] && pass "regtest: displacement addressing" \
+                     || fail "regtest: displacement addressing (missing @(disp,Rn) forms)"
+fi
+
 # ── Summary ───────────────────────────────────────────────
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
