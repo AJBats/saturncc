@@ -45,9 +45,8 @@ L7:
 	add	#2,r1
 	mov.l	r1,@(8,r15)
 	mov.w	@(6,r15),r0
-	exts.w	r0,r0
 	mov	r0,r1
-	exts.w	r1,r0
+	mov	r1,r0
 	cmp/eq	#-1,r0
 	bf	L11
 	bra	L9
@@ -58,12 +57,10 @@ L11:
 	mov.w	@(6,r15),r0
 	exts.w	r0,r0
 	mov	r0,r2
-	exts.w	r2,r2
 	add	r2,r1
 	mov.l	r1,@(0,r15)
 	mov.l	@(0,r15),r1
 	mov.b	@r1,r1
-	exts.b	r1,r1
 	tst	r1,r1
 	bf	L7
 	mov.l	@(0,r15),r1

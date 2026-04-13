@@ -1781,6 +1781,129 @@ static void sh_rewrite_gbr_param(void) {
         sh_nlines = nout;
 }
 
+/* Eliminate redundant sign/zero extensions after loads.
+ * SH-2 mov.w sign-extends to 32 bits and mov.b sign-extends to 32
+ * bits.  LCC emits a separate CVII4 → exts.w/exts.b even though
+ * the hardware already did it.  This pass tracks which registers
+ * hold sign-extended values (from .w/.b loads or copies thereof)
+ * and deletes the redundant exts, or replaces exts rN,rM with
+ * mov rN,rM when it's a cross-register sign-extend-and-copy. */
+static void sh_elim_redundant_ext(void) {
+        int i;
+        unsigned w_ext = 0;   /* regs holding sign-extended .w values */
+        unsigned b_ext = 0;   /* regs holding sign-extended .b values */
+
+        for (i = 0; i < sh_nlines; i++) {
+                int r1, r2;
+                char suf;
+                const char *s = sh_lines[i];
+
+                if (s[0] == 0) continue;
+
+                /* Labels reset tracking — control can arrive from
+                 * anywhere, so we can't know extension state. */
+                if (sh_is_label_line(s)) {
+                        w_ext = b_ext = 0;
+                        continue;
+                }
+
+                /* mov.w load: dest is sign-extended from 16 bits. */
+                if (sscanf(s, "\tmov.w\t@%*[^,],r%d\n", &r1) == 1
+                    || sscanf(s, "\tmov.w\t@(%*d,gbr),r%d\n", &r1) == 1
+                    || sscanf(s, "\tmov.w\tL%*d,r%d\n", &r1) == 1) {
+                        w_ext |= 1u << r1;
+                        b_ext &= ~(1u << r1);
+                        continue;
+                }
+
+                /* mov.b load: dest is sign-extended from 8 bits. */
+                if (sscanf(s, "\tmov.b\t@%*[^,],r%d\n", &r1) == 1
+                    || sscanf(s, "\tmov.b\t@(%*d,gbr),r%d\n", &r1) == 1) {
+                        b_ext |= 1u << r1;
+                        w_ext &= ~(1u << r1);
+                        continue;
+                }
+
+                /* mov rN,rM: propagate extension tracking. */
+                if (sscanf(s, "\tmov\tr%d,r%d\n", &r1, &r2) == 2) {
+                        unsigned new_w = 0, new_b = 0;
+                        if (w_ext & (1u << r1)) new_w = 1u << r2;
+                        if (b_ext & (1u << r1)) new_b = 1u << r2;
+                        /* Clear r2's old state, set new. */
+                        w_ext = (w_ext & ~(1u << r2)) | new_w;
+                        b_ext = (b_ext & ~(1u << r2)) | new_b;
+                        continue;
+                }
+
+                /* exts.w rN,rM: redundant if rN is already .w
+                 * sign-extended. */
+                if (sscanf(s, "\texts.w\tr%d,r%d\n", &r1, &r2) == 2
+                    && (w_ext & (1u << r1))) {
+                        if (r1 == r2) {
+                                sh_lines[i][0] = 0;   /* delete */
+                        } else {
+                                snprintf(sh_lines[i], SH_MAX_LINELEN,
+                                         "\tmov\tr%d,r%d\n", r1, r2);
+                                w_ext |= 1u << r2;
+                        }
+                        continue;
+                }
+
+                /* exts.b rN,rM: redundant if rN is already .b
+                 * sign-extended. */
+                if (sscanf(s, "\texts.b\tr%d,r%d\n", &r1, &r2) == 2
+                    && (b_ext & (1u << r1))) {
+                        if (r1 == r2) {
+                                sh_lines[i][0] = 0;
+                        } else {
+                                snprintf(sh_lines[i], SH_MAX_LINELEN,
+                                         "\tmov\tr%d,r%d\n", r1, r2);
+                                b_ext |= 1u << r2;
+                        }
+                        continue;
+                }
+
+                /* exts.w / exts.b that survive: the dest IS now
+                 * extended (the instruction does the work). */
+                if (sscanf(s, "\texts.%c\tr%d,r%d\n", &suf, &r1, &r2) == 3) {
+                        if (suf == 'w') w_ext |= 1u << r2;
+                        if (suf == 'b') b_ext |= 1u << r2;
+                        continue;
+                }
+
+                /* Any other instruction that writes a register:
+                 * clear that register's extension state. Use the
+                 * last register on the line as the destination
+                 * (same heuristic as sh_writes_reg). */
+                {
+                        const char *p = s;
+                        const char *last_r = NULL;
+                        int rn;
+                        while (*p) {
+                                if (*p == 'r' && p[1] >= '0' && p[1] <= '9')
+                                        last_r = p;
+                                p++;
+                        }
+                        if (last_r) {
+                                last_r++;
+                                rn = *last_r - '0';
+                                if (last_r[1] >= '0' && last_r[1] <= '9')
+                                        rn = rn * 10 + (last_r[1] - '0');
+                                if (rn < 16) {
+                                        w_ext &= ~(1u << rn);
+                                        b_ext &= ~(1u << rn);
+                                }
+                        }
+                }
+
+                /* Calls clobber caller-saved regs r0-r7. */
+                if (sh_has_prefix(s, "jsr") || sh_has_prefix(s, "bsr")) {
+                        w_ext &= ~0xFFu;
+                        b_ext &= ~0xFFu;
+                }
+        }
+}
+
 /* Fold `add #-1,rN; tst rN,rN` into `dt rN`.
  * SH-2's dt instruction decrements and sets T if the result is zero.
  * Handles the case where an independent instruction sits between the
@@ -3990,6 +4113,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_peephole();
                 if (sh_gbr_param)
                         sh_rewrite_gbr_param();
+                sh_elim_redundant_ext();
                 sh_fill_branch_delays();
                 if (need_r14_rename)
                         sh_rename_r14_var(r14_rename_to);

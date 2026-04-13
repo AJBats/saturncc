@@ -26,7 +26,6 @@ _FUN_06044BCC:
 	mov.l	L19,r2
 	mov.l	@r2,r8
 	mov.b	@r1,r1
-	exts.b	r1,r1
 	tst	r1,r1
 	bf	L2
 	mov	#0,r1
@@ -48,17 +47,13 @@ L4:
 	mov.l	r1,@(32,r15)
 	mov	#3,r1
 	mov.b	@r12,r2
-	exts.b	r2,r2
 	muls.w	r2,r1
 	sts	macl,r1
 	mov.b	@r11,r2
-	exts.b	r2,r2
 	exts.w	r2,r2
 	add	r2,r1
 	mov.w	@(6,r15),r0
-	exts.w	r0,r0
 	mov	r0,r2
-	exts.w	r2,r2
 	muls.w	r2,r1
 	sts	macl,r1
 	exts.w	r1,r1
@@ -94,14 +89,12 @@ L4:
 	mov.l	r2,@(16,r15)
 	mov	#3,r2
 	mov.b	@r12,r3
-	exts.b	r3,r3
 	muls.w	r3,r2
 	sts	macl,r2
 	mov.b	@r11,r3
-	exts.b	r3,r3
 	exts.w	r3,r3
 	add	r3,r2
-	exts.w	r14,r3
+	mov	r14,r3
 	muls.w	r3,r2
 	sts	macl,r2
 	exts.w	r2,r2
@@ -145,7 +138,6 @@ L2:
 L7:
 	mov	#60,r1
 	mov.b	@r12,r2
-	exts.b	r2,r2
 	muls.w	r2,r1
 	sts	macl,r1
 	exts.w	r1,r1
@@ -154,7 +146,6 @@ L7:
 	mov.b	@(15,r15),r0
 	exts.b	r0,r0
 	mov	r0,r2
-	exts.b	r2,r2
 	add	r2,r1
 	mov.l	r1,@(32,r15)
 	mov.l	@(32,r15),r1
@@ -173,11 +164,8 @@ L7:
 	mov.l	@r2,r2
 	mov.l	r2,@r1
 	mov.b	@(15,r15),r0
-	exts.b	r0,r0
-	mov	r0,r1
-	exts.b	r1,r1
-	add	#12,r1
-	mov	r1,r0
+	mov	r0,r0
+	add	#12,r0
 	mov.b	r0,@(15,r15)
 L8:
 	add	#12,r8
@@ -201,11 +189,9 @@ L3:
 	mov	#24,r2
 	mov	#5,r3
 	mov.b	@r13,r1
-	exts.b	r1,r1
 	muls.w	r1,r3
 	sts	macl,r1
 	mov.b	@r12,r3
-	exts.b	r3,r3
 	add	r3,r1
 	mul.l	r1,r2
 	sts	macl,r1
@@ -254,18 +240,15 @@ L11:
 	mov.b	@(15,r15),r0
 	exts.b	r0,r0
 	mov	r0,r1
-	exts.b	r1,r1
 	mov.l	r1,@(4,r15)
 	mov	r1,r9
 	add	r10,r9
 	mov	#48,r2
 	mov	#5,r3
 	mov.b	@r13,r1
-	exts.b	r1,r1
 	muls.w	r1,r3
 	sts	macl,r1
 	mov.b	@r12,r3
-	exts.b	r3,r3
 	exts.w	r3,r3
 	add	r3,r1
 	mul.l	r1,r2
@@ -291,9 +274,7 @@ L11:
 	mov.l	@r2,r2
 	mov.l	r2,@r1
 	mov.b	@(15,r15),r0
-	exts.b	r0,r0
 	mov	r0,r1
-	exts.b	r1,r1
 	add	#12,r1
 	exts.b	r1,r1
 	mov.l	r1,@(0,r15)
@@ -305,11 +286,9 @@ L11:
 	mov	#48,r2
 	mov	#5,r3
 	mov.b	@r13,r1
-	exts.b	r1,r1
 	muls.w	r1,r3
 	sts	macl,r1
 	mov.b	@r12,r3
-	exts.b	r3,r3
 	exts.w	r3,r3
 	add	r3,r1
 	mul.l	r1,r2
@@ -335,11 +314,8 @@ L11:
 	mov.l	@r2,r2
 	mov.l	r2,@r1
 	mov.b	@(15,r15),r0
-	exts.b	r0,r0
-	mov	r0,r1
-	exts.b	r1,r1
-	add	#24,r1
-	mov	r1,r0
+	mov	r0,r0
+	add	#24,r0
 	mov.b	r0,@(15,r15)
 L12:
 	mov.l	@(24,r15),r1

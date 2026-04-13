@@ -7,7 +7,6 @@ _FUN_06047748:
 	mov.l	@r1,r14
 L2:
 	mov.w	@r5,r1
-	exts.w	r1,r1
 	tst	r1,r1
 	bt	L5
 	mov	r4,r1

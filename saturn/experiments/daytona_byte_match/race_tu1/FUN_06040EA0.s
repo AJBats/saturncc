@@ -70,10 +70,9 @@ L6:
 	mov.l	r2,@r1
 L12:
 	mov.b	@(18,gbr),r0
-	mov	r0,r4
 	mov.l	L22,r3
 	jsr	@r3
-	exts.b	r4,r4
+	mov	r0,r4
 	mov	r0,r4
 	tst	r4,r4
 	bt	L13
@@ -85,7 +84,6 @@ L12:
 	mov	r14,r4
 	mov.w	@(14,gbr),r0
 	mov	r0,r1
-	exts.w	r1,r1
 	mov.l	L25,r2
 	exts.w	r2,r2
 	mov	r1,r4
@@ -94,29 +92,25 @@ L12:
 	add	r2,r4
 	mov.w	@(12,gbr),r0
 	mov	r0,r1
-	exts.w	r1,r1
 	mov.w	L27,r3
 	add	r14,r3
 	mov.w	@r3,r2
-	exts.w	r2,r2
 	mov	r1,r4
 	mov.l	L28,r1
 	jsr	@r1
 	sub	r2,r4
 	mov.w	@(16,gbr),r0
 	mov	r0,r1
-	exts.w	r1,r1
 	neg	r1,r4
 	mov.l	L29,r1
 	jsr	@r1
 	nop
 	mov.w	@(26,gbr),r0
-	mov	r0,r4
 	mov.l	L26,r1
 	jsr	@r1
 	mov.l	L30,r1
 	jsr	@r1
-	exts.w	r4,r4
+	mov	r0,r4
 	mov	r12,r4
 	mov.l	L31,r1
 	jsr	@r1
@@ -142,10 +136,9 @@ L13:
 L4:
 L2:
 	mov.b	@(18,gbr),r0
-	mov	r0,r4
 	mov.l	L33,r1
 	jsr	@r1
-	exts.b	r4,r4
+	mov	r0,r4
 L1:
 	ldc.l	@r15+,gbr
 	lds.l	@r15+,pr
