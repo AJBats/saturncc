@@ -487,6 +487,7 @@ extern void swtoseg(int);
 extern void input_init(int, char *[]);
 extern void fillbuf(void);
 extern void nextline(void);
+extern void flush_deferred_pragmas(void);
 
 extern int getchr(void);
 extern int gettok(void);

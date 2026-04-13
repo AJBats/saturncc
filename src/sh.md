@@ -97,6 +97,7 @@ static int sh_fp_active;
 static int sh_sp_locals_only;  /* locals exist but FP is not used (SP-relative) */
 static int sh_all_returns_inlined;
 static int sh_uses_macl;
+static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
 
 /* Switch jump table: recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
@@ -744,6 +745,8 @@ static void sh_pragma(char *name) {
                 }
                 if (gettok() == ID)
                         gbr_base_cname = string(token);
+        } else if (strcmp(name, "gbr_param") == 0) {
+                sh_gbr_param = 1;
         }
 }
 
@@ -863,6 +866,7 @@ static void progbeg(int argc, char *argv[]) {
                 if (strncmp(argv[i], "-gbr-base=", 10) == 0)
                         gbr_base_cname = argv[i] + 10;
         shc_pragma_hook = sh_pragma;
+        flush_deferred_pragmas();
         for (i = 0; i < 16; i++)
                 ireg[i] = mkreg("%d", i, 1, IREG);
         ireg[15]->x.name = "15";
@@ -1628,6 +1632,153 @@ static void sh_peephole(void) {
                                 break;
                 }
         }
+}
+
+/* Rewrite displacement-from-param-register to GBR-relative.
+ * When #pragma gbr_param is active, the first parameter (r4) is
+ * loaded into GBR via `ldc r4,gbr` in the prologue.  This pass
+ * finds the callee-saved register holding r4 and converts
+ * `mov.X @(disp,rP),rD` to `mov.X @(disp,gbr),r0` (+ mov if
+ * rD != r0).  Also converts add+indirect sequences for offsets
+ * that fit GBR displacement but not regular displacement. */
+static void sh_rewrite_gbr_param(void) {
+        static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        int i, nout = 0, param_reg = -1;
+
+        /* Find the param register: look for `mov r4,rN` near start. */
+        for (i = 0; i < sh_nlines && i < 10; i++) {
+                int rn;
+                if (sh_lines[i][0] == 0) continue;
+                if (sscanf(sh_lines[i], "\tmov\tr4,r%d\n", &rn) == 1) {
+                        param_reg = rn;
+                        break;
+                }
+        }
+        if (param_reg < 0)
+                return;
+
+        for (i = 0; i < sh_nlines; i++) {
+                int disp, rd, rs, rt, n;
+                char suf;
+                int handled = 0;
+
+                if (nout >= SH_MAX_LINES - 4) break;
+                if (sh_lines[i][0] == 0) {
+                        new_lines[nout][0] = 0; nout++;
+                        continue;
+                }
+
+                /* Pattern A0: simple indirect load @rP (offset 0). */
+                if (sscanf(sh_lines[i], "\tmov.%c\t@r%d,r%d\n",
+                           &suf, &rs, &rd) == 3
+                    && rs == param_reg) {
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\tmov.%c\t@(0,gbr),r0\n", suf);
+                        if (rd != 0)
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tmov\tr0,r%d\n", rd);
+                        handled = 1;
+                }
+
+                /* Pattern A: displacement load from param reg. */
+                if (!handled
+                    && sscanf(sh_lines[i], "\tmov.%c\t@(%d,r%d),r%d\n",
+                           &suf, &disp, &rs, &rd) == 4
+                    && rs == param_reg) {
+                        int maxd = suf=='b'?255 : suf=='w'?510 : 1020;
+                        if (disp >= 0 && disp <= maxd) {
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tmov.%c\t@(%d,gbr),r0\n",
+                                         suf, disp);
+                                if (rd != 0)
+                                        snprintf(new_lines[nout++],
+                                                 SH_MAX_LINELEN,
+                                                 "\tmov\tr0,r%d\n", rd);
+                                handled = 1;
+                        }
+                }
+
+                /* Pattern B: displacement store to param reg. */
+                if (!handled
+                    && sscanf(sh_lines[i], "\tmov.%c\tr%d,@(%d,r%d)\n",
+                              &suf, &rs, &disp, &rd) == 4
+                    && rd == param_reg) {
+                        int maxd = suf=='b'?255 : suf=='w'?510 : 1020;
+                        if (disp >= 0 && disp <= maxd) {
+                                if (rs != 0)
+                                        snprintf(new_lines[nout++],
+                                                 SH_MAX_LINELEN,
+                                                 "\tmov\tr%d,r0\n", rs);
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tmov.%c\tr0,@(%d,gbr)\n",
+                                         suf, disp);
+                                handled = 1;
+                        }
+                }
+
+                /* Pattern C: add+indirect load from param reg copy.
+                 * mov rP,rT; add #N,rT; mov.X @rT,rD */
+                if (!handled && i + 2 < sh_nlines
+                    && sscanf(sh_lines[i], "\tmov\tr%d,r%d\n",
+                              &rs, &rt) == 2
+                    && rs == param_reg
+                    && sh_lines[i+1][0] != 0
+                    && sscanf(sh_lines[i+1], "\tadd\t#%d,r%d\n",
+                              &n, &rd) == 2
+                    && rd == rt
+                    && sh_lines[i+2][0] != 0
+                    && sscanf(sh_lines[i+2], "\tmov.%c\t@r%d,r%d\n",
+                              &suf, &rs, &rd) == 3
+                    && rs == rt) {
+                        int maxd = suf=='b'?255 : suf=='w'?510 : 1020;
+                        if (n >= 0 && n <= maxd) {
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tmov.%c\t@(%d,gbr),r0\n",
+                                         suf, n);
+                                if (rd != 0)
+                                        snprintf(new_lines[nout++],
+                                                 SH_MAX_LINELEN,
+                                                 "\tmov\tr0,r%d\n", rd);
+                                i += 2;
+                                handled = 1;
+                        }
+                }
+
+                /* Pattern D: add+indirect store from param reg copy.
+                 * mov rP,rT; add #N,rT; mov.X rS,@rT */
+                if (!handled && i + 2 < sh_nlines
+                    && sscanf(sh_lines[i], "\tmov\tr%d,r%d\n",
+                              &rs, &rt) == 2
+                    && rs == param_reg
+                    && sh_lines[i+1][0] != 0
+                    && sscanf(sh_lines[i+1], "\tadd\t#%d,r%d\n",
+                              &n, &rd) == 2
+                    && rd == rt
+                    && sh_lines[i+2][0] != 0
+                    && sscanf(sh_lines[i+2], "\tmov.%c\tr%d,@r%d\n",
+                              &suf, &rs, &rd) == 3
+                    && rd == rt) {
+                        int maxd = suf=='b'?255 : suf=='w'?510 : 1020;
+                        if (n >= 0 && n <= maxd) {
+                                if (rs != 0)
+                                        snprintf(new_lines[nout++],
+                                                 SH_MAX_LINELEN,
+                                                 "\tmov\tr%d,r0\n", rs);
+                                snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                         "\tmov.%c\tr0,@(%d,gbr)\n",
+                                         suf, n);
+                                i += 2;
+                                handled = 1;
+                        }
+                }
+
+                if (!handled) {
+                        strcpy(new_lines[nout++], sh_lines[i]);
+                }
+        }
+
+        memcpy(sh_lines, new_lines, sizeof sh_lines);
+        sh_nlines = nout;
 }
 
 /* Fold `add #-1,rN; tst rN,rN` into `dt rN`.
@@ -3837,6 +3988,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 else
                         sh_nlines = 0;
                 sh_peephole();
+                if (sh_gbr_param)
+                        sh_rewrite_gbr_param();
                 sh_fill_branch_delays();
                 if (need_r14_rename)
                         sh_rename_r14_var(r14_rename_to);
@@ -3888,7 +4041,14 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_sizeisave = sizeisave;
         }
 
-        has_prologue = need_fp || ncalls || usedmask[IREG] != 0;
+        if (sh_gbr_param) {
+                sizeisave += 4;
+                framesize = sizeisave;
+                sh_sizeisave = sizeisave;
+        }
+
+        has_prologue = need_fp || ncalls || usedmask[IREG] != 0
+                       || sh_gbr_param;
 
         /* Inline epilogues at each `bra <exit>` to match Hitachi's
          * duplicated-return pattern. The exit label comes from the
@@ -3928,6 +4088,10 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         print("\tsts.l\tpr,@-r15\n");
                 if (sh_uses_macl)
                         print("\tsts.l\tmacl,@-r15\n");
+                if (sh_gbr_param) {
+                        print("\tstc.l\tgbr,@-r15\n");
+                        print("\tldc\tr4,gbr\n");
+                }
                 if (need_fp) {
                         print("\tmov\tr15,r14\n");
                         if (localsize > 0)
@@ -4001,6 +4165,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                 print("\tmov\tr14,r15\n");
                         else if (sh_sp_locals_only && localsize > 0)
                                 print("\tadd\t#%d,r15\n", localsize);
+                        if (sh_gbr_param)
+                                print("\tldc.l\t@r15+,gbr\n");
                         if (sh_uses_macl)
                                 print("\tlds.l\t@r15+,macl\n");
                         for (i = 0; i < npops; i++) {
@@ -4029,6 +4195,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 }
         }
         shlit_flush();
+        sh_gbr_param = 0;
 }
 
 static void defconst(int suffix, int size, Value v) {

@@ -16,6 +16,7 @@ int lineno;		/* line number of current line */
 
 /* SaturnCompiler backend hook for unrecognized #pragma directives. */
 void (*shc_pragma_hook)(char *name) = 0;
+static char *deferred_pragma = 0;
 
 void nextline(void) {
 	do {
@@ -100,6 +101,15 @@ static void pragma(void) {
 		}
 	} else if (t == ID && shc_pragma_hook) {
 		(*shc_pragma_hook)(token);
+	} else if (t == ID && !shc_pragma_hook) {
+		deferred_pragma = string(token);
+	}
+}
+
+void flush_deferred_pragmas(void) {
+	if (deferred_pragma && shc_pragma_hook) {
+		(*shc_pragma_hook)(deferred_pragma);
+		deferred_pragma = 0;
 	}
 }
 
