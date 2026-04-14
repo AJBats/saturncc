@@ -27,8 +27,7 @@ _FUN_0602A664:
 	mov.l	@(16,r1),r10
 	mov.l	@(20,r1),r9
 L2:
-	mov.l	@r12,r8
-	add	#4,r12
+	mov.l	@r12+,r8
 	mov	r8,r1
 	add	r11,r1
 	mov.l	@r1,r8
@@ -39,10 +38,9 @@ L2:
 	mov.l	r1,@(8,r15)
 L7:
 	mov.l	@(8,r15),r1
-	mov.w	@r1,r2
+	mov.w	@r1+,r2
 	mov	r2,r0
 	mov.w	r0,@(6,r15)
-	add	#2,r1
 	mov.l	r1,@(8,r15)
 	mov.w	@(6,r15),r0
 	mov	r0,r1

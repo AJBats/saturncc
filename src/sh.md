@@ -2145,6 +2145,61 @@ static void sh_route_via_r0(void) {
         sh_nlines = nout;
 }
 
+/* Fold `mov.X @rN,rM; ...; add #sz,rN` into `mov.X @rN+,rM`
+ * (post-increment addressing) when no intervening instruction reads
+ * or writes rN, and sz matches the access size (1/2/4).
+ *
+ * SH-2 post-increment updates rN as part of the load.  This
+ * requires rN != rM (same register is undefined behavior).
+ * The fold saves one instruction per loop iteration in pointer
+ * walks. */
+static void sh_fold_post_increment(void) {
+        int i;
+        for (i = 0; i + 1 < sh_nlines; i++) {
+                char suf;
+                int rN, rM, rN2, imm;
+                int size, k;
+
+                if (sh_lines[i][0] == 0) continue;
+
+                if (sscanf(sh_lines[i], "\tmov.%c\t@r%d,r%d\n",
+                           &suf, &rN, &rM) != 3)
+                        continue;
+                if (rN == rM) continue;  /* post-inc requires distinct */
+                size = (suf == 'b') ? 1 : (suf == 'w') ? 2 : 4;
+
+                /* Scan forward for matching `add #size, rN`.
+                 * Bail at labels, branches, or any instruction that
+                 * touches rN. */
+                for (k = i + 1; k < sh_nlines; k++) {
+                        unsigned regs;
+                        if (sh_lines[k][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[k])) break;
+                        if (sh_is_branch_line(sh_lines[k])) break;
+                        {
+                                const char *q = sh_lines[k];
+                                while (*q == ' ' || *q == '\t') q++;
+                                if (q[0] == 'b' && (q[1] == 't'
+                                    || q[1] == 'f'))
+                                        break;
+                        }
+                        if (sscanf(sh_lines[k], "\tadd\t#%d,r%d\n",
+                                   &imm, &rN2) == 2
+                            && rN2 == rN && imm == size) {
+                                char buf[SH_MAX_LINELEN];
+                                snprintf(buf, sizeof buf,
+                                         "\tmov.%c\t@r%d+,r%d\n",
+                                         suf, rN, rM);
+                                strcpy(sh_lines[i], buf);
+                                sh_lines[k][0] = 0;
+                                break;
+                        }
+                        regs = sh_regs_used(sh_lines[k]);
+                        if (regs & (1u << rN)) break;
+                }
+        }
+}
+
 /* Fold `add #-1,rN; tst rN,rN` into `dt rN`.
  * SH-2's dt instruction decrements and sets T if the result is zero.
  * Handles the case where an independent instruction sits between the
@@ -4356,6 +4411,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         sh_rewrite_gbr_param();
                 sh_elim_redundant_ext();
                 sh_route_via_r0();
+                sh_fold_post_increment();
                 sh_fill_branch_delays();
                 sh_fill_cond_delays();
                 if (need_r14_rename)
