@@ -34,9 +34,9 @@ L2:
 	mov.l	@r1,r8
 	mov	r8,r1
 	add	r10,r1
-	mov.l	r1,@(8,r15)
 	tst	r8,r8
-	bt	L5
+	bt/s	L5
+	mov.l	r1,@(8,r15)
 L7:
 	mov.l	@(8,r15),r1
 	mov.w	@r1,r2

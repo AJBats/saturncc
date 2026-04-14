@@ -1603,6 +1603,138 @@ static void sh_fill_branch_delays(void) {
         }
 }
 
+/* Delay-slot safety for CONDITIONAL branches (bt/s, bf/s).
+ * Stricter than sh_is_delay_safe: also excludes T-flag-modifying
+ * instructions, because they originally set the T bit that the
+ * branch reads, and moving them past the branch would mean the
+ * branch reads the wrong T.
+ *
+ * Excluded beyond sh_is_delay_safe: shll, shlr, shar (1-bit
+ * forms), addc/addv, subc/subv, negc, and all the cmp/tst forms
+ * that sh_is_delay_safe already rejects.  Multi-bit shift forms
+ * (shll2/shll8/shll16 etc.) don't modify T and are safe. */
+static int sh_is_cond_delay_safe(const char *s) {
+        if (!sh_is_delay_safe(s)) return 0;
+        while (*s == ' ' || *s == '\t') s++;
+        /* 1-bit shll/shlr/shar modify T.  sh_has_prefix already
+         * rejects shll2/8/16 because those don't end after "shll".
+         * But sh_has_prefix(s,"shll") matches "shll" followed by
+         * whitespace — the 1-bit form.  That's what we need to
+         * reject here. */
+        if (sh_has_prefix(s, "shll")
+            || sh_has_prefix(s, "shlr")
+            || sh_has_prefix(s, "shar"))
+                return 0;
+        /* addc/addv/subc/subv modify T. */
+        if ((sh_has_prefix(s, "add") && (s[3] == 'c' || s[3] == 'v'))
+            || (sh_has_prefix(s, "sub") && (s[3] == 'c' || s[3] == 'v'))
+            || (sh_has_prefix(s, "neg") && s[3] == 'c'))
+                return 0;
+        return 1;
+}
+
+/* Fill bt/bf delay slots: convert `<insn>; bt L` to `bt/s L; <insn>`
+ * when <insn> is safe to execute in the delay slot.  Requires an
+ * insert-after-branch, so we rebuild via new_lines[]. */
+static void sh_fill_cond_delays(void) {
+        static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        static int cand_for_branch[SH_MAX_LINES];
+        static int branch_for_cand[SH_MAX_LINES];
+        int i, k, nout = 0;
+
+        for (i = 0; i < sh_nlines; i++) {
+                cand_for_branch[i] = -1;
+                branch_for_cand[i] = -1;
+        }
+
+        /* Pass 1: identify (branch, candidate) pairs. */
+        for (i = 0; i < sh_nlines; i++) {
+                unsigned intermediate_mask = 0;
+                int cand = -1;
+                const char *p;
+                if (sh_lines[i][0] == 0) continue;
+                p = sh_lines[i];
+                while (*p == ' ' || *p == '\t') p++;
+                /* Must be bt or bf (not bt/s, bf/s). */
+                if (!(p[0] == 'b' && (p[1] == 't' || p[1] == 'f')))
+                        continue;
+                if (p[2] == '/' && p[3] == 's') continue;
+                if (p[2] != '\t' && p[2] != ' ') continue;
+
+                for (k = i - 1; k >= 0; k--) {
+                        unsigned cand_regs;
+                        const char *q;
+                        if (sh_lines[k][0] == 0) continue;
+                        if (cand_for_branch[k] >= 0) break;
+                        if (branch_for_cand[k] >= 0) break;
+                        if (sh_is_label_line(sh_lines[k])) break;
+                        if (sh_is_branch_line(sh_lines[k])) break;
+                        q = sh_lines[k];
+                        while (*q == ' ' || *q == '\t') q++;
+                        if (q[0] == 'b' && (q[1] == 't' || q[1] == 'f'))
+                                break;
+                        /* Pass over the cmp/tst/dt that set T — the
+                         * candidate instruction we seek lies BEFORE
+                         * them.  Track their register mentions in
+                         * intermediate_mask so the candidate check
+                         * rejects conflicting candidates. */
+                        if (sh_has_prefix(sh_lines[k], "cmp")
+                            || sh_has_prefix(sh_lines[k], "tst")
+                            || sh_has_prefix(sh_lines[k], "dt")) {
+                                intermediate_mask |=
+                                        sh_regs_used(sh_lines[k]);
+                                continue;
+                        }
+                        if (!sh_is_cond_delay_safe(sh_lines[k])) break;
+                        cand_regs = sh_regs_used(sh_lines[k]);
+                        if (sh_is_pc_rel_load(sh_lines[k])) {
+                                intermediate_mask |= cand_regs;
+                                continue;
+                        }
+                        if (cand_regs & intermediate_mask) break;
+                        cand = k;
+                        break;
+                }
+
+                if (cand >= 0) {
+                        cand_for_branch[i] = cand;
+                        branch_for_cand[cand] = i;
+                }
+        }
+
+        /* Pass 2: rebuild with bt→bt/s and delay slot inserted. */
+        for (i = 0; i < sh_nlines; i++) {
+                if (nout >= SH_MAX_LINES - 2) break;
+                if (branch_for_cand[i] >= 0) {
+                        /* Moved candidate — skip. */
+                        continue;
+                }
+                if (cand_for_branch[i] >= 0) {
+                        const char *p = sh_lines[i];
+                        const char *rest;
+                        char bname[8];
+                        while (*p == ' ' || *p == '\t') p++;
+                        if (p[1] == 't') strcpy(bname, "bt/s");
+                        else strcpy(bname, "bf/s");
+                        rest = p + 2;
+                        while (*rest == ' ' || *rest == '\t') rest++;
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\t%s\t%s", bname, rest);
+                        strcpy(new_lines[nout++],
+                               sh_lines[cand_for_branch[i]]);
+                        continue;
+                }
+                if (sh_lines[i][0] == 0) {
+                        new_lines[nout++][0] = 0;
+                        continue;
+                }
+                strcpy(new_lines[nout++], sh_lines[i]);
+        }
+
+        memcpy(sh_lines, new_lines, sizeof sh_lines);
+        sh_nlines = nout;
+}
+
 /* Peephole: delete `mov rA,rB` ... `mov rB,rA` pairs when no
  * instruction between them touches rA or rB. LCC's register
  * allocator leaves this pattern after every call (the call result
@@ -4225,6 +4357,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_elim_redundant_ext();
                 sh_route_via_r0();
                 sh_fill_branch_delays();
+                sh_fill_cond_delays();
                 if (need_r14_rename)
                         sh_rename_r14_var(r14_rename_to);
         }
