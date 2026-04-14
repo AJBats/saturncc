@@ -25,9 +25,9 @@ _FUN_06037E28:
 	mov.l	@r2,r2
 	mov	r1,r1
 	add	r2,r1
-	mov.w	L41,r3
-	add	r1,r3
-	mov.l	@r3,r13
+	mov.w	L41,r2
+	mov	r1,r0
+	mov.l	@(r0,r2),r13
 	add	#92,r1
 	mov.l	@r1,r0
 	cmp/eq	#10,r0

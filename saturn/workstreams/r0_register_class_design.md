@@ -251,3 +251,175 @@ Read `gen.c` and `lburg/lburg.c` to validate assumption #1 above.
 If wildcards support singleton classes, the design is sound and we can
 start implementing. If not, the design needs to grow to include lburg
 infrastructure changes.
+
+---
+
+## 2026-04-14 update — investigation findings
+
+Read `gen.c` carefully (`mkwildcard`, `askreg`, `getreg`, `rtarget`,
+`spillee`, `ralloc`).  The picture is more nuanced than the doc above
+suggests.
+
+### What works as expected
+
+- **Singleton wildcards work mechanically.** `mkwildcard()` takes a
+  `Symbol*` array of length 32; nothing prevents us from putting R0
+  in one slot and NULL in the rest.  `askreg()` walks the array and
+  returns R0 if free.
+
+- **`rtarget(p, n, ireg[0])` does fix the kid to R0.** It either
+  setregs an existing wildcard kid to R0, or wraps in a LOAD node.
+  This works today — that's how `cmp/eq #imm,R0` gets R0.
+
+### What doesn't work as expected
+
+- **R0 is not currently allocatable via the wildcard path.**  `tmask[IREG]
+  = INTTMP = 0xe`.  R0's mask bit (0x1) is not in tmask, so
+  `askreg(iregw, tmask)` filters R0 out.  R0 only appears via explicit
+  `setreg/rtarget`, never via wildcard allocation.
+
+- **lburg cost is static — period.**  A rule's cost is computed at
+  label-time, before any register allocation.  There is no way in
+  lburg to express "cost 1 if R0 is free at this point, cost 2
+  otherwise."  This is the *core* of why our compound-rule + target()
+  approach broke.
+
+- **`rtarget()` blindly forces, then `spillee` cleans up.** When the
+  forced register is taken, `getreg()` calls `spillee()` which evicts
+  the longest-distance-to-next-use value. For long-lived callee-saved
+  registers, this is exactly the cascading-spill disaster we saw in
+  FUN_06044BCC (+51 lines).
+
+### What this means for Option A
+
+Adding `iregw_r0` and `r0reg` is straightforward (a few dozen lines).
+But it **would not fix the cost problem** by itself.  We'd still be
+emitting compound rules at static cost, still calling `rtarget()`, still
+risking the spill cascade.
+
+The real fix would be one of:
+
+1. **Modify lburg to support dynamic costs.**  Have the cost function
+   consult `freemask[]` at rule-selection time.  This is a real change
+   to lburg infrastructure, would diverge us from upstream more than we
+   already are, and the rule-selection pass currently runs *before*
+   register allocation, so `freemask` doesn't reflect the final state.
+   Significant scope.
+
+2. **Defer the R0 routing decision until after allocation.**  Generate
+   normal code, then run a peephole that converts add+indirect to
+   indexed addressing when R0 happens to be dead at that point.  This
+   is the Option B from the discussion — and after this investigation
+   it's looking like the *only* practical option that doesn't require
+   surgery on lburg.
+
+3. **Hybrid: lburg compound rules with conservative cost (already
+   tried), plus a follow-up peephole that opportunistically routes
+   values through R0 to enable additional firings.**  The compound
+   rule fires when R0 is naturally free.  The peephole identifies
+   places where re-routing a constant load or a copy through R0 would
+   enable a downstream indexed/displacement instruction.
+
+### Revised recommendation
+
+The original Option A (register classes in LCC) sounded like 1-2
+sessions of mechanical work.  After investigation, it's actually
+1-2 sessions for the *infrastructure*, plus deeper lburg changes
+to make it useful, plus risk of breaking things in gen.c that we
+don't fully understand yet.
+
+The pragmatic path is **Option 3 (hybrid)** above:
+
+- Restore the lburg compound rules for indexed/etc. with conservative
+  cost — they fire safely when R0 is naturally available.
+- Add a peephole pass `sh_route_via_r0()` that runs after register
+  allocation and either:
+  - Converts free-floating add+indirect to indexed when R0 is dead, OR
+  - Looks one instruction back to find a constant-load that *could*
+    have gone to R0 and rewrites both lines together.
+
+This gives us most of the benefit of Option A without modifying
+gen.c or lburg.  And it leaves the door open: if we hit a wall where
+the peephole can't see enough context, we can promote to a deeper
+solution then, with concrete failure cases to guide the design.
+
+### Open question, restated
+
+Is there a real-world function we can't byte-match through hybrid
+peepholes alone?  If yes, that's the trigger to go deeper.  If no,
+we don't need to.
+
+We don't know yet.  Going hybrid first lets us find out cheaply.
+
+### Status
+
+- **Option A as originally specified:** rejected.  Doesn't actually
+  fix the cost problem without deeper lburg changes.
+- **Option B (peephole only):** viable but limited (can only rewrite
+  what allocator already produced).
+- **Option 3 (hybrid):** abandoned in implementation.  Compound rules
+  for `INDIR(ADD(reg,reg))` cause register conflicts because the
+  destination register can collide with one of the input registers
+  (lburg consumed the ADD's intermediate, leaving emit2 no separate
+  temp register to use).  See "Why compound rules failed" below.
+- **Final implementation:** Option B only.  No compound rules for
+  indexed addressing.  The `sh_route_via_r0()` peephole rewrites
+  `mov rA,rT; add rB,rT; mov.X @rT,rD` to `mov rA,r0;
+  mov.X @(r0,rB),rD` when R0 is dead at that point.
+
+### Why compound rules failed
+
+Tried: `reg: INDIR(ADD(reg,reg))` with cost 1, emit2 fallback that
+uses `dst` as the address-computation temp.
+
+Bug: when the destination register collides with one of the address
+inputs, the emit2 fallback corrupts the address.  Example: emit2
+generates `mov r14,r2; add r2,r2; mov.l @r2,r2` when the allocator
+chose r2 for the destination and r14, r2 as the inputs.  The
+`add r2,r2` doubles r2 instead of adding the second input.
+
+Root cause: lburg compound rules consume the intermediate node and
+its associated register slot.  emit2 has no way to request a
+separate temp register because the rule didn't allocate one.  Using
+`dst` as temp only works when dst differs from both inputs, which
+isn't guaranteed.
+
+This is a structural limitation, not a fixable bug.  Compound rules
+work fine when no temp is needed (displacement, GBR, etc.) but fail
+for indexed addressing where address computation requires a register.
+
+### What we actually implemented
+
+`sh_route_via_r0()` runs after register allocation and converts the
+regular `add+indirect` output to indexed form when R0 is dead.
+
+Impact on existing functions: 2 indexed instructions added in
+FUN_06037E28 (no line change, same instruction count, but using the
+correct addressing mode that production also uses).  Other functions
+unchanged.
+
+This is a small but real improvement.  Production uses 100+ indexed
+instructions in E28, most of them as part of SHC's deliberate R0
+routing strategy.  Our peephole can only catch cases where R0
+happens to be dead naturally.
+
+### Future work
+
+To capture more of production's R0 routing patterns, we'd need to
+*proactively* route values through R0, not just opportunistically
+detect when R0 is free.  This could be:
+
+- A second peephole pass that identifies pool-load destinations that
+  could be R0 instead, and rewrites them when doing so enables a
+  downstream indexed/displacement instruction.
+
+- A pre-allocation hint mechanism that biases the register allocator
+  toward R0 for short-lived address-component values.
+
+- The full register class implementation originally proposed (still
+  has the lburg cost-awareness problem, but worth revisiting once we
+  have concrete patterns from real failures).
+
+For now, the simple opportunistic peephole is good enough.  We
+revisit if/when a specific function's byte-match is blocked by
+missing R0 routing.
