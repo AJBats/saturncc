@@ -2522,6 +2522,11 @@ static void sh_rewrite_bool_fp(int need_fp) {
         int nout = 0;
 
         if (need_fp) return;
+        /* Injects `mov r15,r14` / `mov r14,r15` which clobber r14.
+         * Requires the prologue to save r14. If leaf-rename dropped
+         * r14 from usedmask, skip — the injection would corrupt the
+         * caller's r14. */
+        if (!(usedmask[IREG] & (1u << 14))) return;
 
         for (i = 0; i < sh_nlines; i++) {
                 if (nout >= SH_MAX_LINES - 10) {
@@ -3415,8 +3420,14 @@ static void sh_restructure_eq_chain(void) {
                                 snprintf(new_lines[nout], SH_MAX_LINELEN,
                                          "\trts\n");
                                 nout++;
-                                snprintf(new_lines[nout], SH_MAX_LINELEN,
-                                         "\tmov.l\t@r15+,r14\n");
+                                /* Copy the block's captured delay/pop line
+                                 * rather than hardcoding a r14 pop — the
+                                 * leaf-rename pass may have turned it into
+                                 * a nop (no save to restore). */
+                                strncpy(new_lines[nout],
+                                        sh_lines[blocks[idx].pop_line],
+                                        SH_MAX_LINELEN - 1);
+                                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
                                 nout++;
                         }
                         } /* end order[] scope */
@@ -3443,9 +3454,18 @@ static void sh_restructure_eq_chain(void) {
                         snprintf(new_lines[nout], SH_MAX_LINELEN,
                                  "\trts\n");
                         nout++;
-                        snprintf(new_lines[nout], SH_MAX_LINELEN,
-                                 "\tmov.l\t@r15+,r14\n");
-                        nout++;
+                        {
+                                int src = last->is_last_bt
+                                        ? last->pop_line
+                                        : (default_pop >= 0
+                                           ? default_pop
+                                           : last->pop_line);
+                                strncpy(new_lines[nout],
+                                        sh_lines[src],
+                                        SH_MAX_LINELEN - 1);
+                                new_lines[nout][SH_MAX_LINELEN - 1] = 0;
+                                nout++;
+                        }
                 }
 
                 /* The restructured chain handles all returns; the
@@ -3688,31 +3708,43 @@ static void sh_elim_redundant_mov_r0(void) {
  * This runs only when the allocator picked r14 as a var home AND the
  * function also turns out to need FP. See function() for the call
  * site and the surrounding conflict-detection logic. */
-static void sh_rename_r14_var(int new_reg) {
+/* Rewrite every standalone `r<old>` token in the captured body to
+ * `r<new>`. Preserves `,r14)` frame-pointer indexed references when
+ * old==14, since those carry FP semantics that must not be renamed.
+ * Non-r14 renames have no such exception — `,rN)` for N != 14 is an
+ * indexed addressing operand and is a legitimate rename target. */
+static void sh_rename_reg(int old_reg, int new_reg) {
         char buf[SH_MAX_LINELEN];
+        char old_digits[4];
+        int old_len;
         int j;
+        old_len = snprintf(old_digits, sizeof old_digits, "%d", old_reg);
         for (j = 0; j < sh_nlines; j++) {
                 const char *in = sh_lines[j];
                 char *out = buf;
                 if (in[0] == 0)
                         continue;
                 while (*in) {
-                        if (*in == 'r' && in[1] == '1' && in[2] == '4'
-                            && !(in[3] >= '0' && in[3] <= '9')) {
+                        if (*in == 'r'
+                            && strncmp(in + 1, old_digits,
+                                       (size_t)old_len) == 0
+                            && !(in[1 + old_len] >= '0'
+                                 && in[1 + old_len] <= '9')) {
                                 int is_fp_indexed =
-                                        (in > sh_lines[j]
+                                        (old_reg == 14
+                                         && in > sh_lines[j]
                                          && in[-1] == ','
-                                         && in[3] == ')');
+                                         && in[1 + old_len] == ')');
                                 if (is_fp_indexed) {
-                                        *out++ = *in++;
-                                        *out++ = *in++;
-                                        *out++ = *in++;
+                                        int k;
+                                        for (k = 0; k <= old_len; k++)
+                                                *out++ = *in++;
                                 } else {
                                         int n = snprintf(out,
                                                 sizeof buf - (size_t)(out - buf),
                                                 "r%d", new_reg);
                                         out += n;
-                                        in += 3;
+                                        in += 1 + old_len;
                                 }
                         } else {
                                 *out++ = *in++;
@@ -3721,6 +3753,140 @@ static void sh_rename_r14_var(int new_reg) {
                 *out = 0;
                 strncpy(sh_lines[j], buf, SH_MAX_LINELEN - 1);
                 sh_lines[j][SH_MAX_LINELEN - 1] = 0;
+        }
+}
+
+static void sh_rename_r14_var(int new_reg) {
+        sh_rename_reg(14, new_reg);
+}
+
+/* Leaf-function callee-saved elision (Gap 1, Phase A).
+ *
+ * SHC's leaf functions with a single return point avoid callee-saved
+ * registers entirely — FUN_06047748's base pointer lives in r7, not
+ * r14. But leaf functions with MULTIPLE returns keep r14 (or another
+ * callee-saved) because the pop fills each rts delay slot usefully
+ * (FUN_06004378 has 6 rts sites). Renaming away the callee-saved
+ * there trades 1 saved push for N wasted nops.
+ *
+ * Our allocator defaults to r14..r8 for variable homes (INTVAR =
+ * 0x7f00) because LCC's gen.c assumes vmask and tmask are disjoint.
+ * Widening vmask to include INTTMP breaks the allocator's invariants
+ * (spillee assertion, CSE tracking corruption — confirmed
+ * experimentally).
+ *
+ * Instead, do the rename as a post-allocation pass on the captured
+ * body: for each callee-saved reg LCC picked, rewrite it to a
+ * caller-saved reg that is genuinely unreferenced anywhere in the
+ * body. The usedmask rebuild at the end of function() picks up the
+ * renamed regs as INTTMP (stripped by &INTVAR) and drops the
+ * prologue save.
+ *
+ * Gate: only fire when the body has at most one `bra <exit>` site
+ * (which inline_returns will turn into an rts). With multiple
+ * returns, the pops-as-delay-slot trick wins on code size and
+ * matches prod.
+ *
+ * Rename-target priority: r7, r6, r5, r4 first (argregs that the
+ * function doesn't consume), then r0. We do NOT target r1/r2/r3 —
+ * they're INTTMP temps and are almost always live somewhere in the
+ * body. */
+static int sh_count_exit_bras(int exit_label_num) {
+        char pat[32];
+        int count = 0;
+        int j;
+        snprintf(pat, sizeof pat, "\tbra\tL%d\n", exit_label_num);
+        for (j = 0; j < sh_nlines; j++) {
+                if (sh_lines[j][0] == 0)
+                        continue;
+                if (strcmp(sh_lines[j], pat) == 0)
+                        count++;
+        }
+        return count;
+}
+
+/* Return 1 if sh_rewrite_bool_fp would have a r14-using injection
+ * site here: a bf/s or bt/s whose delay-slot `mov #X,rN` writes r14.
+ * In that case renaming r14 breaks bool_fp's ability to produce the
+ * prod-matching FP-ceremony sequence, so we leave r14 alone. */
+/* Recognise bool_fp's pattern pre- or post-fold: the function picks
+ * between two small constants via a branch and moves the result to
+ * r0. Signature: at least two `mov #imm,r14` lines AND a `mov r14,r0`
+ * line. sh_rewrite_bool_fp will fire on this shape after
+ * sh_fold_conditional_delays runs — we pre-empt by leaving r14
+ * intact so the FP ceremony can be generated. */
+static int sh_body_has_bool_fp_r14_pattern(void) {
+        int i;
+        int const_moves_to_r14 = 0;
+        int r14_to_r0 = 0;
+        for (i = 0; i < sh_nlines; i++) {
+                const char *p = sh_lines[i];
+                if (p[0] == 0) continue;
+                while (*p == ' ' || *p == '\t') p++;
+                if (p[0] == 'm' && p[1] == 'o' && p[2] == 'v'
+                    && (p[3] == ' ' || p[3] == '\t')) {
+                        const char *q = p + 4;
+                        while (*q == ' ' || *q == '\t') q++;
+                        if (*q == '#' && sh_writes_reg(sh_lines[i], 14))
+                                const_moves_to_r14++;
+                        else if (*q == 'r' && q[1] == '1' && q[2] == '4'
+                                 && q[3] == ','
+                                 && sh_writes_reg(sh_lines[i], 0))
+                                r14_to_r0 = 1;
+                }
+        }
+        return const_moves_to_r14 >= 2 && r14_to_r0;
+}
+
+static void sh_leaf_rename_callee_saved(int need_fp, int exit_label_num) {
+        static const int rename_prio[] = { 7, 6, 5, 4, 0 };
+        unsigned live = 0;
+        int j, src;
+        int nexits;
+        int has_boolfp_r14;
+        int ncallee_saved;
+
+        nexits = sh_count_exit_bras(exit_label_num);
+        if (nexits > 1)
+                return;
+        /* Prod uses callee-saved regs (r14..r9) as variable homes
+         * when pressure is high — matching HEAD's allocator choices.
+         * Only rename when a single callee-saved is in use; multi-
+         * reg functions match prod better if we leave allocation
+         * alone. */
+        ncallee_saved = bitcount(usedmask[IREG] & INTVAR);
+        if (ncallee_saved > 1)
+                return;
+        has_boolfp_r14 = sh_body_has_bool_fp_r14_pattern();
+
+        for (j = 0; j < sh_nlines; j++) {
+                if (sh_lines[j][0] == 0)
+                        continue;
+                live |= sh_regs_used(sh_lines[j]);
+        }
+
+        for (src = 14; src >= 8; src--) {
+                int k;
+                if (!(live & (1u << src)))
+                        continue;
+                if (src == 14 && need_fp)
+                        continue;
+                if (src == 14 && has_boolfp_r14)
+                        continue;
+                for (k = 0;
+                     k < (int)(sizeof rename_prio
+                               / sizeof rename_prio[0]);
+                     k++) {
+                        int dst = rename_prio[k];
+                        if (!(live & (1u << dst))) {
+                                sh_rename_reg(src, dst);
+                                live &= ~(1u << src);
+                                live |= 1u << dst;
+                                usedmask[IREG] &= ~(1u << src);
+                                usedmask[IREG] |= 1u << dst;
+                                break;
+                        }
+                }
         }
 }
 
@@ -4416,6 +4582,9 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_fill_cond_delays();
                 if (need_r14_rename)
                         sh_rename_r14_var(r14_rename_to);
+                if (ncalls == 0)
+                        sh_leaf_rename_callee_saved(need_fp,
+                                                    f->u.f.label);
         }
 
         sh_emit_switch_dispatch();
