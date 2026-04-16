@@ -115,9 +115,7 @@ L12:
 	jsr	@r1
 	add	#20,r4
 	mov	#4,r1
-	mov	r4,r1
-	add	#4,r1
-	mov.l	r1,@r1
+	mov.l	r1,@(4,r4)
 	mov	r4,r1
 	add	#16,r1
 	mov.l	L15,r2

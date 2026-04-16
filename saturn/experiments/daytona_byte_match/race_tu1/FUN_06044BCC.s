@@ -60,15 +60,11 @@ L4:
 	mov.l	r2,@r1
 	mov.l	@(32,r15),r1
 	add	#4,r1
-	mov	r9,r2
-	add	#4,r2
-	mov.l	@r2,r2
+	mov.l	@(4,r9),r2
 	mov.l	r2,@r1
 	mov.l	@(32,r15),r1
 	add	#8,r1
-	mov	r9,r2
-	add	#8,r2
-	mov.l	@r2,r2
+	mov.l	@(8,r9),r2
 	mov.l	r2,@r1
 	mov.l	@(20,r15),r1
 	mov	r8,r2
@@ -97,15 +93,11 @@ L4:
 	mov.l	r2,@r1
 	mov.l	@(32,r15),r1
 	add	#4,r1
-	mov	r9,r2
-	add	#4,r2
-	mov.l	@r2,r2
+	mov.l	@(4,r9),r2
 	mov.l	r2,@r1
 	mov.l	@(32,r15),r1
 	add	#8,r1
-	mov	r9,r2
-	add	#8,r2
-	mov.l	@r2,r2
+	mov.l	@(8,r9),r2
 	mov.l	r2,@r1
 	mov.l	@(28,r15),r1
 	add	#24,r1
@@ -192,33 +184,23 @@ L3:
 	mov.l	r1,@r2
 	mov	r8,r1
 	add	#4,r1
-	mov	r9,r2
-	add	#4,r2
-	mov.l	@r2,r2
+	mov.l	@(4,r9),r2
 	mov.l	r2,@r1
 	mov	r8,r1
 	add	#8,r1
-	mov	r9,r2
-	add	#8,r2
-	mov.l	@r2,r2
+	mov.l	@(8,r9),r2
 	mov.l	r2,@r1
 	mov	r8,r1
 	add	#12,r1
-	mov	r9,r2
-	add	#12,r2
-	mov.l	@r2,r2
+	mov.l	@(12,r9),r2
 	mov.l	r2,@r1
 	mov	r8,r1
 	add	#16,r1
-	mov	r9,r2
-	add	#16,r2
-	mov.l	@r2,r2
+	mov.l	@(16,r9),r2
 	mov.l	r2,@r1
 	mov	r8,r1
 	add	#20,r1
-	mov	r9,r2
-	add	#20,r2
-	mov.l	@r2,r2
+	mov.l	@(20,r9),r2
 	mov.l	r2,@r1
 	mov.l	L25,r1
 	mov.l	r1,@(16,r15)
@@ -249,15 +231,11 @@ L11:
 	mov.l	r1,@r9
 	mov	r9,r1
 	add	#4,r1
-	mov	r8,r2
-	add	#4,r2
-	mov.l	@r2,r2
+	mov.l	@(4,r8),r2
 	mov.l	r2,@r1
 	mov	r9,r1
 	add	#8,r1
-	mov	r8,r2
-	add	#8,r2
-	mov.l	@r2,r2
+	mov.l	@(8,r8),r2
 	mov.l	r2,@r1
 	mov.b	@(15,r15),r0
 	mov	r0,r1
@@ -289,15 +267,11 @@ L11:
 	mov.l	r1,@r9
 	mov	r9,r1
 	add	#4,r1
-	mov	r8,r2
-	add	#4,r2
-	mov.l	@r2,r2
+	mov.l	@(4,r8),r2
 	mov.l	r2,@r1
 	mov	r9,r1
 	add	#8,r1
-	mov	r8,r2
-	add	#8,r2
-	mov.l	@r2,r2
+	mov.l	@(8,r8),r2
 	mov.l	r2,@r1
 	mov.b	@(15,r15),r0
 	mov	r0,r0

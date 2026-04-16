@@ -142,6 +142,7 @@ static int shlit_num(int val);
 static int shlit_sym(char *name);
 static void shlit_flush(void);
 static void sh_fold_mov_extw_to_movw(void);
+static void sh_fold_base_displacement(void);
 
 /* GBR-relative addressing pool.
  *
@@ -1573,6 +1574,172 @@ static int sh_writes_reg(const char *line, int rN) {
                 if (last_r[1] >= '0' && last_r[1] <= '9')
                         n = n * 10 + (last_r[1] - '0');
                 return n == rN;
+        }
+}
+
+/* Return 1 if `line` reads register `rN` — i.e., rN appears as an
+ * operand at any position other than the destination.  Destination
+ * is the LAST rN on the line per sh_writes_reg's convention; any
+ * earlier occurrence is a read. */
+static int sh_reads_reg(const char *line, int rN) {
+        char needle[8];
+        int nlen;
+        const char *p, *last_r = NULL;
+        const char *s = line;
+        snprintf(needle, sizeof needle, "r%d", rN);
+        nlen = (int)strlen(needle);
+        while (*s) {
+                if (*s == 'r' && s[1] >= '0' && s[1] <= '9')
+                        last_r = s;
+                s++;
+        }
+        p = line;
+        while ((p = strstr(p, needle)) != NULL) {
+                char c = p[nlen];
+                if (!(c >= '0' && c <= '9')) {
+                        /* Whole-token match for r<N>.  A match at a
+                         * position other than the line's last register
+                         * is a read. */
+                        if (p != last_r)
+                                return 1;
+                }
+                p++;
+        }
+        return 0;
+}
+
+/* Return 1 if register `rN` is dead immediately after sh_lines[start]
+ * — that is, the next reference to rN (forward scan) is a write
+ * without an intervening read.  Conservative: bails (returns 0) at
+ * any label or branch, since control flow may merge on paths we
+ * haven't scanned.  If the scan reaches the end of the buffer
+ * without seeing rN, the register is considered dead. */
+static int sh_reg_dead_after(int start, int rN) {
+        int i;
+        for (i = start; i < sh_nlines; i++) {
+                const char *s = sh_lines[i];
+                if (s[0] == 0) continue;
+                if (sh_is_label_line(s)) return 0;
+                if (sh_has_prefix(s, "bt") || sh_has_prefix(s, "bf")
+                    || sh_has_prefix(s, "bra") || sh_has_prefix(s, "jmp")
+                    || sh_has_prefix(s, "jsr") || sh_has_prefix(s, "bsr")
+                    || sh_has_prefix(s, "rts"))
+                        return 0;
+                if (sh_reads_reg(s, rN)) return 0;
+                if (sh_writes_reg(s, rN)) return 1;
+        }
+        return 1;
+}
+
+/* Fold a base-rebuild + access sequence into a single displacement-
+ * mode access.
+ *
+ *   mov rA, rB           →   mov.X @(K, rA), rC     (load)
+ *   add #K, rB
+ *   mov.X @rB, rC
+ *
+ *   mov rA, rB           →   mov.X rM, @(K, rA)     (store)
+ *   add #K, rB
+ *   mov.X rM, @rB
+ *
+ * SH-2 displacement constraints:
+ *   mov.b disp 0..15, other reg must be R0
+ *   mov.w disp 0..30 (even), other reg must be R0
+ *   mov.l disp 0..60 (×4), any Rm
+ *
+ * Safety: rB must be dead immediately after the access (scan
+ * forward until a write to rB without intervening read, or bail at
+ * labels/branches).  Closes the load/store side of Gap 7 — the
+ * "clustered base + same-base multi-access" pattern that SHC
+ * compiles to displacement mode where LCC currently rebuilds the
+ * base for each access.
+ *
+ * The rarer T2 store-chain pattern (multiple stores sharing a base
+ * via repeated mov/add) is handled implicitly when rB dies between
+ * the store and the next rebuild: each link collapses independently
+ * because the next `mov rA, rB` is a pure write to rB. */
+static void sh_fold_base_displacement(void) {
+        int i, j, k;
+        for (i = 0; i < sh_nlines; i++) {
+                int rA, rB1, K, rB2;
+                char size;
+                int rB3, r_other;
+                int is_store = 0;
+                int disp_ok = 0;
+
+                if (sh_lines[i][0] == 0) continue;
+                if (sscanf(sh_lines[i], "\tmov\tr%d,r%d\n",
+                           &rA, &rB1) != 2)
+                        continue;
+                if (rA == rB1) continue;
+
+                j = i + 1;
+                while (j < sh_nlines && sh_lines[j][0] == 0) j++;
+                if (j >= sh_nlines) continue;
+                if (sscanf(sh_lines[j], "\tadd\t#%d,r%d\n",
+                           &K, &rB2) != 2
+                    || rB2 != rB1)
+                        continue;
+
+                k = j + 1;
+                while (k < sh_nlines && sh_lines[k][0] == 0) k++;
+                if (k >= sh_nlines) continue;
+
+                /* Try load first: mov.X @rB, rC */
+                if (sscanf(sh_lines[k], "\tmov.%c\t@r%d,r%d\n",
+                           &size, &rB3, &r_other) == 3
+                    && rB3 == rB1) {
+                        is_store = 0;
+                } else if (sscanf(sh_lines[k], "\tmov.%c\tr%d,@r%d\n",
+                                  &size, &r_other, &rB3) == 3
+                           && rB3 == rB1) {
+                        is_store = 1;
+                } else {
+                        continue;
+                }
+
+                /* Displacement fits the size's constraints? */
+                if (size == 'l') {
+                        disp_ok = (K >= 0 && K <= 60
+                                   && (K % 4) == 0);
+                } else if (size == 'w') {
+                        disp_ok = (K >= 0 && K <= 30
+                                   && (K % 2) == 0
+                                   && r_other == 0);
+                } else if (size == 'b') {
+                        disp_ok = (K >= 0 && K <= 15
+                                   && r_other == 0);
+                }
+                if (!disp_ok) continue;
+
+                /* Safety: the transform leaves rB1 with its pre-load
+                 * value (= whatever was in rB1 before `mov rA,rB1`).
+                 * The original sequence leaves rB1 with either the
+                 * loaded value (rB1==rC, load case) or rA+K (rB1!=rC
+                 * load, or store).
+                 *
+                 * When the original and transformed post-values for
+                 * rB1 agree — i.e., rB1==rC for a load, because the
+                 * load writes the same register the transform writes
+                 * via rC — no liveness check is needed.  Otherwise
+                 * rB1 must be dead after the access for the rewrite
+                 * to be semantics-preserving. */
+                if (!(is_store == 0 && r_other == rB1)
+                    && !sh_reg_dead_after(k + 1, rB1))
+                        continue;
+
+                /* Apply. */
+                if (is_store) {
+                        snprintf(sh_lines[k], SH_MAX_LINELEN,
+                                 "\tmov.%c\tr%d,@(%d,r%d)\n",
+                                 size, r_other, K, rA);
+                } else {
+                        snprintf(sh_lines[k], SH_MAX_LINELEN,
+                                 "\tmov.%c\t@(%d,r%d),r%d\n",
+                                 size, K, rA, r_other);
+                }
+                sh_lines[i][0] = 0;
+                sh_lines[j][0] = 0;
         }
 }
 
@@ -4738,6 +4905,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         sh_rewrite_gbr_param();
                 sh_elim_redundant_ext();
                 sh_fold_mov_extw_to_movw();
+                sh_fold_base_displacement();
                 sh_route_via_r0();
                 sh_fold_post_increment();
                 sh_fill_branch_delays();

@@ -19,9 +19,7 @@ _FUN_0604025C:
 	add	#18,r1
 	mov	#0,r2
 	mov.b	r2,@r1
-	mov	r4,r1
-	add	#20,r1
-	mov.l	r4,@r1
+	mov.l	r4,@(20,r4)
 	mov	r4,r0
 L1:
 	lds.l	@r15+,pr
