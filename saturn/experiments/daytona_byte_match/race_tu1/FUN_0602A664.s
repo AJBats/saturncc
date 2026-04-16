@@ -11,7 +11,7 @@ _FUN_0602A664:
 	mov.l	r8,@-r15
 	sts.l	pr,@-r15
 	add	#-12,r15
-	mov.w	L15,r1
+	mov.l	L15,r1
 	mov	#17,r2
 	mov.b	r2,@r1
 	mov.l	L16,r1
@@ -84,7 +84,7 @@ L1:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L15:	.short	-366
+L15:	.long	-366
 L16:	.long	100947608
 L17:	.long	100847872
 L18:	.long	637867836

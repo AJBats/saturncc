@@ -141,6 +141,7 @@ static int nshlit;
 static int shlit_num(int val);
 static int shlit_sym(char *name);
 static void shlit_flush(void);
+static void sh_fold_mov_extw_to_movw(void);
 
 /* GBR-relative addressing pool.
  *
@@ -682,18 +683,29 @@ static int shlit_sym(char *name) {
 }
 
 static void shlit_flush(void) {
-        int i;
+        int i, nshort = 0;
         if (nshlit == 0)
                 return;
         print("\t.align 2\n");
+        /* Emit .short (word) entries first so any subsequent .long
+         * entries start on a 4-byte boundary regardless of how many
+         * words precede them.  GAS .align 2 aligns to 2^2 = 4 bytes
+         * on sh-elf, so we only need one padding directive between
+         * the groups when the word count is odd. */
+        for (i = 0; i < nshlit; i++) {
+                if (!shlits[i].is_symbol && shlits[i].is_word) {
+                        print("L%d:\t.short\t%d\n",
+                              shlits[i].label, shlits[i].value);
+                        nshort++;
+                }
+        }
+        if (nshort & 1)
+                print("\t.align 2\n");
         for (i = 0; i < nshlit; i++) {
                 if (shlits[i].is_symbol)
                         print("L%d:\t.long\t%s\n",
                               shlits[i].label, shlits[i].name);
-                else if (shlits[i].is_word)
-                        print("L%d:\t.short\t%d\n",
-                              shlits[i].label, shlits[i].value);
-                else
+                else if (!shlits[i].is_word)
                         print("L%d:\t.long\t%d\n",
                               shlits[i].label, shlits[i].value);
         }
@@ -1015,7 +1027,7 @@ static void emit2(Node p) {
         Symbol s;
         char *base;
         switch (specific(p->op)) {
-        case CNST+I: case CNST+U: case CNST+P: {
+        case CNST+I: case CNST+U: {
                 int val = (int)p->syms[0]->u.c.v.i;
                 dst = getregnum(p);
                 if ((int)(short)val == val) {
@@ -1025,6 +1037,20 @@ static void emit2(Node p) {
                         lab = shlit_num(val);
                         print("\tmov.l\tL%d,r%d\n", lab, dst);
                 }
+                break;
+                }
+        case CNST+P: {
+                /* Pointer-typed literals always use mov.l + .4byte,
+                 * regardless of whether the value happens to fit in
+                 * sign-extended 16 bits.  SHC's idiom is consistent:
+                 * addresses go through the long pool.  Compacting
+                 * them to mov.w would save 2 bytes but shift every
+                 * later pool offset and diverge from prod's byte
+                 * layout with no semantic benefit. */
+                int val = (int)p->syms[0]->u.c.v.i;
+                dst = getregnum(p);
+                lab = shlit_num(val);
+                print("\tmov.l\tL%d,r%d\n", lab, dst);
                 break;
                 }
         case ADDRG+P:
@@ -2049,6 +2075,126 @@ static void sh_elim_redundant_ext(void) {
                         w_ext &= ~0xFFu;
                         b_ext &= ~0xFFu;
                 }
+        }
+}
+
+/* Count references to pool label Lnn across all sh_lines[].  Used
+ * by sh_fold_mov_extw_to_movw to decide whether shrinking a pool
+ * entry from .long to .short is safe — must be exactly 1 reader.
+ *
+ * Matches "L<n>" as a whole-token, so L1 doesn't spuriously match
+ * inside L10 / L11.  Pool definitions themselves live in the
+ * shlits[] array, not sh_lines, so we only count code references. */
+static int sh_pool_label_refcount(int lab) {
+        int i, count = 0;
+        char needle[16];
+        int nlen;
+        snprintf(needle, sizeof needle, "L%d", lab);
+        nlen = (int)strlen(needle);
+        for (i = 0; i < sh_nlines; i++) {
+                const char *s = sh_lines[i];
+                const char *p = s;
+                if (s[0] == 0) continue;
+                while ((p = strstr(p, needle))) {
+                        char c = p[nlen];
+                        /* Whole-token: following char must not
+                         * extend the label (i.e., not a digit). */
+                        if (!(c >= '0' && c <= '9'))
+                                count++;
+                        p++;
+                }
+        }
+        return count;
+}
+
+/* Fold `mov.l Lx,rN; exts.w rN,rN` into a single `mov.w Lx,rN`
+ * and shrink the pool entry from .long to .short.
+ *
+ * mov.w sign-extends the 16-bit pool value to 32 bits on load —
+ * the same thing the following exts.w was doing.  When the
+ * consumer only needs the sign-extended low 16 bits (signalled by
+ * CVII4 emitting exts.w right after the constant load), the
+ * two-instruction sequence is equivalent to a single sign-
+ * extending word load with a narrower pool entry.
+ *
+ * This is what SHC emits for patterns like `x & (int)(short)C`
+ * where C doesn't fit directly in signed short range at parse
+ * time: LCC's CNST+I path loads the full 32 bits via .long and
+ * then CVII4 emits exts.w; SHC collapses to mov.w + .short with
+ * the low 16 bits.  Same runtime value, 2 fewer bytes of code and
+ * 2 fewer bytes of pool.
+ *
+ * Safety: when a pool entry has multiple readers, ALL of them
+ * must be `mov.l + exts.w (self)` pairs — otherwise shrinking
+ * would break the 32-bit readers.  Also requires src == dst on
+ * the exts.w so no other register's live value is lost. */
+static void sh_fold_mov_extw_to_movw(void) {
+        int j;
+        /* Iterate by shlit entry — evaluate "are ALL readers of
+         * this label fold-eligible" atomically before touching
+         * anything.  For any pool entry where every reference is
+         * a `mov.l Lx,rN; exts.w rN,rN` pair, rewrite all sites
+         * to `mov.w Lx,rN` and shrink the pool to .short. */
+        for (j = 0; j < nshlit; j++) {
+                int lab = shlits[j].label;
+                int i, k, total_refs;
+                int match_lines[SH_MAX_LITERALS];
+                int match_count = 0;
+                int all_ok = 1;
+
+                if (shlits[j].is_symbol) continue;
+                if (shlits[j].is_word) continue;
+                total_refs = sh_pool_label_refcount(lab);
+                if (total_refs == 0) continue;
+
+                /* Walk the code finding every `mov.l Lx,rA` site;
+                 * each one must be immediately followed by a
+                 * matching `exts.w rA,rA`. */
+                for (i = 0; i < sh_nlines && all_ok; i++) {
+                        int lab2, rA, rB, rC;
+                        if (sh_lines[i][0] == 0) continue;
+                        if (sscanf(sh_lines[i], "\tmov.l\tL%d,r%d\n",
+                                   &lab2, &rA) != 2)
+                                continue;
+                        if (lab2 != lab) continue;
+                        k = i + 1;
+                        while (k < sh_nlines && sh_lines[k][0] == 0)
+                                k++;
+                        if (k >= sh_nlines
+                            || sscanf(sh_lines[k],
+                                      "\texts.w\tr%d,r%d\n",
+                                      &rB, &rC) != 2
+                            || rA != rB || rB != rC) {
+                                all_ok = 0;
+                                break;
+                        }
+                        if (match_count < SH_MAX_LITERALS)
+                                match_lines[match_count++] = i;
+                }
+                if (!all_ok) continue;
+
+                /* All mov.l readers fit the pattern.  If there are
+                 * additional reference forms (mova, .short tables,
+                 * etc.) that the refcount saw but we didn't match,
+                 * bail — we can't shrink safely. */
+                if (match_count != total_refs) continue;
+
+                /* Apply. */
+                for (i = 0; i < match_count; i++) {
+                        int line_i = match_lines[i];
+                        int lab2, rA;
+                        sscanf(sh_lines[line_i],
+                               "\tmov.l\tL%d,r%d\n", &lab2, &rA);
+                        snprintf(sh_lines[line_i], SH_MAX_LINELEN,
+                                 "\tmov.w\tL%d,r%d\n", lab, rA);
+                        k = line_i + 1;
+                        while (k < sh_nlines && sh_lines[k][0] == 0)
+                                k++;
+                        if (k < sh_nlines)
+                                sh_lines[k][0] = 0;
+                }
+                shlits[j].is_word = 1;
+                shlits[j].value = (short)shlits[j].value;
         }
 }
 
@@ -4591,6 +4737,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 if (sh_gbr_param)
                         sh_rewrite_gbr_param();
                 sh_elim_redundant_ext();
+                sh_fold_mov_extw_to_movw();
                 sh_route_via_r0();
                 sh_fold_post_increment();
                 sh_fill_branch_delays();

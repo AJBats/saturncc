@@ -136,6 +136,25 @@ int yylex(void) {
 		case ':': case '=':
 			return c;
 		}
+		/* C-style block comments in the grammar section. lburg
+		   had no comment syntax; backends sometimes need to
+		   annotate rules inline.  Comments span lines and close
+		   only on the star-slash sequence. */
+		if (c == '/' && *bp == '*') {
+			bp++;
+			for (;;) {
+				int d = get();
+				if (d == EOF) {
+					yyerror("unterminated /* */ comment\n");
+					break;
+				}
+				if (d == '*' && *bp == '/') {
+					bp++;
+					break;
+				}
+			}
+			continue;
+		}
 		if (c == '%' && *bp == '%') {
 			bp++;
 			return ppercent++ ? 0 : PPERCENT;

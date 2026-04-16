@@ -84,8 +84,7 @@ L12:
 	mov	r14,r4
 	mov.w	@(14,gbr),r0
 	mov	r0,r1
-	mov.l	L25,r2
-	exts.w	r2,r2
+	mov.w	L25,r2
 	mov	r1,r4
 	mov.l	L26,r1
 	jsr	@r1
@@ -145,6 +144,8 @@ L1:
 	rts
 	mov.l	@r15+,r14
 	.align 2
+L25:	.short	-32768
+L27:	.short	410
 L15:	.long	101002840
 L16:	.long	_FUN_06040A64
 L17:	.long	3276800
@@ -155,9 +156,7 @@ L21:	.long	-67108865
 L22:	.long	_FUN_06040CF0
 L23:	.long	_FUN_06044D74
 L24:	.long	_FUN_06044E3C
-L25:	.long	32768
 L26:	.long	_FUN_0604507E
-L27:	.short	410
 L28:	.long	_FUN_06045006
 L29:	.long	_FUN_060450F2
 L30:	.long	_FUN_06044F14
