@@ -9,8 +9,17 @@ extern void setup_func(void);
 extern void sub_06037ED4(int);
 extern void sub_06037EA4(void);
 
-extern char dat_060540B4;
-extern int base_array;
+/* Gap 0: DAT externs → compile-time literals.
+ *
+ * In the Ghidra decomp, these appear as `extern` variables whose address
+ * is the DAT's pool address.  In prod, SHC encoded them as pool literals
+ * inside the function body: short masks/offsets as `.L_wpool_XXXX`
+ * entries, int/pointer values as `.L_pool_XXXX` 4-byte entries.
+ *
+ * Declaring as extern forces two loads (pool_addr → value); #define
+ * collapses to one (pool holds the literal directly). */
+#define dat_060540B4 (*((char *)0x060540B4))
+#define base_array   (0x0605224C)
 
 /* Switch body externals — function pointers loaded pre-switch */
 extern void sub_06037ED8(int *);      /* puVar2 */
@@ -63,45 +72,46 @@ extern void sub_06038398(int *);
 /* Post-switch externals */
 extern void sub_060384B4(int *);
 
-/* Case-specific data — masks */
-extern short dat_0603800C;
-extern short dat_0603800E;
-extern short dat_06038010;
-extern short dat_0603813E;
-extern short dat_06038140;
-extern short dat_06038142;
-extern short dat_06038256;
-extern short dat_06038258;
-extern short dat_0603825A;
-extern short dat_0603837A;
-extern short dat_0603837C;
-extern short dat_0603837E;
-extern int   dat_060384B8;
+/* Case-specific data — short masks (prod wpool literals) */
+#define dat_0603800C ((short)0xFFFD)
+#define dat_0603800E ((short)0xFFFE)
+#define dat_06038010 ((short)0x7FFF)
+#define dat_0603813E ((short)0xFFFD)
+#define dat_06038140 ((short)0xFFFE)
+#define dat_06038142 ((short)0x7FFF)
+#define dat_06038256 ((short)0xFFFD)
+#define dat_06038258 ((short)0xFFFE)
+#define dat_0603825A ((short)0x7FFF)
+#define dat_0603837A ((short)0xFFFD)
+#define dat_0603837C ((short)0xFFFE)
+#define dat_0603837E ((short)0x7FFF)
+#define dat_060384B8 ((int)0xF7FFFFFF)
 
-/* Case 4/5 data */
-extern char *dat_06038164;
-extern short dat_06038146;
-extern short dat_06038148;
-extern short dat_06038252;
-extern short dat_06038254;
-extern short dat_0603825C;
+/* Case 4/5 data — short offsets (prod wpool literals) */
+#define dat_06038164 ((char *)0x002FC233)
+#define dat_06038146 ((short)0x01A8)
+#define dat_06038148 ((short)0x0080)
+#define dat_06038252 ((short)0x00E0)
+#define dat_06038254 ((short)0x01C0)
+#define dat_0603825C ((short)0x01A8)
 
 /* Case 6/7 data */
-extern char *dat_06038278;
-extern short dat_0603825E;
-extern short dat_06038378;
-extern short dat_06038380;
+#define dat_06038278 ((char *)0x002FC233)
+#define dat_0603825E ((short)0x0080)
+#define dat_06038378 ((short)0x00E0)
+#define dat_06038380 ((short)0x01C0)
 
-/* Case 9 data */
-extern char *dat_0603839C;
-extern char  dat_060383A4;
-extern int   dat_060383A0;
-extern int   dat_060384B0;
-extern short dat_060384AC;
+/* Case 9 data — note: dat_060383A4 is a char* in prod (points to
+ * 0x060540B4, same byte as dat_060540B4), dereferenced at use. */
+#define dat_0603839C ((char *)0x06054920)
+#define dat_060383A4 ((char *)0x060540B4)
+#define dat_060383A0 ((int)0x0604F7E4)
+#define dat_060384B0 ((int)0x0604F7E4)
+#define dat_060384AC ((short)0x01C0)
 
 /* Post-switch data */
-extern int   dat_060384BC;
-extern int   dat_060384C0;
+#define dat_060384BC ((int)0x060527D0)
+#define dat_060384C0 ((int)0x060527D4)
 
 /* After setup_func(), param_1 is overwritten with the gs address.
  * This macro lets us use 'gs' in the source while sharing param_1's
@@ -285,7 +295,7 @@ int FUN_06037E28(int param_1) {
         gs[0xc] = gs[0xc] & (int)dat_0603837A & (int)dat_0603837C
                            & (int)dat_0603837E & 0xffffffbf;
         sub_06038398(gs);
-        if (*(char *)((char *)gs + 0x12) == 1 && dat_060383A4 == 1) {
+        if (*(char *)((char *)gs + 0x12) == 1 && *dat_060383A4 == 1) {
             gs[0] = *(int *)(dat_060383A0 + (char)(*dat_0603839C * 12));
             gs[2] = *(int *)(dat_060383A0 + (char)(*dat_0603839C * 12) + 8);
         } else {

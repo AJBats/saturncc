@@ -11,7 +11,7 @@ _FUN_06037E28:
 	mov.l	r8,@-r15
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
-	add	#-24,r15
+	add	#-20,r15
 	mov.l	L38,r1
 	jsr	@r1
 	mov	r4,r14
@@ -21,10 +21,8 @@ _FUN_06037E28:
 	muls.w	r2,r1
 	sts	macl,r1
 	exts.w	r1,r1
-	mov.l	L40,r2
-	mov.l	@r2,r2
-	mov	r1,r1
-	add	r2,r1
+	mov.l	L40,r1
+	add	r1,r1
 	mov.w	L41,r2
 	mov	r1,r0
 	mov.l	@(r0,r2),r13
@@ -33,7 +31,7 @@ _FUN_06037E28:
 	cmp/eq	#10,r0
 	bf	L2
 	mov	#10,r0
-	add	#24,r15
+	add	#20,r15
 	lds.l	@r15+,macl
 	lds.l	@r15+,pr
 	mov.l	@r15+,r8
@@ -47,7 +45,7 @@ _FUN_06037E28:
 	.align 2
 L38:	.long	_setup_func
 L39:	.short	472
-L40:	.long	_base_array
+L40:	.long	100999756
 L41:	.short	352
 L2:
 	mov	r14,r1
@@ -79,7 +77,6 @@ L2:
 	bra	L7
 	nop
 	.align 2
-L42:	.long	_dat_060540B4
 L43:	.long	_sub_06037EA4
 L6:
 	mov	r14,r1
@@ -102,8 +99,8 @@ L4:
 	mov	r14,r1
 	add	#92,r1
 	mov.l	@r1,r1
-	mov.l	r1,@(20,r15)
-	mov.l	@(20,r15),r1
+	mov.l	r1,@(16,r15)
+	mov.l	@(16,r15),r1
 	mov	#9,r2
 	cmp/gt	r2,r1
 	bt	L8
@@ -150,13 +147,12 @@ L11:
 	add	#48,r1
 	mov.l	@r1,r2
 	mov.l	L52,r3
-	mov.w	@r3,r3
+	exts.w	r3,r3
 	and	r3,r2
 	mov.l	L53,r3
-	mov.w	@r3,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L54,r3
-	mov.w	@r3,r3
+	mov.w	L54,r3
 	and	r3,r2
 	mov.w	L55,r3
 	and	r3,r2
@@ -238,9 +234,6 @@ L11:
 	.align 2
 L49:	.long	_sub_06038014
 L50:	.long	_sub_06038018
-L52:	.long	_dat_0603800C
-L53:	.long	_dat_0603800E
-L54:	.long	_dat_06038010
 L60:	.long	_sub_0603801C
 L61:	.long	_sub_06038020
 L63:	.long	_sub_06038024
@@ -256,14 +249,13 @@ L12:
 	mov	r14,r1
 	add	#48,r1
 	mov.l	@r1,r2
-	mov.l	L66,r3
-	mov.w	@r3,r3
+	mov.l	L52,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L67,r3
-	mov.w	@r3,r3
+	mov.l	L53,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L68,r3
-	mov.w	@r3,r3
+	mov.w	L54,r3
 	and	r3,r2
 	mov.w	L55,r3
 	and	r3,r2
@@ -277,7 +269,7 @@ L12:
 	mov.l	L62,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L69,r1
+	mov.l	L66,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
@@ -287,10 +279,10 @@ L12:
 	bra	L9
 	nop
 L13:
-	mov.l	L70,r1
+	mov.l	L67,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L71,r1
+	mov.l	L68,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
@@ -303,14 +295,13 @@ L13:
 	mov	r14,r1
 	add	#48,r1
 	mov.l	@r1,r2
-	mov.l	L66,r3
-	mov.w	@r3,r3
+	mov.l	L52,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L67,r3
-	mov.w	@r3,r3
+	mov.l	L53,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L68,r3
-	mov.w	@r3,r3
+	mov.w	L54,r3
 	and	r3,r2
 	mov.w	L55,r3
 	and	r3,r2
@@ -372,36 +363,32 @@ L13:
 	mov.l	L62,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L72,r1
+	mov.l	L69,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
 	mov	r8,r1
 	jsr	@r1
 	nop
-	mov.l	L73,r1
+	mov.l	L70,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L74,r1
+	mov.l	L71,r1
 	jsr	@r1
 	bra	L9
 	mov	r14,r4
 	.align 2
-L66:	.long	_dat_0603813E
-L67:	.long	_dat_06038140
-L68:	.long	_dat_06038142
-L70:	.long	_sub_0603814C
-L71:	.long	_sub_06038150
-L72:	.long	_sub_06038154
-L73:	.long	_sub_06038158
-L74:	.long	_sub_0603815C
+L67:	.long	_sub_0603814C
+L68:	.long	_sub_06038150
+L69:	.long	_sub_06038154
+L70:	.long	_sub_06038158
+L71:	.long	_sub_0603815C
 L14:
-	mov.l	L75,r1
+	mov.l	L72,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L76,r1
-	mov.w	@r1,r1
-	mov	r14,r2
+	mov	r14,r1
+	mov.w	L73,r2
 	add	r2,r1
 	mov	#0,r2
 	mov.w	r2,@r1
@@ -409,40 +396,33 @@ L14:
 	add	#92,r1
 	mov	#5,r2
 	mov.l	r2,@r1
-	mov.l	L77,r1
-	mov.l	@r1,r1
+	mov.l	L74,r1
 	mov.b	@r1,r1
 	mov	r1,r0
 	cmp/eq	#2,r0
 	bf	L16
-	mov.l	L78,r1
-	mov.w	@r1,r1
+	mov.w	L75,r1
 	bra	L17
-	mov.l	r1,@(16,r15)
+	mov.l	r1,@(12,r15)
 	.align 2
-L75:	.long	_sub_06038160
-L76:	.long	_dat_06038146
-L77:	.long	_dat_06038164
-L78:	.long	_dat_06038148
+L72:	.long	_sub_06038160
 L16:
-	mov.l	L79,r1
-	mov.w	@r1,r1
-	mov.l	r1,@(16,r15)
+	mov.w	L76,r1
+	mov.l	r1,@(12,r15)
 L17:
-	mov.l	L80,r1
+	mov.l	L77,r1
 	jsr	@r1
-	mov.l	@(16,r15),r4
+	mov.l	@(12,r15),r4
 L18:
-	mov.l	L81,r1
-	mov.w	@r1,r1
-	mov	r14,r2
+	mov	r14,r1
+	mov.w	L78,r2
 	add	r2,r1
 	mov	#0,r2
 	mov.b	r2,@r1
-	mov.l	L82,r1
+	mov.l	L79,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L83,r1
+	mov.l	L80,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
@@ -455,14 +435,13 @@ L18:
 	mov	r14,r1
 	add	#48,r1
 	mov.l	@r1,r2
-	mov.l	L84,r3
-	mov.w	@r3,r3
+	mov.l	L52,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L85,r3
-	mov.w	@r3,r3
+	mov.l	L53,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L86,r3
-	mov.w	@r3,r3
+	mov.w	L54,r3
 	and	r3,r2
 	mov.w	L55,r3
 	and	r3,r2
@@ -514,9 +493,8 @@ L18:
 	jsr	@r1
 	nop
 	mov	#3,r1
-	mov.l	L87,r2
-	mov.w	@r2,r2
-	mov	r14,r3
+	mov	r14,r2
+	mov.w	L73,r3
 	add	r3,r2
 	mov.w	@r2,r2
 	extu.w	r2,r2
@@ -527,9 +505,8 @@ L18:
 	mov	r10,r1
 	jsr	@r1
 	nop
-	mov.l	L81,r1
-	mov.w	@r1,r1
-	mov	r14,r2
+	mov	r14,r1
+	mov.w	L78,r2
 	add	r2,r1
 	mov.b	@r1,r1
 	mov	r1,r0
@@ -583,62 +560,56 @@ L19:
 	mov.l	L62,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L88,r1
+	mov.l	L81,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
 	mov	r8,r1
 	jsr	@r1
 	nop
-	mov.l	L89,r1
+	mov.l	L82,r1
 	jsr	@r1
 	bra	L9
 	mov	r14,r4
 	.align 2
-L79:	.long	_dat_06038252
-L80:	.long	_sub_06038260
-L81:	.long	_dat_06038254
-L82:	.long	_sub_06038264
-L83:	.long	_sub_06038268
-L84:	.long	_dat_06038256
-L85:	.long	_dat_06038258
-L86:	.long	_dat_0603825A
+L73:	.short	424
+L77:	.long	_sub_06038260
+L79:	.long	_sub_06038264
+L80:	.long	_sub_06038268
 L23:
-	mov.l	L90,r1
+	mov.l	L83,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r1
 	add	#92,r1
 	mov	#7,r2
 	mov.l	r2,@r1
-	mov.l	L91,r1
-	mov.l	@r1,r1
+	mov.l	L74,r1
 	mov.b	@r1,r1
 	mov	r1,r0
 	cmp/eq	#2,r0
 	bf	L25
-	mov.l	L92,r1
-	mov.w	@r1,r1
+	mov.w	L75,r1
 	bra	L26
-	mov.l	r1,@(12,r15)
+	mov.l	r1,@(8,r15)
 	.align 2
-L87:	.long	_dat_0603825C
+L74:	.long	3129907
+L75:	.short	128
 L25:
-	mov.l	L93,r1
-	mov.w	@r1,r1
-	mov.l	r1,@(12,r15)
+	mov.w	L76,r1
+	mov.l	r1,@(8,r15)
 L26:
-	mov.l	L94,r1
+	mov.l	L84,r1
 	jsr	@r1
-	mov.l	@(12,r15),r4
+	mov.l	@(8,r15),r4
 L27:
 	mov.l	L65,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L95,r1
+	mov.l	L85,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L96,r1
+	mov.l	L86,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
@@ -651,14 +622,13 @@ L27:
 	mov	r14,r1
 	add	#48,r1
 	mov.l	@r1,r2
-	mov.l	L97,r3
-	mov.w	@r3,r3
+	mov.l	L52,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L98,r3
-	mov.w	@r3,r3
+	mov.l	L53,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L99,r3
-	mov.w	@r3,r3
+	mov.w	L54,r3
 	and	r3,r2
 	mov.w	L55,r3
 	and	r3,r2
@@ -672,19 +642,20 @@ L27:
 	mov.l	L62,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L69,r1
+	mov.l	L66,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
 	mov	r8,r1
 	jsr	@r1
 	nop
-	mov.l	L100,r1
+	mov.l	L87,r1
 	jsr	@r1
 	bra	L9
 	mov	r14,r4
 	.align 2
 L51:	.long	_FUN_06038dd8
+L76:	.short	224
 L28:
 	mov.l	L65,r1
 	jsr	@r1
@@ -696,14 +667,13 @@ L28:
 	mov	r14,r1
 	add	#48,r1
 	mov.l	@r1,r2
-	mov.l	L97,r3
-	mov.w	@r3,r3
+	mov.l	L52,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L98,r3
-	mov.w	@r3,r3
+	mov.l	L53,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L99,r3
-	mov.w	@r3,r3
+	mov.w	L54,r3
 	and	r3,r2
 	mov.w	L55,r3
 	and	r3,r2
@@ -717,7 +687,7 @@ L28:
 	mov.l	L62,r1
 	jsr	@r1
 	mov	r14,r4
-	mov.l	L69,r1
+	mov.l	L66,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r4
@@ -728,11 +698,10 @@ L28:
 	nop
 	.align 2
 L65:	.long	_func_06038bc4
-L69:	.long	_sub_06038390
+L66:	.long	_sub_06038390
 L29:
-	mov.l	L101,r1
-	mov.w	@r1,r1
-	mov	r14,r2
+	mov	r14,r1
+	mov.w	L78,r2
 	add	r2,r1
 	mov	#0,r2
 	mov.b	r2,@r1
@@ -746,19 +715,18 @@ L29:
 	mov	r14,r1
 	add	#48,r1
 	mov.l	@r1,r2
-	mov.l	L97,r3
-	mov.w	@r3,r3
+	mov.l	L52,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L98,r3
-	mov.w	@r3,r3
+	mov.l	L53,r3
+	exts.w	r3,r3
 	and	r3,r2
-	mov.l	L99,r3
-	mov.w	@r3,r3
+	mov.w	L54,r3
 	and	r3,r2
 	mov.w	L55,r3
 	and	r3,r2
 	mov.l	r2,@r1
-	mov.l	L102,r1
+	mov.l	L88,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r1
@@ -767,99 +735,86 @@ L29:
 	mov	r1,r0
 	cmp/eq	#1,r0
 	bf	L30
-	mov.l	L103,r1
+	mov.l	L42,r1
 	mov.b	@r1,r1
 	mov	r1,r0
 	cmp/eq	#1,r0
 	bf	L30
 	mov	r14,r1
-	mov.l	r1,@(8,r15)
-	mov.l	L104,r2
+	mov	#12,r2
+	mov.l	L89,r3
+	mov.b	@r3,r3
+	muls.w	r3,r2
+	sts	macl,r2
+	exts.b	r2,r2
+	mov.l	L90,r3
+	add	r3,r2
 	mov.l	@r2,r2
-	mov	#12,r3
-	mov.l	L105,r1
-	mov.l	@r1,r1
-	mov.b	@r1,r1
-	muls.w	r1,r3
-	sts	macl,r1
-	exts.b	r1,r1
-	add	r1,r2
-	mov	r2,r1
-	mov.l	@r1,r1
-	mov.l	@(8,r15),r2
-	mov.l	r1,@r2
+	mov.l	r2,@r1
 	mov	r14,r1
 	add	#8,r1
-	mov.l	r1,@(4,r15)
-	mov.l	L104,r2
+	mov	#12,r2
+	mov.l	L89,r3
+	mov.b	@r3,r3
+	muls.w	r3,r2
+	sts	macl,r2
+	exts.b	r2,r2
+	mov.l	L90,r3
+	add	r3,r2
+	add	#8,r2
 	mov.l	@r2,r2
-	mov	#12,r3
-	mov.l	L105,r1
-	mov.l	@r1,r1
-	mov.b	@r1,r1
-	muls.w	r1,r3
-	sts	macl,r1
-	exts.b	r1,r1
-	add	r1,r2
-	mov	r2,r1
-	add	#8,r1
-	mov.l	@r1,r1
-	mov.l	@(4,r15),r2
 	bra	L31
-	mov.l	r1,@r2
+	mov.l	r2,@r1
 	.align 2
+L42:	.long	101007540
+L52:	.long	65533
+L53:	.long	65534
+L54:	.short	32767
 L55:	.short	-65
 L30:
 	mov	r14,r1
-	mov.l	r1,@(8,r15)
-	mov.l	L104,r2
-	mov.l	@r2,r2
-	mov	#12,r3
-	mov.l	L105,r1
-	mov.l	@r1,r1
-	mov.b	@r1,r1
-	muls.w	r1,r3
-	sts	macl,r1
-	exts.b	r1,r1
-	add	r1,r2
-	mov	#60,r1
-	mov.l	@(8,r15),r3
-	add	#18,r3
+	mov	#12,r2
+	mov.l	L89,r3
 	mov.b	@r3,r3
-	muls.w	r3,r1
-	sts	macl,r1
-	add	r1,r2
-	mov	r2,r1
-	mov.l	@r1,r1
-	mov.l	@(8,r15),r2
-	mov.l	r1,@r2
+	muls.w	r3,r2
+	sts	macl,r2
+	exts.b	r2,r2
+	mov.l	L90,r3
+	add	r3,r2
+	mov.l	r2,@(4,r15)
+	mov	#60,r3
+	mov	r1,r2
+	add	#18,r2
+	mov.b	@r2,r2
+	muls.w	r2,r3
+	sts	macl,r2
+	mov.l	@(4,r15),r3
+	add	r2,r3
+	mov	r3,r2
+	mov.l	@r2,r2
+	mov.l	r2,@r1
 	mov	r14,r1
-	mov.l	r1,@(0,r15)
 	mov	r1,r2
 	add	#8,r2
-	mov.l	r2,@(4,r15)
-	mov.l	L106,r3
-	mov.l	@r3,r3
-	mov	#12,r2
-	mov.l	L105,r1
-	mov.l	@r1,r1
+	mov.l	r2,@(0,r15)
+	mov	#12,r3
+	mov.l	L89,r2
+	mov.b	@r2,r2
+	muls.w	r2,r3
+	sts	macl,r2
+	exts.b	r2,r2
+	mov.l	L90,r3
+	add	r3,r2
+	mov	#60,r3
+	add	#18,r1
 	mov.b	@r1,r1
-	muls.w	r1,r2
-	sts	macl,r1
-	exts.b	r1,r1
-	mov	r3,r2
-	add	r1,r2
-	mov	#60,r1
-	mov.l	@(0,r15),r3
-	add	#18,r3
-	mov.b	@r3,r3
-	muls.w	r3,r1
+	muls.w	r1,r3
 	sts	macl,r1
 	add	r1,r2
 	mov	r2,r1
 	add	#8,r1
 	mov.l	@r1,r1
-	mov.l	@(4,r15),r2
+	mov.l	@(0,r15),r2
 	mov.l	r1,@r2
 L31:
 	mov.l	L56,r1
@@ -913,9 +868,8 @@ L31:
 	mov	r10,r1
 	jsr	@r1
 	nop
-	mov.l	L107,r1
-	mov.w	@r1,r1
-	mov	r14,r2
+	mov	r14,r1
+	mov.w	L78,r2
 	add	r2,r1
 	mov.b	@r1,r1
 	mov	r1,r0
@@ -970,14 +924,13 @@ L32:
 	mov	r14,r4
 L8:
 L9:
-	mov.l	L108,r1
+	mov.l	L91,r1
 	jsr	@r1
 	mov	r14,r4
 	mov	r14,r1
 	add	#48,r1
 	mov.l	@r1,r2
-	mov.l	L109,r3
-	mov.l	@r3,r3
+	mov.l	L92,r3
 	and	r3,r2
 	mov.l	r2,@r1
 	mov	r14,r1
@@ -987,43 +940,39 @@ L9:
 	mov.l	@(52,r1),r1
 	add	r1,r3
 	mov.l	r3,@r2
-	mov.l	L110,r1
-	mov.l	@r1,r1
-	mov	r14,r2
-	add	#18,r2
-	mov.b	@r2,r2
-	shll	r2
+	mov	r14,r1
+	add	#18,r1
+	mov.b	@r1,r1
+	shll	r1
+	mov.l	L93,r2
 	add	r2,r1
 	mov.w	@r1,r1
 	tst	r1,r1
 	bt	L34
-	mov.l	L110,r1
-	mov.l	@r1,r1
-	mov	r14,r2
-	add	#18,r2
-	mov.b	@r2,r2
-	shll	r2
+	mov	r14,r1
+	add	#18,r1
+	mov.b	@r1,r1
+	shll	r1
+	mov.l	L93,r2
 	add	r2,r1
 	mov.w	@r1,r2
 	add	#-1,r2
 	mov.w	r2,@r1
 L34:
-	mov.l	L111,r1
-	mov.l	@r1,r1
-	mov	r14,r2
-	add	#18,r2
-	mov.b	@r2,r2
-	shll	r2
+	mov	r14,r1
+	add	#18,r1
+	mov.b	@r1,r1
+	shll	r1
+	mov.l	L94,r2
 	add	r2,r1
 	mov.w	@r1,r1
 	tst	r1,r1
 	bt	L36
-	mov.l	L111,r1
-	mov.l	@r1,r1
-	mov	r14,r2
-	add	#18,r2
-	mov.b	@r2,r2
-	shll	r2
+	mov	r14,r1
+	add	#18,r1
+	mov.b	@r1,r1
+	shll	r1
+	mov.l	L94,r2
 	add	r2,r1
 	mov.w	@r1,r2
 	add	#-1,r2
@@ -1035,7 +984,7 @@ L36:
 	mov	r1,r0
 	shll	r0
 L1:
-	add	#24,r15
+	add	#20,r15
 	lds.l	@r15+,macl
 	lds.l	@r15+,pr
 	mov.l	@r15+,r8
@@ -1052,27 +1001,18 @@ L57:	.long	_func_06038a82
 L58:	.long	_func_060385ce
 L59:	.long	_func_060386d8
 L62:	.long	_FUN_06038c64
-L88:	.long	_sub_0603826C
-L89:	.long	_sub_06038270
-L90:	.long	_sub_06038274
-L91:	.long	_dat_06038278
-L92:	.long	_dat_0603825E
-L93:	.long	_dat_06038378
-L94:	.long	_sub_06038384
-L95:	.long	_sub_06038388
-L96:	.long	_sub_0603838C
-L97:	.long	_dat_0603837A
-L98:	.long	_dat_0603837C
-L99:	.long	_dat_0603837E
-L100:	.long	_sub_06038394
-L101:	.long	_dat_06038380
-L102:	.long	_sub_06038398
-L103:	.long	_dat_060383A4
-L104:	.long	_dat_060383A0
-L105:	.long	_dat_0603839C
-L106:	.long	_dat_060384B0
-L107:	.long	_dat_060384AC
-L108:	.long	_sub_060384B4
-L109:	.long	_dat_060384B8
-L110:	.long	_dat_060384BC
-L111:	.long	_dat_060384C0
+L78:	.short	448
+L81:	.long	_sub_0603826C
+L82:	.long	_sub_06038270
+L83:	.long	_sub_06038274
+L84:	.long	_sub_06038384
+L85:	.long	_sub_06038388
+L86:	.long	_sub_0603838C
+L87:	.long	_sub_06038394
+L88:	.long	_sub_06038398
+L89:	.long	101009696
+L90:	.long	100988900
+L91:	.long	_sub_060384B4
+L92:	.long	-134217729
+L93:	.long	101001168
+L94:	.long	101001172
