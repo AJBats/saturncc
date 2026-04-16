@@ -38,9 +38,13 @@ else
 fi
 
 # ── 2. Compile all experiment C files ─────────────────────
+# Skips *.ghidra.c — those are raw Ghidra-decompiler baselines kept for
+# Gap-0 provenance (H1) and aren't expected to compile directly with
+# rcc. Their dedicated pipeline lives in validate_byte_match.sh.
 echo "[2/5] Compiling experiment sources..."
 for cfile in "$EXPDIR"/FUN_*.c "$EXPDIR"/race_tu1/FUN_*.c; do
     [ -f "$cfile" ] || continue
+    case "$cfile" in *.ghidra.c) continue ;; esac
     sfile="${cfile%.c}.s"
     name="$(basename "$cfile")"
     # Preprocess first (rcc doesn't handle #define/#include)

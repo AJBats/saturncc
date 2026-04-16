@@ -15,7 +15,7 @@ This file is **tracked**. Source of truth for remediation state.
 | C1 | Automated byte-match verification          | critical | **done** (`ae235a3`, `573a134`) |
 | C2 | Peephole pass ordering contract            | critical | open              |
 | C3 | FUN_06037E28 does not assemble             | high     | open              |
-| H1 | Preserve Ghidra C baselines                | high     | open              |
+| H1 | Preserve Ghidra C baselines                | high     | **partial** — files copied; shim + compile path open |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
 | M1 | Broad-corpus smoke stage                   | medium   | open              |
 | M2 | Success-metric drift                       | medium   | **done** (`bfeafce` + doc-hygiene batch) |
@@ -231,7 +231,19 @@ committed *before* its fix (so the test actually catches the bug).
 
 **Severity:** high. Defensible methodologically but currently
 undocumentable.
-**Status:** open.
+**Status:** **partial** — `.ghidra.c` provenance files copied for all
+6 Gap-0-refactored race_tu1 functions (FUN_0602A664, FUN_06037E28,
+FUN_0604025C, FUN_06040EA0, FUN_06044BCC, FUN_06047748). The
+regression-test half (compile `.ghidra.c` through a shim and diff
+vs the current `.c` output) is still to come.
+
+**Discovery from the copy phase:** raw Ghidra C doesn't directly
+compile with rcc. It uses placeholder types (`byte`, `undefined *`,
+`sVar1`-style locals) and has no extern declarations for the DATs.
+Making it compile requires a small `ghidra_shim.h` providing
+`typedef unsigned char byte;` etc. and extern declarations. Next
+phase of H1 wires this up through a new `--ghidra` mode of
+`validate_byte_match.sh`.
 
 **Evidence:**
 - Gap 0 (`session_handoff.md:182-199`) refactors `extern DAT_X` to
@@ -445,6 +457,12 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `H1` partial. Six `.ghidra.c` provenance files
+  copied from `DaytonaCCEReverse/ghidra_reference/race/` to
+  `saturn/experiments/daytona_byte_match/race_tu1/` (one per Gap-0-
+  refactored function). `validate_build.sh` stage 2 updated to skip
+  `*.ghidra.c` since they're provenance, not live source. Shim +
+  compile path still pending.
 - `2026-04-16` doc-hygiene batch — `M2` done, `S2` done. Three
   legacy files (`byte_match_status.md`,
   `2026-04-11_session_handoff.md`, `2026-04-12_session_handoff.md`)
