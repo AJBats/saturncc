@@ -1,0 +1,425 @@
+# Methodology remediation
+
+Tracking doc for the audit findings raised on 2026-04-16. Each entry
+has a severity, the finding, concrete evidence, a fix approach, and an
+acceptance criterion. When an item lands, mark it done here and cite
+the commit. This file outlives any individual session until the list is
+empty.
+
+Unlike `session_handoff.md`, this file **is tracked**. Source of truth
+for remediation state.
+
+## Audit context
+
+Review performed against `15a717b` (HEAD at time of audit) by Opus 4.7.
+Parallel deep-dives covered: `src/sh.md` backend, the methodology /
+workflow files, and the actual byte-match evidence under
+`saturn/experiments/`. Findings were cross-checked by direct file reads
+(FUN_06044834, FUN_0604025C prod-vs-ours comparison,
+`saturn/tools/validate_build.sh`).
+
+One early agent finding was wrong and dropped: FUN_06037E28's prod
+reference `build/cmp/FUN_06037E28.s` is 7985 lines because it includes
+the containing TU `FUN_060351CC.s`, not because the handoff mis-stated
+the 226-line body count. The handoff table is accurate.
+
+## Findings and remediation items
+
+### C1. No automated byte-match verification against production
+
+**Severity:** critical. Top-level goal is byte match; nothing mechanical
+can tell you whether you got there.
+
+**Evidence:**
+- `saturn/tools/validate_build.sh:61-76` — stability check diffs our
+  output against our own last-committed output. Regression guard, not a
+  byte-match metric.
+- `saturn/tools/asmdiff.sh` — normalizes prod `.s` to `build/cmp/` for
+  human VS Code viewing only. No machine diff, no threshold.
+- `.claude/rules/validate-before-commit.md` — subagent grader has no
+  rubric. Handoff documents `session_handoff.md:550` that the grader
+  misjudged Gap 15 as a regression.
+- No mechanical per-function prod-vs-ours comparator. Handoff's
+  ratio column is a line-count proxy; FUN_00280710 is a concrete case
+  where equal instruction count hides every-reg-nibble-divergence
+  (r13 vs r14 home).
+
+**Two-tier solution:**
+
+The right metric depends on how much trust we extend to modern tooling.
+Modern GNU as (binutils 2.34) may encode SH-2 differently than the
+1996 Hitachi SHC assembler — branch relaxation, alignment padding,
+ambiguous-mnemonic form selection. Byte-comparing through GNU as makes
+the compiler chase binutils quirks. So:
+
+- **Tier 1 (primary, gates commits):** `.s` text divergence after
+  canonical normalization. Both prod and our `.s` are run through the
+  same normalizer (strip presentation directives, renumber labels, hex
+  → decimal, `sym_` → decimal, `.4byte` → `.long`, normalize
+  whitespace). Count of `diff` lines per function is pinned as the
+  baseline. Any commit that increases it is a regression.
+- **Tier 2 (secondary, diagnostic):** byte-level diff of `sh-elf-as`
+  output. Not commit-gating because of GNU as encoding noise; run on
+  demand to spot compiler output that's un-assemble-able (already caught
+  C3 in its first run). Graduates to primary if/when we validate that
+  GNU as matches SHC byte-for-byte on a known-good function.
+
+**Fix approach:**
+1. `saturn/tools/asm_normalize.py` — Python normalizer applied
+   symmetrically to both sides. Extracts a named function from a
+   multi-function TU .s file by `^FUN_NAME:` → next `^FUN_|sub_` entry.
+2. `saturn/tools/validate_byte_match.sh` (tier 1) — runs rcc →
+   normalize → diff vs normalized prod → compare to pinned baseline.
+3. `saturn/tools/validate_byte_match_bin.sh` (tier 2) — the
+   sh-elf-as-based variant, renamed from the original attempt. Kept
+   for C3 diagnostic value.
+4. Baselines in `byte_match_baselines/` (tier 1, primary) and
+   `byte_match_baselines_bin/` (tier 2).
+5. Promote tier-1 diff count to the primary dashboard metric in
+   `session_handoff.md`, replacing the ratio column.
+6. Wire tier 1 into the pre-commit flow (update
+   `.claude/rules/validate-before-commit.md` accordingly; the subagent
+   grader becomes an optional second opinion, not the gate).
+
+**Acceptance criterion:** `validate_byte_match.sh` prints an objective
+per-function diff count; a commit that widens any function's diff fails
+with exit 1. First baselines committed.
+
+**Status (2026-04-16):**
+
+Tier 1 landed. Baselines pinned for **all 10 corpus functions**:
+
+| Function      | Diff (tier 1) | Bin diff (tier 2) |
+|---------------|--------------:|------------------:|
+| FUN_00280710  | 9             | 12                |
+| FUN_06000AF8  | 17            | 17                |
+| FUN_06044834  | 20            | 21                |
+| FUN_06047748  | 28            | 20                |
+| FUN_0604025C  | 30            | 26                |
+| FUN_06004378  | 44            | 72                |
+| FUN_0602A664  | 139           | 76                |
+| FUN_06040EA0  | 261           | 261 *[tier 2: 161 with prod-reloc noise]* |
+| FUN_06044BCC  | 459           | 194               |
+| FUN_06037E28  | **1044**      | *does not assemble — C3* |
+
+"Stable baseline" FUN_06004378 at **44 diffs** (tier 1) — direct
+confirmation of the audit's core claim: "stable" meant stable against
+ourselves, not matching prod.
+
+The tier-1 and tier-2 numbers differ because they're measuring different
+things: tier 2 sees object-byte divergences including pool relocation
+placeholders (prod uses `sym_X` which GNU as leaves as zero-filled
+`.long` + reloc entry, ours uses resolved `#define` values), which
+tier 1 equates via the `sym_` → decimal normalization. For some
+functions tier 2 reports fewer diffs because instruction-level
+divergences collapse to the same 16-bit opcode (e.g. different label
+names, same relative branch offset); tier 1 surfaces those
+structurally.
+
+Remaining C1 subtasks: (a) promote tier-1 metric to the top of
+`session_handoff.md` replacing the ratio column, (b) wire tier 1 into
+`validate_build.sh` or a pre-commit hook, (c) update
+`.claude/rules/validate-before-commit.md` to call the tier-1 script
+instead of (or alongside) the subagent grader.
+
+---
+
+### C3. FUN_06037E28 compiler output does not assemble
+
+**Severity:** high (not blocking tier-1 byte-match progress, but a real
+compiler bug). Discovered by C1 tier-2's first baseline run.
+
+**Evidence:** `sh-elf-as --isa=sh2 --big` on the checked-in
+`saturn/experiments/daytona_byte_match/race_tu1/FUN_06037E28.s`
+produces:
+
+- `line 48, 612: Error: misaligned data` — pool has a `.short` between
+  `.long` entries; the second `.long` is at a 2-byte-offset boundary.
+  Despite commit `e22de96`'s claim of "shorts before longs with optional
+  alignment pad," multiple pool flushes in E28 still interleave badly.
+- `line 24: Error: offset to unaligned destination` — same root cause
+  surfacing at a `mov.l @(disp,PC)` that points at a misaligned target.
+- `line 69, 147, 149, 151, 153, 156, ...` (many): `Error: pcrel too far`
+  — SH-2's `mov.l @(disp,PC)` uses an 8-bit unsigned displacement
+  scaled by 4 (max +1020 bytes forward). E28's pool placement exceeds
+  that for many loads. Suggests `sh_interleave_pool`'s "range-aware
+  multi-island" logic (commit `1322ede`) is not in fact clamping
+  correctly for a function this large.
+
+**Impact:** the entire "E28 is the distance leader at 4.2×" narrative
+in the handoff has been measuring unassembleable text. Every optimization
+commit since E28 was first compiled (Gap 0 batch, Gap 7 Layer B, Gap 17)
+claimed line-count progress on an output that `sh-elf-as` rejects. This
+is the exact failure mode C1 was designed to catch.
+
+**Fix approach:**
+1. Reduce to a minimal reproducer for each error class (misaligned pool,
+   pcrel-too-far). Commit as stage-4 regression tests in
+   `validate_build.sh` *before* fixing.
+2. Audit `shlit_flush` and `sh_interleave_pool` for multi-flush
+   interaction. Almost certainly the fix is in one of those passes'
+   alignment accounting.
+3. Only once E28 assembles, pin its diff baseline under C1.
+
+**Acceptance criterion:** E28 assembles clean with `sh-elf-as`, first
+diff baseline pinned, no other corpus function regressed.
+
+---
+
+### C2. 20+ peephole passes, no documented ordering contract
+
+**Severity:** critical. Structural debt; probability of a nasty
+interaction grows with each added pass.
+
+**Evidence:**
+- `src/sh.md:4903-4996` — pass driver lists ~20 passes across four
+  phases. No comment explains why any pass sits where it does.
+- `sh_fold_base_displacement` and `sh_route_via_r0` both chase
+  `mov rA,rB; add #K,rB; mov.X @rB` via different transformations.
+  No documented mutual exclusion.
+- Two r14-rename passes (`sh_rename_r14_var`,
+  `sh_leaf_rename_callee_saved`) can both fire. Handoff landmine list
+  (`session_handoff.md:515-520`) records one prior outage from the
+  hardcoded-r14 in `sh_restructure_eq_chain`.
+- Lazy-delete pattern `sh_lines[j][0] = 0` used ~19 times. Every pass
+  must honor null-scan-forward; no helper, no assertion, no test.
+- `sh_rewrite_bool_fp` injects r14 assuming it's saved;
+  `sh_leaf_rename_callee_saved` can free r14. Guarded by convention
+  only.
+
+**Fix approach:**
+1. Add a block comment atop the pass-driver listing every pass with:
+   (a) what DAG/line-buffer patterns it reads, (b) what it writes,
+   (c) dependencies on earlier passes, (d) invariants it expects.
+2. Introduce `sh_kill_line(int j)` helper replacing direct
+   `sh_lines[j][0] = 0` writes. Add a final-serialization assertion
+   that no later pass re-read a killed line.
+3. Unify the two r14-rename passes into a single gated pass, or
+   document explicit serialization with a `BUG:` comment blocking
+   accidental reordering.
+4. Add regression tests for each handoff "landmine" (the seven items
+   under the Compiler Gotchas heading) as stage-4 entries in
+   `validate_build.sh`.
+
+**Acceptance criterion:** pass-driver header documents all passes;
+`sh_kill_line` is the only mutator of the null-delete marker;
+unified-or-serialized r14 rename; each landmine has a failing test
+committed *before* its fix (so the test actually catches the bug).
+
+---
+
+### H1. Gap 0 refactoring has overwritten the Ghidra baseline
+
+**Severity:** high. Defensible methodologically but currently
+undocumentable.
+
+**Evidence:**
+- Gap 0 (`session_handoff.md:182-199`) refactors `extern DAT_X` to
+  `#define DAT_X ((T*)0x...)` across race_tu1. The reasoning is sound
+  (SHC resolved "init cross-ref, fixed" DATs at compile time).
+- No `.ghidra.c` backup exists for any refactored function. There is
+  no test answering: "does our compiler produce the prod sequence when
+  fed the unmodified Ghidra C?"
+- Risk: if the raw Ghidra C does *not* compile to prod, Gap 0 has
+  hidden a compiler deficit behind a source edit. Currently
+  unprovable either way.
+
+**Fix approach:**
+1. Pull raw Ghidra C for every Gap-0-refactored function from
+   `D:/Projects/DaytonaCCEReverse/ghidra_reference/race/`. Save as
+   `<FUN>.ghidra.c` alongside the refactored `<FUN>.c`.
+2. Extend `validate_byte_match.sh` to compile both variants and report
+   their diff counts separately.
+3. Where the Ghidra-C output is materially worse, file a derived gap
+   ("Gap 0-Ghidra: compile `extern DAT_X` through to the same prod
+   sequence"). Don't rush the fix — just record the deficit.
+
+**Acceptance criterion:** every race_tu1 function with a `.c` has a
+`.ghidra.c` sibling. `validate_byte_match.sh` reports two diff counts
+per function.
+
+---
+
+### H2. Peephole layer is accumulating debt it cannot repay
+
+**Severity:** high. Structural. Acknowledged in the handoff but not
+being paid down.
+
+**Evidence:**
+- `session_handoff.md:263-265`, `280-288`, `329-335`, `388-410` —
+  four separate places say "right fix is allocator, doing it in
+  peephole because tractable."
+- Gap 5 explicit ceiling: "no post-allocation peephole can catch cases
+  where prod's value routing requires choices earlier in the pipeline.
+  Probably most of the 12-instruction gap in E28."
+- Current distance leader (E28, 4.2×) is exactly the function whose
+  gap is structural; peepholes cannot close it.
+- Each added peephole is another pattern that must be preserved when
+  the allocator is finally touched. The longer this is deferred, the
+  more expensive the allocator work becomes.
+
+**Fix approach:**
+1. **Spike** — don't commit yet — the smallest allocator change: Gap 7
+   Layer A (the `r4 → r1` copy avoidance). End-to-end in a branch.
+   Purpose: answer the binary question "is `gen.c`'s allocator
+   extensible enough for vmask/liveness-aware changes?"
+2. If yes, schedule a real Gap 5 allocator attack after the measurement
+   infrastructure (C1) is in place.
+3. If no, accept the peephole ceiling, rewrite the Gap 5 section of
+   the handoff to reflect the hard limit, and re-plan the whole
+   trajectory against that.
+
+**Acceptance criterion:** a spike branch exists with either a working
+Layer A allocator fix, or a written-up autopsy of why the LCC
+allocator refused the change. Decision committed to this doc before
+shipping any further peephole work.
+
+---
+
+### M1. Corpus is too narrow for peephole confidence
+
+**Severity:** medium. Test leakage risk.
+
+**Evidence:**
+- 8 functions in the byte-match table. Every new peephole is implicitly
+  tuned to patterns in race_tu1.
+- `D:/Projects/DaytonaCCEReverse/src/race/` has 39 raw prod `.s` files
+  reachable; the Ghidra reference has matching C.
+- No CI that runs our compiler against the broader Ghidra decompilation
+  set to catch "this peephole regresses pattern X on function Y."
+
+**Fix approach:**
+1. Add a broad-corpus smoke stage: compile every available Ghidra C
+   file from the sister project, record diff-vs-prod per function.
+2. Gate compiler commits on "no previously-green function went red,"
+   even if many functions are red to start.
+3. Expect this will uncover new gap classes. File them; don't
+   necessarily chase them.
+
+**Acceptance criterion:** `validate_build.sh` has a stage 5 ("broad
+corpus") that runs across all ~39 Ghidra-reference C files. Current
+red/green status is pinned to a baseline file.
+
+---
+
+### M2. Success metrics have drifted across handoffs
+
+**Severity:** medium. Process hygiene.
+
+**Evidence:**
+- `byte_match_status.md` (old): "85-98% byte match".
+- `2026-04-11_session_handoff.md`: per-function percentages with
+  thresholds like 90%/80%/30%.
+- `session_handoff.md` (live): line ratios + 22/22 validates.
+
+Three yardsticks, none comparable. A commit today that "went 1.8× to
+1.5×" doesn't connect to the old "85% match."
+
+**Fix approach:**
+1. Once C1 lands, the diff-count-per-function is the one metric.
+2. Retire or collapse the older metrics; keep one dashboard block at
+   the top of `session_handoff.md`.
+3. Archive `byte_match_status.md` and the dated handoffs into a single
+   `history/` subdirectory or delete outright once their content is
+   summarized.
+
+**Acceptance criterion:** `session_handoff.md` has exactly one
+byte-match metric and the older metric files are archived or removed.
+
+---
+
+### M3. Landmines have no regression tests
+
+**Severity:** medium.
+
+**Evidence:** `session_handoff.md:499-540` lists seven latent compiler
+bugs previously hit. None are covered by `validate_build.sh` stage 4.
+
+Specifically uncovered:
+- CNSTI2 out-of-range short fallback
+- Register-level narrowing rules
+- `sh_rewrite_bool_fp` + r14 assumption interaction with leaf rename
+- `sh_restructure_eq_chain` hardcoded r14 pop
+- lburg grammar-section comment regression (requires `rm build/sh.c`
+  trigger)
+- `$(pwd)` mangling in WSL-invoked bash (not a code bug; operational)
+- Stale `build/rcc` timestamp (operational)
+
+**Fix approach:** for each *compiler* landmine (not the two
+operational ones), add a reproducer `.c` plus expected-pattern grep to
+stage 4 of `validate_build.sh`.
+
+**Acceptance criterion:** five new stage-4 regression tests cover the
+listed compiler bugs. Each test is verified to fail against a revert of
+the original fix commit before being committed green.
+
+---
+
+### S1. `input.c` pragma hook has no mid-function guard
+
+**Severity:** small. Architectural fragility, not a current bug.
+
+**Evidence:** `src/input.c:17-19,102-114` wires `shc_pragma_hook`. The
+hook processes `#pragma gbr_param` by mutating a global. No guard
+against a pragma appearing mid-function or multiple pragmas in a TU.
+
+**Fix approach:** add a guard: pragma outside function scope only,
+error otherwise. Test covers both cases.
+
+**Acceptance criterion:** guard committed, both positive and negative
+test cases in stage 4.
+
+---
+
+### S2. Older dated handoffs carry metrics contradicted by live handoff
+
+**Severity:** small. Confusing for skimmers.
+
+**Evidence:** `saturn/workstreams/2026-04-11_session_handoff.md` and
+`2026-04-12_session_handoff.md` exist. The live handoff says they "can
+be ignored for current work." But they contain metric claims the live
+handoff contradicts (per-function percentages vs ratios).
+
+**Fix approach:** move to `saturn/workstreams/history/` or delete after
+extracting anything lesson-worthy into `current_state_of_research.md`.
+
+**Acceptance criterion:** no dated handoffs live in the top-level
+workstreams directory.
+
+---
+
+## Proof-of-thesis milestone
+
+Separate from the numbered issues: **the project has not demonstrated
+byte-identical match on a single function.** The natural candidate is
+FUN_06044834 — 10 prod instructions, documented blocker is Gap 5 (R0
+displacement mode on the first load).
+
+Tracking as its own milestone because it depends on several of the
+above: C1 to measure it, plus either a targeted Gap 5 peephole
+extension or a small front-end trick to force `mov.w @(disp,r4),r0`
+for the first load.
+
+**Milestone:** `diff -u` on objdump of FUN_06044834 prod vs ours
+returns zero. Whatever route gets us there is the answer to
+"peephole-only forever vs. allocator work viable."
+
+---
+
+## Progress log
+
+Newest first. Format: `commit_or_date — item_id — note`.
+
+- `2026-04-16` — `C1` — tier 1 (.s text diff) landed as the primary
+  metric. `saturn/tools/asm_normalize.py` + `validate_byte_match.sh`
+  wired together; 10 of 10 baselines pinned under
+  `saturn/experiments/byte_match_baselines/`. Tier 2 (sh-elf-as) kept
+  as diagnostic at `validate_byte_match_bin.sh` with baselines under
+  `byte_match_baselines_bin/`. Acknowledges GNU-as vs SHC-as encoding
+  uncertainty as the reason tier 2 isn't primary.
+- `2026-04-16` — `C3` — new finding opened from C1 tier-2 run:
+  E28's compiler output fails `sh-elf-as` with misaligned-data and
+  pcrel-too-far errors. Severity reduced to high (tier 1 still
+  measures E28 at diff=1044, so E28 remains visible in the primary
+  metric).
+- `2026-04-16` — `audit` — this document created.
