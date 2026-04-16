@@ -3,8 +3,7 @@
 	.align 2
 _FUN_0604025C:
 	sts.l	pr,@-r15
-	mov.l	L2,r1
-	mov.l	@r1,r3
+	mov.l	L2,r3
 	jsr	@r3
 	nop
 	mov	r0,r4
@@ -29,4 +28,4 @@ L1:
 	rts
 	add	#16,r0
 	.align 2
-L2:	.long	_DAT_0604027c
+L2:	.long	100744056

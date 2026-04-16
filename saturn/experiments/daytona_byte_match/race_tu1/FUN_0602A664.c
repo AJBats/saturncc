@@ -16,12 +16,18 @@
  * now use our new mov.l @(disp,Rn),Rm rules.
  */
 
-extern char DAT_0602A6C8;
-extern void (*DAT_0602A6CC)(void);
-extern int DAT_0602A6D0;
-extern int DAT_0602A6D4;
-extern int *DAT_0602A6D8;
-extern void (*DAT_0602A6DC)(void);
+/* Gap 0: all DATs below are compile-time literals in prod's pool.
+ * DAT_0602A6C8 is a CPU on-chip peripheral register at 0xFFFFFE92.
+ * DAT_0602A6D0 is marked "init cross-ref, fixed" — a constant-value
+ * int directly embedded in the pool.  The rest are fixed pool
+ * literals (function pointers, base addresses).  #define collapses
+ * the extern-variable indirection. */
+#define DAT_0602A6C8 (*((char *)0xFFFFFE92))
+#define DAT_0602A6CC ((void (*)(void))0x06045698)
+#define DAT_0602A6D0 ((int)0x0602D100)
+#define DAT_0602A6D4 ((int)0x2605173C)
+#define DAT_0602A6D8 (*((int **)0x06051738))
+#define DAT_0602A6DC ((void (*)(void))0x06045958)
 
 int FUN_0602A664(void) {
     int base;

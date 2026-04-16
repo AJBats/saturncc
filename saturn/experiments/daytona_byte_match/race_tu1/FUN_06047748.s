@@ -2,8 +2,7 @@
 	.text
 	.align 2
 _FUN_06047748:
-	mov.l	L7,r1
-	mov.l	@r1,r7
+	mov.l	L7,r7
 L2:
 	mov.w	@r5,r1
 	tst	r1,r1
@@ -29,4 +28,4 @@ L1:
 	rts
 	mov	r4,r0
 	.align 2
-L7:	.long	_DAT_0604776c
+L7:	.long	100773888

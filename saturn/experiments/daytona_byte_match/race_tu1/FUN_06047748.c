@@ -10,7 +10,10 @@
  * approximate this.
  */
 
-extern int DAT_0604776c;
+/* Gap 0: DAT_0604776c is "init cross-ref, fixed" in prod's pool —
+ * a compile-time constant int directly embedded in the function's
+ * local pool, not a runtime extern. */
+#define DAT_0604776c ((int)0x0601B000)
 
 int FUN_06047748(int param_1, short *param_2, int param_3) {
     int base = DAT_0604776c;

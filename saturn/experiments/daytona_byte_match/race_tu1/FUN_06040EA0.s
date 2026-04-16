@@ -128,7 +128,6 @@ L12:
 	shll	r2
 	shll2	r2
 	mov.l	L32,r3
-	mov.l	@r3,r3
 	add	r3,r2
 	mov.l	@r2,r2
 	mov.l	r2,@r1
@@ -146,7 +145,7 @@ L1:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L15:	.long	_DAT_06052E58
+L15:	.long	101002840
 L16:	.long	_FUN_06040A64
 L17:	.long	3276800
 L18:	.long	_FUN_060424B8
@@ -163,5 +162,5 @@ L28:	.long	_FUN_06045006
 L29:	.long	_FUN_060450F2
 L30:	.long	_FUN_06044F14
 L31:	.long	_FUN_06044DF4
-L32:	.long	_DAT_060566B8
+L32:	.long	101017272
 L33:	.long	_FUN_06040DCC

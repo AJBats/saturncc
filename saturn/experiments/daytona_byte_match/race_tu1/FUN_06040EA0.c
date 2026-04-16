@@ -18,7 +18,12 @@
 
 #pragma gbr_param
 
-extern int DAT_06052E58;
+/* Gap 0: DAT_06052E58 is a fixed-address global int read directly
+ * via a pool literal in prod.  #define collapses the extern's
+ * load-pool/load-value pair into prod's single mov.l pool/mov.l @r0,r0
+ * pattern — the pool now holds the literal 0x06052E58 instead of a
+ * linker-resolved symbol. */
+#define DAT_06052E58 (*(int *)0x06052E58)
 extern int FUN_06040A64(void);
 extern int FUN_060424B8(int, int, int);
 extern void FUN_0602F95A(int, int, int);
@@ -30,7 +35,10 @@ extern void FUN_06045006(int);
 extern void FUN_060450F2(int);
 extern void FUN_06044F14(void);
 extern void FUN_06044DF4(int);
-extern int *DAT_060566B8;
+/* Gap 0: DAT_060566B8 is a fixed-address int-array base in prod's
+ * pool.  #define collapses the indirect-extern into a direct base
+ * address for the mov.l @(r0,r1),r0 indexed load. */
+#define DAT_060566B8 ((int *)0x060566B8)
 extern void FUN_06040DCC(int);
 
 void FUN_06040EA0(int *param_1) {

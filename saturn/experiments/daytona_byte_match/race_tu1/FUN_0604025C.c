@@ -5,7 +5,11 @@
  * Ghidra C:  D:/Projects/DaytonaCCEReverse/ghidra_reference/race/FUN_0604025C.c
  */
 
-extern int (*DAT_0604027c)(void);
+/* Gap 0: DAT_0604027c is a fixed function-pointer literal in prod's
+ * pool (sym_06013B78, "init cross-ref, fixed") — not a pointer
+ * variable at some address.  #define collapses the double-deref from
+ * the extern form into prod's single mov.l pool; jsr @r3. */
+#define DAT_0604027c ((int (*)(void))0x06013B78)
 
 short *FUN_0604025C(void) {
     int blk;
