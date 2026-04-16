@@ -393,6 +393,11 @@ reg:  CNSTU4  "\tmov\t#%a,r%c\n"  range(a, 0, 127)
 reg:  CNSTI4  "# large const\n"  2
 reg:  CNSTU4  "# large const\n"  2
 reg:  CNSTP4  "# large const\n"  2
+/* Fallback for short constants outside -128..127. emit2's CNST+I
+ * handler already emits a mov.w from a word-pool literal for values
+ * that fit in short range, so the same code path works here. */
+reg:  CNSTI2  "# large const\n"  2
+reg:  CNSTU2  "# large const\n"  2
 
 reg:  ADDRGP4  "# addrg\n"  2
 
@@ -583,6 +588,16 @@ reg:  CVUI4(reg)  "\textu.b\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==1?1:LBURG_MAX)
 reg:  CVUI4(reg)  "\textu.w\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==2?1:LBURG_MAX)
 reg:  CVUU4(reg)  "\textu.b\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==1?1:LBURG_MAX)
 reg:  CVUU4(reg)  "\textu.w\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==2?1:LBURG_MAX)
+
+/* Narrowing conversions (int → short, int → char, etc). On SH-2 the
+ * reg already holds the 32-bit value; narrowing is implicit when we
+ * later store via mov.w/mov.b or when an arithmetic op consumes only
+ * the low bits. No instruction needed at the register level — just
+ * re-label the reg. */
+reg:  CVII1(reg)  "# truncate\n"  1
+reg:  CVII2(reg)  "# truncate\n"  1
+reg:  CVUU1(reg)  "# truncate\n"  1
+reg:  CVUU2(reg)  "# truncate\n"  1
 
 stmt: LABELV  "%a:\n"
 

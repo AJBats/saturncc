@@ -12,17 +12,24 @@
  * Uses bf/s delay-slot branches for tight loops.
  */
 
-extern short DAT_06044C52;
-extern int *DAT_06044C54;
-extern char *DAT_06044C58;
-extern char *DAT_06044C5C;
-extern char *DAT_06044C60;
-extern int DAT_06044C64;
-extern int DAT_06044D50;
-extern int DAT_06044D54;
-extern int *DAT_06044D58;
-extern int DAT_06044D5C;
-extern int DAT_06044D60;
+/* The "DAT_" externs in the Ghidra decomp are actually compile-time
+ * constant pointers/values. Prod's pool entries for these are marked
+ * "init cross-ref, fixed", meaning SHC resolved them to literals in
+ * the function's local pool instead of emitting runtime loads from
+ * a global symbol's storage. Declaring these as externs costs one
+ * extra indirection per access (pool → symbol addr → value); using
+ * #defined literals matches prod's 1-load pattern. */
+#define DAT_06044C52 (0x00F0)             /* .L_wpool_06044C52 */
+#define DAT_06044C54 ((int *)0x002FC23C)  /* .L_pool_06044C54 */
+#define DAT_06044C58 ((char *)0x002FC233) /* .L_pool_06044C58 */
+#define DAT_06044C5C ((char *)0x002FC22F) /* .L_pool_06044C5C */
+#define DAT_06044C60 ((char *)0x002FC234) /* .L_pool_06044C60 */
+#define DAT_06044C64 (0x002FC3AC)         /* .L_pool_06044C64 */
+#define DAT_06044D50 (0x002FD1BC)         /* .L_pool_06044D50 */
+#define DAT_06044D54 (0x002FD2E8)         /* .L_pool_06044D54 */
+#define DAT_06044D58 ((int *)0x002FC32C)  /* .L_pool_06044D58 */
+#define DAT_06044D5C (0x002FC344)         /* .L_pool_06044D5C */
+#define DAT_06044D60 (0x002FD3D8)         /* .L_pool_06044D60 */
 
 void FUN_06044BCC(void) {
     short sVar1;

@@ -12,19 +12,13 @@ _FUN_06044BCC:
 	sts.l	macl,@-r15
 	add	#-36,r15
 	mov.l	L14,r1
-	mov.l	@r1,r1
 	mov.l	r1,@(16,r15)
-	mov.l	L15,r1
-	mov.l	@r1,r10
-	mov.l	L16,r1
-	mov.l	@r1,r11
-	mov.l	L17,r1
-	mov.l	@r1,r12
+	mov.l	L15,r10
+	mov.l	L16,r11
+	mov.l	L17,r12
 	mov.l	L18,r1
-	mov.l	@r1,r1
 	mov	r1,r13
-	mov.l	L19,r2
-	mov.l	@r2,r8
+	mov.l	L19,r8
 	mov.b	@r1,r1
 	tst	r1,r1
 	bf	L2
@@ -33,32 +27,29 @@ _FUN_06044BCC:
 	mov	#0,r1
 	mov.l	r1,@(28,r15)
 L4:
-	mov.l	L20,r1
-	mov.w	@r1,r1
-	mov	r1,r0
-	mov.w	r0,@(6,r15)
-	mov	r1,r14
-	mov.l	@(28,r15),r2
-	mov.l	r2,@(8,r15)
-	extu.b	r2,r3
-	mov	r8,r2
-	mov	r3,r1
-	add	r2,r1
+	mov.w	L20,r14
+	mov.l	@(28,r15),r1
+	mov.l	r1,@(8,r15)
+	extu.b	r1,r2
+	mov.l	r2,@(4,r15)
+	mov	r8,r3
+	mov	r2,r1
+	add	r3,r1
 	mov.l	r1,@(32,r15)
-	mov	#3,r1
+	mov.w	L20,r1
+	mov	#3,r3
 	mov.b	@r12,r2
-	muls.w	r2,r1
-	sts	macl,r1
-	mov.b	@r11,r2
-	exts.w	r2,r2
-	add	r2,r1
-	mov.w	@(6,r15),r0
-	mov	r0,r2
-	muls.w	r2,r1
+	muls.w	r2,r3
+	sts	macl,r2
+	mov.b	@r11,r3
+	exts.w	r3,r3
+	add	r3,r2
+	mul.l	r2,r1
 	sts	macl,r1
 	exts.w	r1,r1
 	add	r10,r1
-	add	r3,r1
+	mov.l	@(4,r15),r2
+	add	r2,r1
 	mov	r1,r9
 	mov.l	@(8,r15),r1
 	add	#12,r1
@@ -126,11 +117,10 @@ L5:
 	bf	L4
 	bra	L3
 	nop
+	.align 2
+L20:	.short	240
 L2:
-	mov.l	L19,r1
-	mov.l	@r1,r1
-	mov	r1,r9
-	add	#60,r9
+	mov.l	L21,r9
 	mov	#0,r1
 	mov	r1,r0
 	bra	L10
@@ -175,10 +165,8 @@ L10:
 	cmp/hs	r2,r1
 	bf	L7
 L3:
-	mov.l	L21,r1
-	mov.l	@r1,r10
-	mov.l	L22,r1
-	mov.l	@r1,r1
+	mov.l	L22,r10
+	mov.l	L23,r1
 	mov.l	r1,@(8,r15)
 	mov	r1,r8
 	mov	#0,r2
@@ -196,8 +184,7 @@ L3:
 	mul.l	r1,r2
 	sts	macl,r1
 	extu.b	r1,r1
-	mov.l	L23,r2
-	mov.l	@r2,r2
+	mov.l	L24,r2
 	add	r2,r1
 	mov	r1,r9
 	mov.l	@r9,r1
@@ -233,8 +220,7 @@ L3:
 	add	#20,r2
 	mov.l	@r2,r2
 	mov.l	r2,@r1
-	mov.l	L24,r1
-	mov.l	@r1,r1
+	mov.l	L25,r1
 	mov.l	r1,@(16,r15)
 L11:
 	mov.b	@(15,r15),r0
@@ -334,14 +320,14 @@ L1:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L14:	.long	_DAT_06044D50
-L15:	.long	_DAT_06044C64
-L16:	.long	_DAT_06044C60
-L17:	.long	_DAT_06044C5C
-L18:	.long	_DAT_06044C58
-L19:	.long	_DAT_06044C54
-L20:	.long	_DAT_06044C52
-L21:	.long	_DAT_06044D5C
-L22:	.long	_DAT_06044D58
-L23:	.long	_DAT_06044D54
-L24:	.long	_DAT_06044D60
+L14:	.long	3133884
+L15:	.long	3130284
+L16:	.long	3129908
+L17:	.long	3129903
+L18:	.long	3129907
+L19:	.long	3129916
+L21:	.long	3129976
+L22:	.long	3130180
+L23:	.long	3130156
+L24:	.long	3134184
+L25:	.long	3134424
