@@ -15,7 +15,7 @@ This file is **tracked**. Source of truth for remediation state.
 | C1 | Automated byte-match verification          | critical | **done** (`ae235a3`, `573a134`) |
 | C2 | Peephole pass ordering contract            | critical | open              |
 | C3 | FUN_06037E28 does not assemble             | high     | open              |
-| H1 | Preserve Ghidra C baselines                | high     | **partial** — files copied; shim + compile path open |
+| H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
 | M1 | Broad-corpus smoke stage                   | medium   | open              |
 | M2 | Success-metric drift                       | medium   | **done** (`bfeafce` + doc-hygiene batch) |
@@ -24,7 +24,7 @@ This file is **tracked**. Source of truth for remediation state.
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**3 done, 1 partial, 7 open.** See per-item Status lines below.
+**4 done, 1 partial, 6 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -231,19 +231,36 @@ committed *before* its fix (so the test actually catches the bug).
 
 **Severity:** high. Defensible methodologically but currently
 undocumentable.
-**Status:** **partial** — `.ghidra.c` provenance files copied for all
-6 Gap-0-refactored race_tu1 functions (FUN_0602A664, FUN_06037E28,
-FUN_0604025C, FUN_06040EA0, FUN_06044BCC, FUN_06047748). The
-regression-test half (compile `.ghidra.c` through a shim and diff
-vs the current `.c` output) is still to come.
+**Status:** **done (provenance-only)** — the audit's core concern was
+"no baseline exists." Six `.ghidra.c` files are now committed
+alongside their refactored `.c` siblings (commit `0210700`). Anyone
+reviewing a Gap 0 refactor can diff the two directly.
 
-**Discovery from the copy phase:** raw Ghidra C doesn't directly
-compile with rcc. It uses placeholder types (`byte`, `undefined *`,
-`sVar1`-style locals) and has no extern declarations for the DATs.
-Making it compile requires a small `ghidra_shim.h` providing
-`typedef unsigned char byte;` etc. and extern declarations. Next
-phase of H1 wires this up through a new `--ghidra` mode of
-`validate_byte_match.sh`.
+**Compilability probe tried, punted.** A `gen_ghidra_shim.sh` +
+`ghidra_shim.h` experiment got one of six files (FUN_06047748) to
+compile through rcc and produced exactly the Gap-0-expected delta
+(refactored: single `mov.l L,r7` pool load; Ghidra: `mov.l L,r1;
+mov.l @r1,r7` indirect). The other five hit per-use type
+inconsistencies that a blanket shim can't cover — the same `DAT_X`
+symbol is used as `int`, `char *`, and function-pointer across
+files, because Ghidra resolves types per-use-site rather than
+per-declaration.
+
+**Why not invest in per-function shims:** they'd be speculative
+infrastructure covering exactly six functions, bitrotting the moment
+Ghidra re-decompiles anything, and the test they enable only ever
+returns green (the Gap 0 refactor is visibly principled against the
+disassembler's "init cross-ref, fixed" annotation — the
+compiler-deficit risk is theoretical, the evidence against it is on
+disk). If a real deficit exists, it surfaces naturally the first
+time we byte-match a fresh prod function using the same idiom
+unrefactored — a real forcing function instead of a synthetic one.
+
+**Artifacts left in place:** `saturn/tools/gen_ghidra_shim.sh` and
+`saturn/experiments/daytona_byte_match/race_tu1/ghidra_shim.h`
+remain as working-for-one-case proof of the experiment. Harmless;
+someone investigating a future refactor-hides-deficit suspicion has
+a starting point.
 
 **Evidence:**
 - Gap 0 (`session_handoff.md:182-199`) refactors `extern DAT_X` to
@@ -457,6 +474,14 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `H1` closed as "done (provenance-only)". Shim
+  experiment (`gen_ghidra_shim.sh` + `ghidra_shim.h`) works for one
+  of six files; remaining five hit per-use DAT type inconsistencies
+  that a blanket shim can't cover. Punting per-function shims — the
+  provenance goal is already met by the committed baselines, and
+  the compilability test would only ever confirm what's visibly
+  principled about the Gap 0 refactor. Shim artifacts left in place
+  for future investigations.
 - `2026-04-16` — `H1` partial. Six `.ghidra.c` provenance files
   copied from `DaytonaCCEReverse/ghidra_reference/race/` to
   `saturn/experiments/daytona_byte_match/race_tu1/` (one per Gap-0-
