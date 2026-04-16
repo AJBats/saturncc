@@ -18,14 +18,13 @@ This file is **tracked**. Source of truth for remediation state.
 | H1 | Preserve Ghidra C baselines                | high     | open              |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
 | M1 | Broad-corpus smoke stage                   | medium   | open              |
-| M2 | Success-metric drift                       | medium   | **partial** — handoff gone, metric unified; byte_match_status.md + dated handoffs still to retire |
+| M2 | Success-metric drift                       | medium   | **done** (`bfeafce` + doc-hygiene batch) |
 | M3 | Landmine regression tests                  | medium   | doc done, tests open |
 | S1 | `input.c` pragma mid-function guard        | small    | open              |
-| S2 | Dated handoffs                             | small    | open              |
+| S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**1 done, 1 partial, 9 open.** Not complete. See per-item Status lines
-below.
+**3 done, 1 partial, 7 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -328,11 +327,11 @@ red/green status is pinned to a baseline file.
 ### M2. Success metrics have drifted across handoffs
 
 **Severity:** medium. Process hygiene.
-**Status:** partially done (2026-04-16) — `session_handoff.md` itself
-has been removed; `validate_byte_match.sh` + pinned baselines are the
-single canonical metric. Remaining: retire `byte_match_status.md`
-(its own item, still open) and archive the two dated handoffs
-(`2026-04-11`, `2026-04-12`; tracked as S2 below).
+**Status:** **done.** `session_handoff.md` removed (`573a134`).
+`byte_match_status.md` and the dated handoffs moved into
+`saturn/workstreams/history/` — see S2 below.
+`validate_byte_match.sh` + pinned baselines are the single canonical
+metric.
 
 **Evidence:**
 - `byte_match_status.md` (old): "85-98% byte match".
@@ -405,8 +404,11 @@ test cases in stage 4.
 ### S2. Older dated handoffs carry metrics contradicted by live handoff
 
 **Severity:** small. Confusing for skimmers.
-**Status:** open. Live handoff is gone (see M2), but the two dated
-handoffs still sit in the top-level workstreams directory.
+**Status:** **done.** All three files (`byte_match_status.md`,
+`2026-04-11_session_handoff.md`, `2026-04-12_session_handoff.md`)
+moved to `saturn/workstreams/history/`, with a README there that
+documents the obsolete-metric provenance and points at current-state
+docs. Git history preserved via `git mv`.
 
 **Evidence:** `saturn/workstreams/2026-04-11_session_handoff.md` and
 `2026-04-12_session_handoff.md` exist. The live handoff says they "can
@@ -443,6 +445,14 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` doc-hygiene batch — `M2` done, `S2` done. Three
+  legacy files (`byte_match_status.md`,
+  `2026-04-11_session_handoff.md`, `2026-04-12_session_handoff.md`)
+  moved via `git mv` into `saturn/workstreams/history/` with a
+  README explaining their obsolete-metric provenance. Only
+  `methodology_remediation.md` referenced them in tracked content;
+  references updated.
+- `bfeafce` — rollup table + per-item Status stamps added.
 - `573a134` — `M2` (partial), `M3` (partial) — `landmines.md` written
   (7 gotchas documented, regression tests still to come). Handoff
   doc retired; `validate_build.sh` gained stage 5 orchestrating
