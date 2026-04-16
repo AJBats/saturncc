@@ -6,6 +6,7 @@
 # 2. All experiment C files compile without crashing
 # 3. Existing .s outputs are bit-identical to their last-committed versions
 # 4. Regression tests for known-fixed bugs
+# 5. Tier-1 byte-match: per-function diff count vs pinned baselines
 #
 # Run from the repo root:
 #   wsl bash saturn/tools/validate_build.sh
@@ -27,7 +28,7 @@ echo "=== validate_build.sh ==="
 echo ""
 
 # ── 1. Build ──────────────────────────────────────────────
-echo "[1/4] Building compiler..."
+echo "[1/5] Building compiler..."
 if bash "$REPO/saturn/tools/build.sh" > /dev/null 2>&1; then
     pass "compiler builds"
 else
@@ -37,7 +38,7 @@ else
 fi
 
 # ── 2. Compile all experiment C files ─────────────────────
-echo "[2/4] Compiling experiment sources..."
+echo "[2/5] Compiling experiment sources..."
 for cfile in "$EXPDIR"/FUN_*.c "$EXPDIR"/race_tu1/FUN_*.c; do
     [ -f "$cfile" ] || continue
     sfile="${cfile%.c}.s"
@@ -58,7 +59,7 @@ rm -f /tmp/validate_pp.c
 
 # ── 3. Stable outputs (diff against last commit) ─────────
 # Add new stable files here as functions reach their match ceiling.
-echo "[3/4] Checking .s stability vs HEAD..."
+echo "[3/5] Checking .s stability vs HEAD..."
 STABLE_FILES=(
     "saturn/experiments/daytona_byte_match/FUN_06004378.s"
     "saturn/experiments/daytona_byte_match/FUN_00280710.s"
@@ -76,7 +77,7 @@ for rel in "${STABLE_FILES[@]}"; do
 done
 
 # ── 4. Regression tests ──────────────────────────────────
-echo "[4/4] Regression tests..."
+echo "[4/5] Regression tests..."
 
 # Helper: compile to temp file and grep for a pattern.
 # Handles compiler crashes explicitly instead of grepping stale output.
@@ -179,6 +180,21 @@ else
     [ "$ok" = "1" ] && pass "regtest: displacement addressing" \
                      || fail "regtest: displacement addressing (missing @(disp,Rn) forms)"
 fi
+
+# ── 5. Tier-1 byte-match check ────────────────────────────
+# Delegates to validate_byte_match.sh; one PASS/FAIL line so the
+# established 22/22 number stays meaningful (becomes 23/23).
+echo "[5/5] Byte-match regression check..."
+bm_log="$(mktemp)"
+if bash "$SCRIPT_DIR/validate_byte_match.sh" > "$bm_log" 2>&1; then
+    bm_summary=$(grep -E '^=== [0-9]+ ok' "$bm_log" | head -n1)
+    pass "byte-match: ${bm_summary:-no regressions}"
+else
+    fail "byte-match: regression detected — re-run validate_byte_match.sh for details"
+    echo "       --- last 8 lines of byte-match output ---"
+    tail -n 8 "$bm_log" | sed 's/^/       /'
+fi
+rm -f "$bm_log"
 
 # ── Summary ───────────────────────────────────────────────
 echo ""

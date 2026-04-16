@@ -49,30 +49,78 @@ pipeline).
 
 ## Where to start reading
 
-**If you're picking up mid-stream**, read the newest dated file
-under `saturn/workstreams/` for the current session handoff —
-it'll tell you what's in progress, what's blocked, and what the
-next concrete action is.
+**For current state of work:**
+- `wsl bash saturn/tools/validate_byte_match.sh dashboard` — prints
+  current per-function byte-match diff counts as a markdown table.
+- `git log --oneline master -10` — what's shipped recently.
+- `saturn/workstreams/methodology_remediation.md` — open audit /
+  infrastructure items.
+
+**Stable references:**
+- `saturn/workstreams/gap_catalog.md` — canonical catalog of the
+  18 known backend gaps (Gaps 0–17), layer taxonomy, dependency
+  graph, per-gap status. Read this before working on any gap.
+- `saturn/workstreams/landmines.md` — latent compiler / build
+  pitfalls. Read before touching peephole ordering, register
+  rename passes, or the lburg grammar section.
 
 **For the longer context:**
-- `saturn/README.md` — orients the research project
+- `saturn/README.md` — orients the research project.
 - `saturn/workstreams/current_state_of_research.md` — full
-  investigation history, compiler survey findings, why LCC
+  investigation history, compiler survey findings, why LCC.
 - `saturn/workstreams/lcc_feasibility.md` — the "GO" probe for
-  the LCC approach
+  the LCC approach.
 - `saturn/experiments/daytona_byte_match/README.md` — byte-match
-  results and current gaps
-- `UPSTREAM.md` — what's ours vs what's upstream drh/lcc
-- `git log -- saturn/tools/lcc_patches/sh.md` or
-  `git log -- saturn/` — the granular Phase 1A → 1C development
-  history from before the migration (search for "Phase 1")
+  experiment layout and per-function notes.
+- `UPSTREAM.md` — what's ours vs what's upstream drh/lcc.
+
+## Working conventions
+
+- **Subagent graders can be wrong.** Double-check verdicts against
+  primary evidence (asmdiff + actual file reads) when in doubt.
+  One historical case: a grader misattributed FUN_06047748's
+  `r0 vs r8` return mismatch (Gap 15) as a regression caused by
+  the leaf rename.
+- **Human diff workflow.** `bash saturn/tools/asmdiff.sh FUNCNAME`
+  normalizes prod into `build/cmp/<FUNCNAME>.s` for VS Code
+  side-by-side viewing. Separate from `validate_byte_match.sh`'s
+  mechanical diff — use this when you want to eyeball the
+  difference, the other when you want a regression-gated number.
+- **Don't measure progress by instruction count alone.** Shorter
+  output using different instructions than production is not
+  progress. Grade on matching production's specific sequences.
+- **C source is not sacred.** The decompiled C in
+  `saturn/experiments/` is a Ghidra best-guess and can be wrong
+  in ways that force extra work on the compiler. Fix the C when
+  it's the simpler path to a prod match (e.g., FUN_06044BCC's
+  DAT refactor — Gap 0).
+- **Cite specific line diffs when claiming progress.** Use
+  asmdiff + actual file reads. The instinct to conflate
+  session-level progress with commit-level progress caused
+  overclaiming in earlier sessions.
+
+## External references
+
+- **Authoritative prod assembly:** the raw SHC output at
+  `D:/Projects/DaytonaCCEReverse/src/race/FUN_*.s`. Some functions
+  are inlined in larger TU files (e.g., FUN_06037E28 lives inside
+  `FUN_060351CC.s`). `mods/transplant/race/*.s` are reassembled
+  copies without the `init cross-ref, fixed` pool markers — the
+  raw `src/race/*.s` is what you want for Gap 0 archaeology.
+- **Authoritative prod object files:** `D:/Projects/DaytonaCCEReverse/build/<module>/FUN_*.o`
+  — what tier-2 `validate_byte_match_bin.sh` diffs against.
+- **Ghidra C reference:** `D:/Projects/DaytonaCCEReverse/ghidra_reference/race/*.c`.
+  Useful for spot-checking whether our experiment C dropped a
+  deref or mis-typed a DAT (we've caught one such bug —
+  `dat_060383A4`).
 
 ## Constraints worth knowing
 
 - **Windows + WSL.** The harness's Bash tool mangles `$(pwd)`
   substitution when commands go through wsl.exe. `saturn/tools/build.sh`
   sidesteps this with absolute paths from `readlink -f "$0"`.
-  Don't use `$(pwd)` inside WSL-invoked commands.
+  Don't use `$(pwd)` inside WSL-invoked commands. See
+  `landmines.md` for the full pattern.
 - **Line endings.** `.gitattributes` forces LF on text files.
   Don't commit with autocrlf fighting back — if a file ends up
   CRLF in the working copy after checkout, do
@@ -82,7 +130,8 @@ next concrete action is.
 - **No commits without user approval** in interactive mode. In
   nightshift mode, commit at logical stopping points without
   asking.
-- **User has a "pineapple" safe-word** for any file deletion. No
-  `rm`, `git rm`, or equivalent without it.
+- **`pineapple` safe-word for deletes.** No `rm`, `git rm`, or
+  equivalent without it. The safe word authorizes a *specific*
+  deletion, not a class.
 - **Saturn has no FPU.** Don't chase floating-point codegen; the
   user explicitly scoped it out.

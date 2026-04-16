@@ -24,9 +24,12 @@
 #   - normalization failed on a function that previously normalized.
 #
 # Usage (must run under WSL — rcc is a Linux ELF):
-#   wsl bash saturn/tools/validate_byte_match.sh          # check
-#   wsl bash saturn/tools/validate_byte_match.sh pin      # overwrite
-#   wsl bash saturn/tools/validate_byte_match.sh verbose  # check + diff preview
+#   wsl bash saturn/tools/validate_byte_match.sh             # check
+#   wsl bash saturn/tools/validate_byte_match.sh pin         # overwrite
+#   wsl bash saturn/tools/validate_byte_match.sh verbose     # check + diff preview
+#   wsl bash saturn/tools/validate_byte_match.sh dashboard   # markdown table to stdout
+#                                                            # (redirect to refresh
+#                                                            # byte_match_dashboard.md)
 #
 # Env overrides:
 #   DAYTONA_SRC  path to DaytonaCCEReverse/src/ (raw prod .s files)
@@ -44,9 +47,14 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 MODE="${1:-check}"
 case "$MODE" in
-    check|pin|verbose) ;;
-    *) echo "Usage: $0 [check|pin|verbose]" >&2; exit 2 ;;
+    check|pin|verbose|dashboard) ;;
+    *) echo "Usage: $0 [check|pin|verbose|dashboard]" >&2; exit 2 ;;
 esac
+
+# `dashboard` mode emits a markdown table to stdout. Re-direct to a
+# tracked file (saturn/workstreams/byte_match_dashboard.md) to refresh
+# the published metric. Always exits 0 since it's a reporting mode.
+DASHBOARD_ROWS=""
 
 # Corpus: .c files that have a matching prod .s somewhere under $PROD_SRC
 # (either standalone FUN_xxx.s or inlined in a TU file).
@@ -106,8 +114,16 @@ SKIPPED=0
 NEW=0
 FAIL_REPORT=""
 
-printf "%-16s  %-7s  %s\n" "function" "status" "diff (baseline)"
-printf "%-16s  %-7s  %s\n" "--------" "------" "---------------"
+if [ "$MODE" != "dashboard" ]; then
+    printf "%-16s  %-7s  %s\n" "function" "status" "diff (baseline)"
+    printf "%-16s  %-7s  %s\n" "--------" "------" "---------------"
+fi
+
+# Helper: in dashboard mode, append a row instead of printing the table line.
+# Args: function_name, current_diff_or_dash, baseline_or_dash, status_label
+dash_row() {
+    DASHBOARD_ROWS+="| $1 | $2 | $3 | $4 |"$'\n'
+}
 
 for our_c_rel in "${CORPUS[@]}"; do
     our_c="$REPO/$our_c_rel"
@@ -118,15 +134,25 @@ for our_c_rel in "${CORPUS[@]}"; do
     baseline=""
     [ -f "$baseline_file" ] && baseline="$(cat "$baseline_file")"
 
+    bl_cell="${baseline:--}"
+
     if [ ! -f "$our_c" ]; then
-        printf "%-16s  %-7s  %s\n" "$name" "MISS" "(no .c)"
+        if [ "$MODE" = "dashboard" ]; then
+            dash_row "$name" "—" "$bl_cell" "MISS"
+        else
+            printf "%-16s  %-7s  %s\n" "$name" "MISS" "(no .c)"
+        fi
         SKIPPED=$((SKIPPED+1))
         continue
     fi
 
     prod_s="$(find_prod_s "$name")"
     if [ -z "$prod_s" ]; then
-        printf "%-16s  %-7s  %s\n" "$name" "SKIP" "(no prod .s)"
+        if [ "$MODE" = "dashboard" ]; then
+            dash_row "$name" "—" "$bl_cell" "SKIP (no prod .s)"
+        else
+            printf "%-16s  %-7s  %s\n" "$name" "SKIP" "(no prod .s)"
+        fi
         SKIPPED=$((SKIPPED+1))
         continue
     fi
@@ -139,11 +165,19 @@ for our_c_rel in "${CORPUS[@]}"; do
     fi
     if ! "$RCC" -target=sh/hitachi "$pp_c" "$our_s" 2>"$TMPDIR/rcc.err"; then
         if [ -n "$baseline" ]; then
-            printf "%-16s  %-7s  %s  *** REGRESSION ***\n" "$name" "RCC!" "(was at diff=$baseline)"
+            if [ "$MODE" = "dashboard" ]; then
+                dash_row "$name" "RCC!" "$bl_cell" "REGR (rcc broke)"
+            else
+                printf "%-16s  %-7s  %s  *** REGRESSION ***\n" "$name" "RCC!" "(was at diff=$baseline)"
+            fi
             FAIL_REPORT+="${name}: rcc failed (was at diff=${baseline})\n"
             REGRESSED=$((REGRESSED+1))
         else
-            printf "%-16s  %-7s  %s\n" "$name" "RCC!" "(see $TMPDIR/rcc.err)"
+            if [ "$MODE" = "dashboard" ]; then
+                dash_row "$name" "RCC!" "$bl_cell" "skip (no baseline)"
+            else
+                printf "%-16s  %-7s  %s\n" "$name" "RCC!" "(see $TMPDIR/rcc.err)"
+            fi
             SKIPPED=$((SKIPPED+1))
         fi
         continue
@@ -154,18 +188,30 @@ for our_c_rel in "${CORPUS[@]}"; do
     prod_norm="$TMPDIR/${name}.prod.norm"
     if ! python3 "$NORMALIZE" --function "$name" "$our_s" > "$our_norm" 2>"$TMPDIR/norm.err"; then
         if [ -n "$baseline" ]; then
-            printf "%-16s  %-7s  %s  *** REGRESSION ***\n" "$name" "NORM!" "(was at diff=$baseline)"
+            if [ "$MODE" = "dashboard" ]; then
+                dash_row "$name" "NORM!" "$bl_cell" "REGR (normalize broke)"
+            else
+                printf "%-16s  %-7s  %s  *** REGRESSION ***\n" "$name" "NORM!" "(was at diff=$baseline)"
+            fi
             FAIL_REPORT+="${name}: normalize failed on our .s (was at diff=${baseline})\n"
             REGRESSED=$((REGRESSED+1))
         else
-            printf "%-16s  %-7s  %s\n" "$name" "NORM!" "(normalize failed on ours; see $TMPDIR/norm.err)"
+            if [ "$MODE" = "dashboard" ]; then
+                dash_row "$name" "NORM!" "$bl_cell" "skip (no baseline)"
+            else
+                printf "%-16s  %-7s  %s\n" "$name" "NORM!" "(normalize failed on ours; see $TMPDIR/norm.err)"
+            fi
             SKIPPED=$((SKIPPED+1))
         fi
         continue
     fi
     if ! python3 "$NORMALIZE" --function "$name" "$prod_s" > "$prod_norm" 2>"$TMPDIR/norm.err"; then
         # Prod-side normalizer failure is our bug, not a compiler regression.
-        printf "%-16s  %-7s  %s\n" "$name" "NORM!" "(normalize failed on prod; see $TMPDIR/norm.err)"
+        if [ "$MODE" = "dashboard" ]; then
+            dash_row "$name" "NORM!" "$bl_cell" "skip (prod normalize)"
+        else
+            printf "%-16s  %-7s  %s\n" "$name" "NORM!" "(normalize failed on prod; see $TMPDIR/norm.err)"
+        fi
         SKIPPED=$((SKIPPED+1))
         continue
     fi
@@ -180,18 +226,34 @@ for our_c_rel in "${CORPUS[@]}"; do
     fi
 
     if [ -z "$baseline" ]; then
-        printf "%-16s  %-7s  %d  (no baseline)\n" "$name" "NEW" "$diff_count"
+        if [ "$MODE" = "dashboard" ]; then
+            dash_row "$name" "$diff_count" "—" "new"
+        else
+            printf "%-16s  %-7s  %d  (no baseline)\n" "$name" "NEW" "$diff_count"
+        fi
         NEW=$((NEW+1))
     elif [ "$diff_count" -lt "$baseline" ]; then
-        printf "%-16s  %-7s  %d  (was %d)\n" "$name" "IMPR" "$diff_count" "$baseline"
+        if [ "$MODE" = "dashboard" ]; then
+            dash_row "$name" "$diff_count" "$baseline" "improved"
+        else
+            printf "%-16s  %-7s  %d  (was %d)\n" "$name" "IMPR" "$diff_count" "$baseline"
+        fi
         IMPROVED=$((IMPROVED+1))
     elif [ "$diff_count" -gt "$baseline" ]; then
-        printf "%-16s  %-7s  %d  (was %d)  *** REGRESSION ***\n" \
-            "$name" "REGR" "$diff_count" "$baseline"
+        if [ "$MODE" = "dashboard" ]; then
+            dash_row "$name" "$diff_count" "$baseline" "REGRESSED"
+        else
+            printf "%-16s  %-7s  %d  (was %d)  *** REGRESSION ***\n" \
+                "$name" "REGR" "$diff_count" "$baseline"
+        fi
         REGRESSED=$((REGRESSED+1))
         FAIL_REPORT+="${name}: regressed from ${baseline} to ${diff_count}\n"
     else
-        printf "%-16s  %-7s  %d\n" "$name" "OK" "$diff_count"
+        if [ "$MODE" = "dashboard" ]; then
+            dash_row "$name" "$diff_count" "$baseline" "ok"
+        else
+            printf "%-16s  %-7s  %d\n" "$name" "OK" "$diff_count"
+        fi
         OK=$((OK+1))
     fi
 
@@ -201,6 +263,46 @@ for our_c_rel in "${CORPUS[@]}"; do
         echo ""
     fi
 done
+
+if [ "$MODE" = "dashboard" ]; then
+    # Sort by diff count ascending so the dashboard reads "closest to prod
+    # at the top." Non-numeric statuses (RCC!/NORM!/MISS) sort last.
+    sorted=$(printf "%b" "$DASHBOARD_ROWS" | awk -F'|' '{
+        diff = $3
+        gsub(/^ +| +$/, "", diff)
+        if (diff ~ /^[0-9]+$/) printf "%010d %s\n", diff, $0
+        else                   printf "9999999999 %s\n", $0
+    }' | sort | sed 's/^[0-9]* //')
+
+    cat <<EOF
+# Byte-match dashboard
+
+Auto-generated by \`saturn/tools/validate_byte_match.sh dashboard\`.
+**Do not hand-edit** — re-run the script to refresh.
+
+This is the **tier-1** byte-match metric: per-function count of
+diverging lines after canonical \`.s\`-text normalization (see
+\`asm_normalize.py\`). Both our compiler's output and prod's are
+normalized through the same pipeline; remaining diff is real
+divergence (instruction, register, immediate, addressing mode, or
+control-flow).
+
+The numbers \`(was N)\` show the pinned baseline at
+\`saturn/experiments/byte_match_baselines/<name>.diff_count\`.
+Improvements and regressions are both detected against those
+baselines on every \`check\` run.
+
+| Function | Diff | Baseline | Status |
+|---|---:|---:|---|
+$sorted
+
+## Summary
+
+- $OK ok, $IMPROVED improved, $REGRESSED regressed, $NEW new, $SKIPPED skipped (of $TOTAL)
+- Tier 2 (sh-elf-as + objdump) baselines: see \`saturn/experiments/byte_match_baselines_bin/\`. Tier 2 is diagnostic, not commit-gating.
+EOF
+    exit 0
+fi
 
 echo ""
 if [ "$MODE" = "pin" ]; then
