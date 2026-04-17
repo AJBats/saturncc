@@ -14,7 +14,7 @@ This file is **tracked**. Source of truth for remediation state.
 |---|---------------------------------------------|----------|-------------------|
 | C1 | Automated byte-match verification          | critical | **done** (`ae235a3`, `573a134`) |
 | C2 | Peephole pass ordering contract            | critical | **done** — a (docs), b (sh_kill_line), c (r14 composition documented) |
-| C3 | FUN_06037E28 does not assemble             | high     | open              |
+| C3 | FUN_06037E28 does not assemble             | high     | **done** (`775f13f` + this commit) — 38 errors → 0 |
 | H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
 | M1 | Broad-corpus smoke stage                   | medium   | **done** — stage 6, 956 race files, dual-set baselines |
@@ -24,7 +24,7 @@ This file is **tracked**. Source of truth for remediation state.
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**8 done, 0 partial, 2 open.** See per-item Status lines below.
+**9 done, 0 partial, 1 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -145,7 +145,74 @@ instead of (or alongside) the subagent grader.
 
 **Severity:** high (not blocking tier-1 byte-match progress, but a real
 compiler bug). Discovered by C1 tier-2's first baseline run.
-**Status:** open.
+**Status:** **done.** E28 now assembles cleanly through sh-elf-as
+(0 errors). One `Warning: overflow in branch to L8` remains — GAS
+auto-relaxes it into a longer sequence; not an assembly failure.
+
+Fixed in two commits:
+
+**Part 1 (`775f13f`):** sort shorts-before-longs in
+`sh_interleave_pool` islands. Previously emitted literals in
+insertion order, producing `.long / .short / .long` sequences that
+violate the second `.long`'s 4-byte alignment. Knocked out 2
+misaligned + 2 cascaded unaligned-destination errors.
+
+**Part 2 (this commit):** three interlocking fixes for pcrel-too-far
+and a latent pool-shift clobber:
+
+1. **Split widely-spread literals.** New pre-pass
+   `sh_split_widely_spread_literals` runs before the branch-walk. For
+   each literal whose reference cluster spans more than `reach/5`
+   lines, generates a fresh label via `genlabel(1)`, appends a new
+   `shlits[]` entry with the same value, and rewrites the later
+   references in `sh_lines[]` to point at the new label. The outer
+   loop re-examines appended entries so nested splits happen
+   naturally. Threshold of `reach/5` empirically tuned against E28 —
+   `reach/4` left 2 sites where a refs[249,371] cluster's pool
+   landed at 550 (602 bytes from 249, out of 510-byte word reach).
+
+2. **Conservative tail-distance estimate.** The flush decision
+   compares `dist` to `reach`, but `sh_nlines` at decision time
+   understates the true tail — every still-pending literal will
+   inflate it. Now computes `dist = (sh_nlines + pending_count -
+   first_ref) * 2` in both the count pass and both emit passes so
+   they agree on which literals will flush.
+
+3. **Pool-line reservation / emit consistency.** The count pass
+   reserves a `.align 2` pad between shorts and longs only when
+   there are longs to pad against. The emit pass used to emit the
+   pad unconditionally when `nshort_in_flush & 1` was true,
+   overrunning the reserved `pool_lines` by one and **clobbering
+   the first shifted live line** — including label definitions. Cost
+   us hours chasing a phantom `L30 undefined` that turned out to be
+   an off-by-one in pool reservation. Emit now filters longs by the
+   same `dist > reach` predicate the count pass uses before deciding
+   whether the pad is needed.
+
+4. **`sh_find_label_refs` skips definition lines.** A label's own
+   definition line (e.g. `L42: .long ...`) was being counted as a
+   reference by the split pass. When the definition was in the
+   later cluster, the split would rewrite *the definition* to a
+   new label, leaving earlier references pointing at the now-
+   nonexistent L42. Fixed by skipping lines where the label appears
+   at column 0 followed by `:`.
+
+Trade-off: E28's tier-1 diff went 1044 → 1074 (+30 lines). My split
+creates additional pool labels; `asm_normalize.py` renumbers them in
+order-of-appearance, and the new structure diverges more from prod's
+canonical ordering than the old (broken) single-tail pool did. Prod
+also uses multi-island pools, so long-term this should converge
+rather than diverge, but matching SHC's specific split decisions is
+a separate tuning effort. Correctness (assembles cleanly) is the
+forcing function; metric regression is acceptable.
+
+Remaining:
+- `Warning: overflow in branch to L8` — GAS auto-relaxes into a
+  longer sequence. Separate bug (Gap 11: loop inversion territory).
+- Tier-2 baseline for E28 can't be pinned until
+  `/mnt/d/Projects/DaytonaCCEReverse/build/race/FUN_06037E28.o`
+  exists (currently missing alongside several others — external to
+  this project).
 
 **Evidence:** `sh-elf-as --isa=sh2 --big` on the checked-in
 `saturn/experiments/daytona_byte_match/race_tu1/FUN_06037E28.s`
@@ -587,6 +654,13 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `C3` closed. E28 assembles cleanly (0 errors, was
+  38). Four fixes in the pool emission pipeline: literal splitting
+  for widely-spread references, pending-pool tail-distance estimate,
+  count/emit consistency for the short/long pad reservation, and
+  definition-line exclusion from label-ref detection. Tier-1 diff
+  regression: E28 1044 → 1074, accepted as a correctness-for-metric
+  trade-off. Full debug log in C3's Status section.
 - `2026-04-16` — `C2.c` + `C2` overall closed. Investigation found
   that the two r14-rename passes are *not* mutually exclusive (C2.a's
   earlier framing was wrong); both fire when a leaf function needs

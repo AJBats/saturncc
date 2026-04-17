@@ -4541,6 +4541,152 @@ static int sh_is_uncond_branch(const char *s) {
         return 0;
 }
 
+/* Label identifier boundary check — true if `c` could continue a
+ * label identifier like L42 (we must NOT treat L42 as matching inside
+ * L420 or L42B). Labels in our emitter are `L<digits>` so the
+ * continuation set is [A-Za-z0-9_]. */
+static int sh_is_label_char(int c) {
+        return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')
+            || (c >= 'a' && c <= 'z') || c == '_';
+}
+
+/* In sh_lines[], record every index that REFERENCES `label_str` as
+ * a whole identifier. Excludes the definition line (where the label
+ * appears at position 0 followed by `:`) — rewriting that would
+ * turn a valid definition into a reference to a different label and
+ * leave the original label undefined. Returns the number of indices
+ * filled in `refs` (capped at max_refs). */
+static int sh_find_label_refs(const char *label_str,
+                              int *refs, int max_refs) {
+        int n = 0, j;
+        int lab_len = (int)strlen(label_str);
+        for (j = 0; j < sh_nlines && n < max_refs; j++) {
+                const char *p;
+                if (sh_lines[j][0] == 0)
+                        continue;
+                p = sh_lines[j];
+                /* Skip a leading `label_str:` (definition line). */
+                {
+                        const char *q = p;
+                        while (*q == ' ' || *q == '\t')
+                                q++;
+                        if (strncmp(q, label_str, lab_len) == 0
+                            && q[lab_len] == ':')
+                                continue;
+                }
+                while ((p = strstr(p, label_str)) != NULL) {
+                        if (!sh_is_label_char((unsigned char)p[lab_len])) {
+                                refs[n++] = j;
+                                break;
+                        }
+                        p += lab_len;
+                }
+        }
+        return n;
+}
+
+/* In a single sh_lines entry, replace every whole-identifier
+ * occurrence of `old_lab` with `new_lab`. Caller guarantees both
+ * have the same `L<digits>` shape so buffer-size worries are
+ * bounded: +few chars max. */
+static void sh_rewrite_label_in_line(char *line, const char *old_lab,
+                                     const char *new_lab) {
+        int old_len = (int)strlen(old_lab);
+        int new_len = (int)strlen(new_lab);
+        char buf[SH_MAX_LINELEN];
+        char *dst = buf;
+        char *end = buf + SH_MAX_LINELEN - 1;
+        const char *src = line;
+        while (*src) {
+                if (strncmp(src, old_lab, old_len) == 0
+                    && !sh_is_label_char((unsigned char)src[old_len])) {
+                        if (dst + new_len >= end)
+                                return;  /* overflow; leave line unchanged */
+                        memcpy(dst, new_lab, new_len);
+                        dst += new_len;
+                        src += old_len;
+                } else {
+                        if (dst >= end)
+                                return;
+                        *dst++ = *src++;
+                }
+        }
+        *dst = 0;
+        strncpy(line, buf, SH_MAX_LINELEN - 1);
+        line[SH_MAX_LINELEN - 1] = 0;
+}
+
+/* Pre-pass for sh_interleave_pool: split any literal whose references
+ * span more than `reach` bytes (approximated as reach/2 lines) into
+ * multiple shlits entries with fresh labels. Rewrites out-of-range
+ * references in sh_lines[] to point at the new labels.
+ *
+ * Without this, large functions like FUN_06037E28 produce pcrel-too-
+ * far errors from sh-elf-as: SH-2's `mov.l @(disp,PC)` has an 8-bit
+ * unsigned displacement scaled by 4 (max +1020 bytes forward). A
+ * single label with references at line 69 and line 684 cannot
+ * possibly sit at a pool location in range of both — two labels
+ * with two pool copies is the only solution. See C3 in
+ * methodology_remediation.md.
+ *
+ * The outer loop re-examines appended entries; a newly-split cluster
+ * that is itself still too wide gets split again on a later
+ * iteration. Terminates because each iteration strictly shrinks a
+ * cluster's span OR doesn't split at all. */
+static void sh_split_widely_spread_literals(void) {
+        int i;
+        static int refs[SH_MAX_LINES];
+        for (i = 0; i < nshlit; i++) {
+                int reach, reach_lines;
+                char lab_str[32];
+                int nrefs, j;
+
+                reach = shlits[i].is_word ? SH_REACH_WORD : SH_REACH_LONG;
+                /* reach/2 lines is the nominal lines-per-byte budget
+                 * (2 bytes/insn). Use reach/5 as the split threshold:
+                 * pool insertions inflate byte counts beyond 2/line
+                 * (pool data is 4 bytes + align pads), and the pool
+                 * position itself is placed AFTER all refs of a
+                 * cluster — so first_ref's distance to the pool grows
+                 * from `span` to `span + branch_to_pool_distance`.
+                 * reach/5 gives enough margin to survive both.
+                 * Empirically tuned against FUN_06037E28: reach/4
+                 * left 2 pcrel-too-far sites where a refs[249, 371]
+                 * cluster's pool landed at 550 (602 bytes from 249). */
+                reach_lines = reach / 5;
+
+                snprintf(lab_str, sizeof lab_str, "L%d",
+                         shlits[i].label);
+                nrefs = sh_find_label_refs(lab_str, refs, SH_MAX_LINES);
+                if (nrefs < 2)
+                        continue;
+
+                for (j = 1; j < nrefs; j++) {
+                        int newlab, r;
+                        char new_lab_str[32];
+                        if (refs[j] - refs[0] <= reach_lines)
+                                continue;
+                        /* Too-wide gap at refs[j]. Split: new label
+                         * for refs[j..nrefs-1]; existing label keeps
+                         * refs[0..j-1]. */
+                        if (nshlit >= SH_MAX_LITERALS)
+                                return;
+                        newlab = genlabel(1);
+                        snprintf(new_lab_str, sizeof new_lab_str,
+                                 "L%d", newlab);
+                        shlits[nshlit] = shlits[i];
+                        shlits[nshlit].label = newlab;
+                        nshlit++;
+                        for (r = j; r < nrefs; r++) {
+                                sh_rewrite_label_in_line(
+                                        sh_lines[refs[r]],
+                                        lab_str, new_lab_str);
+                        }
+                        break;
+                }
+        }
+}
+
 static void sh_interleave_pool(void) {
         int i, j, k;
         int first_ref[SH_MAX_LITERALS];
@@ -4550,6 +4696,10 @@ static void sh_interleave_pool(void) {
 
         if (nshlit == 0)
                 return;
+
+        /* Split widely-spread literals into single-cluster entries
+         * so each pool instance is in reach of all its refs. */
+        sh_split_widely_spread_literals();
 
         /* Step 1: for each literal, find first and last reference. */
         for (i = 0; i < nshlit; i++) {
@@ -4598,10 +4748,24 @@ static void sh_interleave_pool(void) {
                  * before this branch, AND (b) would be out of range
                  * if deferred to the tail. Track shorts separately so
                  * we can reserve an extra `.align 2` pad line between
-                 * shorts and longs when the short count is odd. */
+                 * shorts and longs when the short count is odd.
+                 *
+                 * Pending-pool accounting: `sh_nlines` at decision
+                 * time underestimates the true tail — every not-yet-
+                 * flushed literal will add at least one line later
+                 * (plus possible `.align 2` padding). Without this,
+                 * a literal whose first_ref is just barely within
+                 * reach of current sh_nlines gets deferred, and the
+                 * real tail lands past its reach once other pools
+                 * inflate the line count. */
                 flush_count = 0;
                 {
                         int flush_shorts = 0, flush_longs = 0;
+                        int pending = 0;
+                        int p;
+                        for (p = 0; p < nshlit; p++)
+                                if (!flushed[p])
+                                        pending++;
                         for (i = 0; i < nshlit; i++) {
                                 int reach, dist;
                                 if (flushed[i] || last_ref[i] < 0
@@ -4609,7 +4773,17 @@ static void sh_interleave_pool(void) {
                                         continue;
                                 reach = shlits[i].is_word
                                         ? SH_REACH_WORD : SH_REACH_LONG;
-                                dist = (sh_nlines - first_ref[i]) * 2;
+                                /* Conservative tail estimate: current
+                                 * sh_nlines + every still-pending
+                                 * literal. Must match the formula
+                                 * used in the emit passes below —
+                                 * mismatching them causes the emit
+                                 * to flush more entries than this
+                                 * count reserved pool_lines for,
+                                 * overrunning the shift and clobbering
+                                 * live lines. */
+                                dist = (sh_nlines + pending
+                                        - first_ref[i]) * 2;
                                 if (dist <= reach)
                                         continue;
                                 if (shlits[i].is_word)
@@ -4651,6 +4825,13 @@ static void sh_interleave_pool(void) {
                 {
                         int slot = 1;
                         int nshort_in_flush = 0;
+                        int pending = 0;
+                        int p;
+                        /* Same conservative tail-distance estimate as
+                         * the counting pass above (see that comment). */
+                        for (p = 0; p < nshlit; p++)
+                                if (!flushed[p])
+                                        pending++;
                         /* Pass 1: shorts. */
                         for (i = 0; i < nshlit; i++) {
                                 int reach, dist;
@@ -4660,7 +4841,8 @@ static void sh_interleave_pool(void) {
                                 if (!shlits[i].is_word)
                                         continue;
                                 reach = SH_REACH_WORD;
-                                dist = (sh_nlines - first_ref[i]) * 2;
+                                dist = (sh_nlines + pending
+                                        - first_ref[i]) * 2;
                                 if (dist <= reach)
                                         continue;
                                 snprintf(sh_lines[insert_at + slot],
@@ -4672,18 +4854,36 @@ static void sh_interleave_pool(void) {
                                 slot++;
                                 nshort_in_flush++;
                         }
-                        /* If an odd number of shorts were emitted the
-                         * byte count is off-4; a .align 2 pad brings
-                         * the following .long entries back onto a
-                         * 4-byte boundary. Consumes one of the pool
-                         * lines we pre-reserved; reduces the longs
-                         * we can fit. Realloc handled by bumping
-                         * pool_lines above if needed. */
+                        /* Optional `.align 2` pad between shorts and
+                         * longs when the short count is odd AND longs
+                         * follow. MUST match exactly the count pass's
+                         * pad reservation condition (same dist-filter)
+                         * or we overrun pool_lines and clobber a live
+                         * shifted line (cost hours in C3). */
                         if (nshort_in_flush & 1) {
-                                snprintf(sh_lines[insert_at + slot],
-                                         SH_MAX_LINELEN,
-                                         "\t.align 2\n");
-                                slot++;
+                                int has_longs_for_flush = 0;
+                                int q;
+                                for (q = 0; q < nshlit; q++) {
+                                        int qreach, qdist;
+                                        if (flushed[q] || last_ref[q] < 0
+                                            || last_ref[q] > insert_at - 1)
+                                                continue;
+                                        if (shlits[q].is_word)
+                                                continue;
+                                        qreach = SH_REACH_LONG;
+                                        qdist = (sh_nlines + pending
+                                                 - first_ref[q]) * 2;
+                                        if (qdist <= qreach)
+                                                continue;
+                                        has_longs_for_flush = 1;
+                                        break;
+                                }
+                                if (has_longs_for_flush) {
+                                        snprintf(sh_lines[insert_at + slot],
+                                                 SH_MAX_LINELEN,
+                                                 "\t.align 2\n");
+                                        slot++;
+                                }
                         }
                         /* Pass 2: longs (symbols + int values). */
                         for (i = 0; i < nshlit; i++) {
@@ -4694,7 +4894,8 @@ static void sh_interleave_pool(void) {
                                 if (shlits[i].is_word)
                                         continue;
                                 reach = SH_REACH_LONG;
-                                dist = (sh_nlines - first_ref[i]) * 2;
+                                dist = (sh_nlines + pending
+                                        - first_ref[i]) * 2;
                                 if (dist <= reach)
                                         continue;
                                 if (shlits[i].is_symbol)
