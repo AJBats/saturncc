@@ -4596,24 +4596,37 @@ static void sh_interleave_pool(void) {
 
                 /* Count literals that (a) have their last ref at or
                  * before this branch, AND (b) would be out of range
-                 * if deferred to the tail. */
+                 * if deferred to the tail. Track shorts separately so
+                 * we can reserve an extra `.align 2` pad line between
+                 * shorts and longs when the short count is odd. */
                 flush_count = 0;
-                for (i = 0; i < nshlit; i++) {
-                        int reach, dist;
-                        if (flushed[i] || last_ref[i] < 0
-                            || last_ref[i] > k)
+                {
+                        int flush_shorts = 0, flush_longs = 0;
+                        for (i = 0; i < nshlit; i++) {
+                                int reach, dist;
+                                if (flushed[i] || last_ref[i] < 0
+                                    || last_ref[i] > k)
+                                        continue;
+                                reach = shlits[i].is_word
+                                        ? SH_REACH_WORD : SH_REACH_LONG;
+                                dist = (sh_nlines - first_ref[i]) * 2;
+                                if (dist <= reach)
+                                        continue;
+                                if (shlits[i].is_word)
+                                        flush_shorts++;
+                                else
+                                        flush_longs++;
+                        }
+                        flush_count = flush_shorts + flush_longs;
+                        if (flush_count == 0)
                                 continue;
-                        reach = shlits[i].is_word
-                                ? SH_REACH_WORD : SH_REACH_LONG;
-                        dist = (sh_nlines - first_ref[i]) * 2;
-                        if (dist > reach)
-                                flush_count++;
+                        /* .align 2 header + entries + optional .align
+                         * 2 pad between shorts and longs when the
+                         * short count is odd AND longs follow. */
+                        pool_lines = 1 + flush_count
+                                   + ((flush_shorts & 1) && flush_longs
+                                        ? 1 : 0);
                 }
-                if (flush_count == 0)
-                        continue;
-
-                /* Make room: .align + flush_count entries. */
-                pool_lines = 1 + flush_count;
                 if (sh_nlines + pool_lines > SH_MAX_LINES)
                         return;
 
@@ -4624,18 +4637,63 @@ static void sh_interleave_pool(void) {
                         sh_lines[k + pool_lines][SH_MAX_LINELEN - 1] = 0;
                 }
 
-                /* Insert the island. */
+                /* Insert the island. Emit shorts first then longs with
+                 * an optional `.align 2` pad between, so .long entries
+                 * always land on a 4-byte boundary regardless of how
+                 * many .short entries preceded them in the same flush.
+                 * This mirrors shlit_flush()'s layout — without the
+                 * sort, pool_lines was computed assuming flush_count
+                 * entries + one leading .align, but an interleaved
+                 * long/short/long sequence would misalign the second
+                 * long (C3 in methodology_remediation). */
                 snprintf(sh_lines[insert_at], SH_MAX_LINELEN,
                          "\t.align 2\n");
                 {
                         int slot = 1;
+                        int nshort_in_flush = 0;
+                        /* Pass 1: shorts. */
                         for (i = 0; i < nshlit; i++) {
                                 int reach, dist;
                                 if (flushed[i] || last_ref[i] < 0
                                     || last_ref[i] > insert_at - 1)
                                         continue;
-                                reach = shlits[i].is_word
-                                        ? SH_REACH_WORD : SH_REACH_LONG;
+                                if (!shlits[i].is_word)
+                                        continue;
+                                reach = SH_REACH_WORD;
+                                dist = (sh_nlines - first_ref[i]) * 2;
+                                if (dist <= reach)
+                                        continue;
+                                snprintf(sh_lines[insert_at + slot],
+                                         SH_MAX_LINELEN,
+                                         "L%d:\t.short\t%d\n",
+                                         shlits[i].label,
+                                         shlits[i].value);
+                                flushed[i] = 1;
+                                slot++;
+                                nshort_in_flush++;
+                        }
+                        /* If an odd number of shorts were emitted the
+                         * byte count is off-4; a .align 2 pad brings
+                         * the following .long entries back onto a
+                         * 4-byte boundary. Consumes one of the pool
+                         * lines we pre-reserved; reduces the longs
+                         * we can fit. Realloc handled by bumping
+                         * pool_lines above if needed. */
+                        if (nshort_in_flush & 1) {
+                                snprintf(sh_lines[insert_at + slot],
+                                         SH_MAX_LINELEN,
+                                         "\t.align 2\n");
+                                slot++;
+                        }
+                        /* Pass 2: longs (symbols + int values). */
+                        for (i = 0; i < nshlit; i++) {
+                                int reach, dist;
+                                if (flushed[i] || last_ref[i] < 0
+                                    || last_ref[i] > insert_at - 1)
+                                        continue;
+                                if (shlits[i].is_word)
+                                        continue;
+                                reach = SH_REACH_LONG;
                                 dist = (sh_nlines - first_ref[i]) * 2;
                                 if (dist <= reach)
                                         continue;
@@ -4645,12 +4703,6 @@ static void sh_interleave_pool(void) {
                                                  "L%d:\t.long\t%s\n",
                                                  shlits[i].label,
                                                  shlits[i].name);
-                                else if (shlits[i].is_word)
-                                        snprintf(sh_lines[insert_at + slot],
-                                                 SH_MAX_LINELEN,
-                                                 "L%d:\t.short\t%d\n",
-                                                 shlits[i].label,
-                                                 shlits[i].value);
                                 else
                                         snprintf(sh_lines[insert_at + slot],
                                                  SH_MAX_LINELEN,
