@@ -4900,6 +4900,51 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         sh_capture_end(savfd, tmp);
                 else
                         sh_nlines = 0;
+
+                /* ──────────────────────────────────────────────────
+                 * Peephole pass driver — PHASE 1 (body, pre-prologue)
+                 *
+                 * Passes run top-down on sh_lines[]. Killed lines are
+                 * marked with `sh_lines[j][0] = 0` and skipped by every
+                 * downstream pass — grep for that pattern in any new
+                 * pass you add. (C2.b in methodology_remediation tracks
+                 * lifting this into a `sh_kill_line` helper + assertion.)
+                 *
+                 * Ordering rationale for this phase:
+                 *   sh_peephole              — general line-level cleanups;
+                 *                              runs first so later passes
+                 *                              see normalized instructions.
+                 *   sh_rewrite_gbr_param     — only if #pragma gbr_param;
+                 *                              rewrites r4 references.
+                 *   sh_elim_redundant_ext    — drop exts.w/b that duplicate
+                 *                              a preceding mov.w/b load.
+                 *   sh_fold_mov_extw_to_movw — fold mov.l+exts.w → mov.w;
+                 *                              may SHRINK a pool entry.
+                 *                              MUST precede disp-range
+                 *                              checks in the next pass.
+                 *   sh_fold_base_displacement— collapse mov+add+mov.X into
+                 *                              mov.X @(disp,Rn); disp range
+                 *                              check depends on pool
+                 *                              shrinks above being in.
+                 *   sh_route_via_r0          — route operands through R0 to
+                 *                              enable indexed addressing;
+                 *                              runs after ext-elim so R0
+                 *                              has the best chance of being
+                 *                              free.
+                 *   sh_fold_post_increment   — add+load → @rN+ .
+                 *   sh_fill_branch_delays    — bra delay slot.
+                 *   sh_fill_cond_delays      — bt/bf delay slot. MUST run
+                 *                              after the folds above so it
+                 *                              sees the final instruction
+                 *                              sequence.
+                 *   sh_rename_r14_var /      — register renames; run last
+                 *   sh_leaf_rename_callee_     in phase 1 so they target
+                 *   saved                     the final register choice.
+                 *                              Landmine: these two are
+                 *                              gated by mutually exclusive
+                 *                              conditions today; C2.c
+                 *                              tracks unifying them.
+                 * ────────────────────────────────────────────────── */
                 sh_peephole();
                 if (sh_gbr_param)
                         sh_rewrite_gbr_param();
@@ -4917,6 +4962,24 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                                     f->u.f.label);
         }
 
+        /* ──────────────────────────────────────────────────
+         * Peephole pass driver — PHASE 2 (structural emission +
+         *                                 usedmask rebuild)
+         *
+         * These passes emit or rewrite structural regions that don't
+         * interact with the body-level register allocation. Order
+         * within the phase is not load-bearing:
+         *   sh_emit_switch_dispatch  — switch tables
+         *   sh_result_to_arg_reg     — call return → arg reg for chained
+         *                              calls
+         *   sh_elim_dead_branches    — drop unreachable branches
+         *   sh_elim_dead_byte_ext    — drop byte extensions the store
+         *                              would re-narrow anyway
+         *   sh_reorder_post_call_counter — counter incr after jsr
+         *
+         * Then the inline block below rebuilds usedmask so dead-after-
+         * peephole registers drop off the prologue save list.
+         * ────────────────────────────────────────────────── */
         sh_emit_switch_dispatch();
         sh_result_to_arg_reg();
         sh_elim_dead_branches();
@@ -4983,6 +5046,41 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                   usedmask[IREG]);
         }
 
+        /* ──────────────────────────────────────────────────
+         * Peephole pass driver — PHASE 3 (late, post-frame)
+         *
+         * Runs after the prologue size is known (need_fp, sizeisave,
+         * sh_uses_macl, sh_gbr_param, has_prologue all finalized).
+         * Ordering rationale:
+         *   sh_reorder_pre_call_args — arg-load shuffle just before jsr.
+         *   sh_diversify_range_regs  — spread register use so disp-mode
+         *                              addressing has headroom.
+         *   sh_reorder_extu_mov      — small local extu+mov reorder.
+         *   sh_restructure_eq_chain  — cmp/eq chain → dispatch table.
+         *                              Landmine: historically hardcoded
+         *                              r14 as pop register; now uses the
+         *                              actually-allocated register.
+         *   sh_fold_dt               — countdown-loop → dt instruction.
+         *   sh_fold_conditional_delays— second bt/bf delay-slot pass that
+         *                              sees the now-restructured eq
+         *                              chains and dt folds.
+         *   sh_rewrite_bool_fp       — bool_fp injection using r14.
+         *                              MUST run AFTER phase 2's usedmask
+         *                              rebuild AND AFTER any rename that
+         *                              could free r14. Guards: bails if
+         *                              r14 is not in usedmask.
+         *   sh_swap_pool_add         — swap pool-load vs add order when
+         *                              the swap creates a post-inc
+         *                              opportunity.
+         *   sh_coalesce_move_chains  — collapse redundant mov chains
+         *                              exposed by earlier passes.
+         *   sh_elim_redundant_mov_r0 — drop mov-r0 sequences that are
+         *                              now dead after coalescing.
+         *   sh_interleave_pool       — MUST BE LAST in phase 3. Emits
+         *                              the literal pool inline at the
+         *                              right spots; any later pass would
+         *                              need pool-aware rewriting.
+         * ────────────────────────────────────────────────── */
         sh_reorder_pre_call_args();
         sh_diversify_range_regs();
         sh_reorder_extu_mov();

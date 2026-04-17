@@ -13,7 +13,7 @@ This file is **tracked**. Source of truth for remediation state.
 | # | Item                                        | Severity | Status            |
 |---|---------------------------------------------|----------|-------------------|
 | C1 | Automated byte-match verification          | critical | **done** (`ae235a3`, `573a134`) |
-| C2 | Peephole pass ordering contract            | critical | open              |
+| C2 | Peephole pass ordering contract            | critical | **partial** — a (docs) done; b (sh_kill_line) + c (r14 unification) open |
 | C3 | FUN_06037E28 does not assemble             | high     | open              |
 | H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
@@ -24,7 +24,7 @@ This file is **tracked**. Source of truth for remediation state.
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**7 done, 0 partial, 3 open.** See per-item Status lines below.
+**7 done, 1 partial (C2), 2 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -188,7 +188,23 @@ diff baseline pinned, no other corpus function regressed.
 
 **Severity:** critical. Structural debt; probability of a nasty
 interaction grows with each added pass.
-**Status:** open.
+**Status:** **partial** — three sub-items, one shipped so far.
+
+**C2.a — pass-driver documentation.** SHIPPED. `src/sh.md` pass
+driver (around line 4903) now has phase-divider comment blocks for
+each of the three phases (body pre-prologue, structural emission,
+late post-frame), with a per-pass one-liner explaining what the
+pass does and why it sits where it does. Cross-refs landmines for
+r14-interaction + eq-chain hardcode.
+
+**C2.b — `sh_kill_line` helper.** Still open. ~19 direct
+`sh_lines[j][0] = 0` writes across passes; no helper, no assertion
+that no later pass re-read a killed line.
+
+**C2.c — unify/serialize the two r14 renames.** Still open.
+`sh_rename_r14_var` and `sh_leaf_rename_callee_saved` both touch
+r14 but gate on mutually-exclusive conditions. Document the
+exclusion with an assertion or fold into a single entry point.
 
 **Evidence:**
 - `src/sh.md:4903-4996` — pass driver lists ~20 passes across four
@@ -542,6 +558,11 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `C2.a` shipped: phase-divider comment blocks in the
+  peephole pass driver (src/sh.md around line 4903). Three phases
+  labeled (body pre-prologue / structural emission / late post-frame),
+  per-pass one-liner with ordering rationale, landmine cross-refs.
+  C2.b (sh_kill_line) + C2.c (r14 rename unification) still open.
 - `2026-04-16` — `M1` closed. Stage 6 of validate_build.sh smokes
   956 Ghidra race .c files through the shim header in ~15s. Dual-set
   baselines (`race.passing.txt` = 168, `race.crashing.txt` = 15) in
