@@ -12,7 +12,7 @@ the exact instruction bytes of the original Hitachi SHC output.
 
 ```
 /                          ← drh/lcc fork (compiler)
-├── src/sh.md              ← our ~1700-line SH-2 backend
+├── src/sh.md              ← our ~5700-line SH-2 backend
 ├── src/bind.c             ← patched: registers sh/hitachi target
 ├── src/input.c            ← patched: adds shc_pragma_hook
 ├── makefile               ← patched: lburg rule for sh.md

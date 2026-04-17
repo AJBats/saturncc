@@ -14,7 +14,7 @@ This file is **tracked**. Source of truth for remediation state.
 |---|---------------------------------------------|----------|-------------------|
 | C1 | Automated byte-match verification          | critical | **done** (`ae235a3`, `573a134`) |
 | C2 | Peephole pass ordering contract            | critical | **done** — a (docs), b (sh_kill_line), c (r14 composition documented) |
-| C3 | FUN_06037E28 does not assemble             | high     | **done** (`775f13f` + this commit) — 38 errors → 0 |
+| C3 | FUN_06037E28 does not assemble             | high     | **done** (`775f13f`, `3af4fa5`) — 38 errors → 0 |
 | H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
 | M1 | Broad-corpus smoke stage                   | medium   | **done** — stage 6, 956 race files, dual-set baselines |
