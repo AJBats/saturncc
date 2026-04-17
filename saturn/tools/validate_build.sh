@@ -219,6 +219,40 @@ void f(unsigned short *p) { *p = 40000; }
 EOF
 regtest_grep "CNSTU2 fallback: large ushort literal via *p" 'mov\.w' yes
 
+# ── Pragma scope guard (src/input.c, methodology_remediation S1) ──
+# Saturn backend pragmas (gbr_base, gbr_param) mutate globals consumed
+# at function-emit time. A mid-function pragma would split the function
+# across two pragma states. Guard added 2026-04-16 rejects them with a
+# clear error instead of silently producing wrong code.
+
+# 4o. POSITIVE: file-scope #pragma compiles clean
+cat > /tmp/regtest.c <<'EOF'
+#pragma gbr_param
+int f(int x) { return x; }
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>/dev/null; then
+    pass "regtest: file-scope #pragma gbr_param accepted"
+else
+    fail "regtest: file-scope #pragma gbr_param rejected (should accept)"
+fi
+
+# 4p. NEGATIVE: mid-function #pragma errors out with the expected message
+cat > /tmp/regtest.c <<'EOF'
+int f(int x) {
+#pragma gbr_param
+    return x;
+}
+EOF
+pragma_err="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$pragma_err"; then
+    fail "regtest: mid-function #pragma incorrectly accepted"
+elif grep -q "must appear at file scope" "$pragma_err" 2>/dev/null; then
+    pass "regtest: mid-function #pragma rejected with expected message"
+else
+    fail "regtest: mid-function #pragma rejected but without expected message"
+fi
+rm -f "$pragma_err"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:

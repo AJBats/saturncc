@@ -97,10 +97,19 @@ static void pragma(void) {
 			if ((t = gettok()) == ID && tsym) {
 				tsym->ref++;
 				use(tsym, src);
-			}	
+			}
 		}
 	} else if (t == ID && shc_pragma_hook) {
-		(*shc_pragma_hook)(token);
+		/* Saturn backend pragmas (gbr_base, gbr_param) mutate globals
+		 * that codegen consults at function-emit time. A mid-function
+		 * pragma would split a function across two pragma states and
+		 * silently corrupt output. Reject rather than paper over. */
+		if (cfunc) {
+			error("#pragma %s must appear at file scope, not inside "
+			      "a function body\n", token);
+		} else {
+			(*shc_pragma_hook)(token);
+		}
 	} else if (t == ID && !shc_pragma_hook) {
 		deferred_pragma = string(token);
 	}

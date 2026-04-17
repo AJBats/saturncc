@@ -20,11 +20,11 @@ This file is **tracked**. Source of truth for remediation state.
 | M1 | Broad-corpus smoke stage                   | medium   | open              |
 | M2 | Success-metric drift                       | medium   | **done** (`bfeafce` + doc-hygiene batch) |
 | M3 | Landmine regression tests                  | medium   | **done** — 2 direct tests + rationale for untestable landmines |
-| S1 | `input.c` pragma mid-function guard        | small    | open              |
+| S1 | `input.c` pragma mid-function guard        | small    | **done** (guard + 2 stage-4 tests, destructively verified) |
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**5 done, 0 partial, 5 open.** See per-item Status lines below.
+**6 done, 0 partial, 4 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -443,7 +443,19 @@ the original fix commit before being committed green.
 ### S1. `input.c` pragma hook has no mid-function guard
 
 **Severity:** small. Architectural fragility, not a current bug.
-**Status:** open.
+**Status:** **done.** Guard added in `src/input.c:pragma()` — when
+`shc_pragma_hook` is about to fire AND `cfunc != NULL` (i.e., we're
+inside a function body), emit an error instead of calling the hook.
+The `deferred_pragma` path is unaffected; `flush_deferred_pragmas()`
+runs at backend init before any function parsing.
+
+Two stage-4 regression tests cover both directions:
+- POSITIVE — file-scope `#pragma gbr_param` compiles clean.
+- NEGATIVE — mid-function `#pragma gbr_param` rejected with message
+  `#pragma X must appear at file scope, not inside a function body`.
+
+Destructively verified: disabling the guard lets the negative test
+incorrectly pass-accept; restoring makes it fail-reject.
 
 **Evidence:** `src/input.c:17-19,102-114` wires `shc_pragma_hook`. The
 hook processes `#pragma gbr_param` by mutating a global. No guard
@@ -501,6 +513,9 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `S1` closed. Guard in src/input.c:pragma() rejects
+  mid-function pragmas with a clear error; two stage-4 tests
+  (positive + negative) in validate_build.sh, destructively verified.
 - `2026-04-16` — `M3` closed. Two stage-4 regression tests
   (CNSTI2/CNSTU2 large-short-literal) added to validate_build.sh,
   destructively verified to catch removal of the fallback rules in
