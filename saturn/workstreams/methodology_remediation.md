@@ -13,7 +13,7 @@ This file is **tracked**. Source of truth for remediation state.
 | # | Item                                        | Severity | Status            |
 |---|---------------------------------------------|----------|-------------------|
 | C1 | Automated byte-match verification          | critical | **done** (`ae235a3`, `573a134`) |
-| C2 | Peephole pass ordering contract            | critical | **partial** — a (docs) done; b (sh_kill_line) + c (r14 unification) open |
+| C2 | Peephole pass ordering contract            | critical | **partial** — a (docs) + b (sh_kill_line) done; c (r14 unification) open |
 | C3 | FUN_06037E28 does not assemble             | high     | open              |
 | H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
@@ -197,9 +197,20 @@ late post-frame), with a per-pass one-liner explaining what the
 pass does and why it sits where it does. Cross-refs landmines for
 r14-interaction + eq-chain hardcode.
 
-**C2.b — `sh_kill_line` helper.** Still open. ~19 direct
-`sh_lines[j][0] = 0` writes across passes; no helper, no assertion
-that no later pass re-read a killed line.
+**C2.b — `sh_kill_line` helper.** SHIPPED. Helper defined around
+`src/sh.md:1668` with a bounds assert. All 19 direct
+`sh_lines[j][0] = 0` writes replaced by `sh_kill_line(j)` calls.
+Assertion has caught zero off-by-ones so far (passes were
+already correct) but is on the books as a tripwire for future
+additions.
+
+Incident note: the initial bulk-replace sed hit the helper's own
+body, turning `sh_kill_line(j)` into infinite recursion. Full-gate
+run caught it instantly — FUN_06047748 + every corpus function +
+222 broad-corpus regressions in the same run. The broad-corpus
+smoke (M1, same session) gave the loudest signal and saved this
+from landing silently. Good demonstration that M1 is earning its
+keep.
 
 **C2.c — unify/serialize the two r14 renames.** Still open.
 `sh_rename_r14_var` and `sh_leaf_rename_callee_saved` both touch
@@ -558,6 +569,11 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `C2.b` shipped: `sh_kill_line(int j)` helper with
+  bounds assertion. 19 direct `sh_lines[j][0] = 0` sites refactored
+  through sed. Caught an infinite-recursion regression during the
+  refactor (sed hit the helper's own body) via the full validate_build
+  gate, specifically the broad-corpus stage. Fixed before commit.
 - `2026-04-16` — `C2.a` shipped: phase-divider comment blocks in the
   peephole pass driver (src/sh.md around line 4903). Three phases
   labeled (body pre-prologue / structural emission / late post-frame),

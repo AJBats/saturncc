@@ -1658,6 +1658,19 @@ static int sh_reg_dead_after(int start, int rN) {
  * via repeated mov/add) is handled implicitly when rB dies between
  * the store and the next rebuild: each link collapses independently
  * because the next `mov rA, rB` is a pure write to rB. */
+
+/* Mark sh_lines[j] as killed. All passes that scan sh_lines[] skip
+ * entries whose first byte is 0. Centralizing this idiom (formerly
+ * `sh_lines[j][0] = 0` sprinkled across ~19 sites) gives us:
+ *   - a bounds assertion that catches off-by-one bugs in pass code
+ *   - a single point to instrument if we ever add an invariant check
+ *     (e.g. "no pass may read a line it previously killed").
+ * See methodology_remediation C2.b for the rationale. */
+static void sh_kill_line(int j) {
+        assert(j >= 0 && j < sh_nlines);
+        sh_lines[j][0] = 0;
+}
+
 static void sh_fold_base_displacement(void) {
         int i, j, k;
         for (i = 0; i < sh_nlines; i++) {
@@ -1738,8 +1751,8 @@ static void sh_fold_base_displacement(void) {
                                  "\tmov.%c\t@(%d,r%d),r%d\n",
                                  size, K, rA, r_other);
                 }
-                sh_lines[i][0] = 0;
-                sh_lines[j][0] = 0;
+                sh_kill_line(i);
+                sh_kill_line(j);
         }
 }
 
@@ -1807,7 +1820,7 @@ static void sh_fill_branch_delays(void) {
                 strncpy(sh_lines[j], sh_lines[cand],
                         SH_MAX_LINELEN - 1);
                 sh_lines[j][SH_MAX_LINELEN - 1] = 0;
-                sh_lines[cand][0] = 0;
+                sh_kill_line(cand);
         }
 }
 
@@ -1964,8 +1977,8 @@ static void sh_peephole(void) {
                                 continue;
                         if (sh_parse_regmov(sh_lines[j], &rX, &rY)
                             && rX == rB && rY == rA) {
-                                sh_lines[i][0] = 0;
-                                sh_lines[j][0] = 0;
+                                sh_kill_line(i);
+                                sh_kill_line(j);
                                 break;
                         }
                         mask = sh_regs_used(sh_lines[j]);
@@ -2181,7 +2194,7 @@ static void sh_elim_redundant_ext(void) {
                 if (sscanf(s, "\texts.w\tr%d,r%d\n", &r1, &r2) == 2
                     && (w_ext & (1u << r1))) {
                         if (r1 == r2) {
-                                sh_lines[i][0] = 0;   /* delete */
+                                sh_kill_line(i);   /* delete */
                         } else {
                                 snprintf(sh_lines[i], SH_MAX_LINELEN,
                                          "\tmov\tr%d,r%d\n", r1, r2);
@@ -2195,7 +2208,7 @@ static void sh_elim_redundant_ext(void) {
                 if (sscanf(s, "\texts.b\tr%d,r%d\n", &r1, &r2) == 2
                     && (b_ext & (1u << r1))) {
                         if (r1 == r2) {
-                                sh_lines[i][0] = 0;
+                                sh_kill_line(i);
                         } else {
                                 snprintf(sh_lines[i], SH_MAX_LINELEN,
                                          "\tmov\tr%d,r%d\n", r1, r2);
@@ -2358,7 +2371,7 @@ static void sh_fold_mov_extw_to_movw(void) {
                         while (k < sh_nlines && sh_lines[k][0] == 0)
                                 k++;
                         if (k < sh_nlines)
-                                sh_lines[k][0] = 0;
+                                sh_kill_line(k);
                 }
                 shlits[j].is_word = 1;
                 shlits[j].value = (short)shlits[j].value;
@@ -2519,7 +2532,7 @@ static void sh_fold_post_increment(void) {
                                          "\tmov.%c\t@r%d+,r%d\n",
                                          suf, rN, rM);
                                 strcpy(sh_lines[i], buf);
-                                sh_lines[k][0] = 0;
+                                sh_kill_line(k);
                                 break;
                         }
                         regs = sh_regs_used(sh_lines[k]);
@@ -2578,7 +2591,7 @@ static void sh_fold_dt(void) {
                                 /* Replace add with dt, delete tst. */
                                 snprintf(sh_lines[i], SH_MAX_LINELEN,
                                          "\tdt\tr%d\n", reg_add);
-                                sh_lines[j][0] = 0;
+                                sh_kill_line(j);
                                 break;
                         }
                         /* If we hit a branch, stop. If we hit a label,
@@ -2746,7 +2759,7 @@ static void sh_fold_conditional_delays(void) {
                 /* Move delay insn into slot after the new bf/s.
                  * (It's already at position k, which is right
                  * after j. Blank the old bra line.) */
-                sh_lines[j][0] = 0;
+                sh_kill_line(j);
         }
 }
 
@@ -2827,7 +2840,7 @@ static void sh_coalesce_move_chains(void) {
                         }
                         *dst = 0;
                         strncpy(sh_lines[j], buf, SH_MAX_LINELEN - 1);
-                        sh_lines[k][0] = 0;
+                        sh_kill_line(k);
                 }
         }
 }
@@ -3092,7 +3105,7 @@ static void sh_elim_dead_byte_ext(void) {
                 if (!sh_has_prefix(sh_lines[m], "mov.b")) continue;
                 if (!(sh_regs_used(sh_lines[m]) & (1u << rB))) continue;
                 /* Pattern matched — extension is dead. */
-                sh_lines[i][0] = 0;
+                sh_kill_line(i);
         }
 }
 
@@ -3126,7 +3139,7 @@ static void sh_elim_dead_branches(void) {
                         if (sh_lines[j][0] != 0) break;
                 if (j < sh_nlines
                     && strcmp(sh_lines[j], expected) == 0)
-                        sh_lines[i][0] = 0;
+                        sh_kill_line(i);
         }
 }
 
@@ -3872,7 +3885,7 @@ static void sh_swap_pool_add(void) {
                             && sh_parse_regmov(sh_lines[m], &rP, &rQ)
                             && rP == rC && rQ != rC) {
                                 rC = rQ;
-                                sh_lines[m][0] = 0;
+                                sh_kill_line(m);
                         }
                 }
 
@@ -3908,7 +3921,7 @@ static void sh_swap_pool_add(void) {
                 }
                 snprintf(sh_lines[j], SH_MAX_LINELEN,
                          "\tadd\tr%d,r%d\n", rB, rC);
-                sh_lines[k][0] = 0;
+                sh_kill_line(k);
         }
 }
 
@@ -4019,7 +4032,7 @@ static void sh_elim_redundant_mov_r0(void) {
                         continue;
                 }
                 if (rA == r0_src) {
-                        sh_lines[i][0] = 0;
+                        sh_kill_line(i);
                 } else {
                         r0_src = rA;
                         r0_estab = i;
@@ -4444,12 +4457,12 @@ static void sh_emit_switch_dispatch(void) {
                         if (sh_lines[j][0] != 0) break;
                 if (j < sh_nlines
                     && sh_has_prefix(sh_lines[j], "\tbra")) {
-                        sh_lines[j][0] = 0;
+                        sh_kill_line(j);
                         for (j = j + 1; j < sh_nlines; j++)
                                 if (sh_lines[j][0] != 0) break;
                         if (j < sh_nlines
                             && sh_has_prefix(sh_lines[j], "\tnop"))
-                                sh_lines[j][0] = 0;
+                                sh_kill_line(j);
                 }
 
                 /* Insert braf dispatch idiom. */
@@ -4905,10 +4918,10 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                  * Peephole pass driver — PHASE 1 (body, pre-prologue)
                  *
                  * Passes run top-down on sh_lines[]. Killed lines are
-                 * marked with `sh_lines[j][0] = 0` and skipped by every
-                 * downstream pass — grep for that pattern in any new
-                 * pass you add. (C2.b in methodology_remediation tracks
-                 * lifting this into a `sh_kill_line` helper + assertion.)
+                 * marked via `sh_kill_line(j)` (see the helper's own
+                 * comment near line 1662) and skipped by every
+                 * downstream pass by testing `sh_lines[j][0] == 0`.
+                 * Grep for that read pattern in any new pass you add.
                  *
                  * Ordering rationale for this phase:
                  *   sh_peephole              — general line-level cleanups;
