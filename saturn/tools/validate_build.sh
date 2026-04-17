@@ -7,6 +7,8 @@
 # 3. Existing .s outputs are bit-identical to their last-committed versions
 # 4. Regression tests for known-fixed bugs
 # 5. Tier-1 byte-match: per-function diff count vs pinned baselines
+# 6. Broad-corpus smoke: 956 Ghidra race C files; catches new crashes
+#    and previously-passing regressions
 #
 # Run from the repo root:
 #   wsl bash saturn/tools/validate_build.sh
@@ -28,7 +30,7 @@ echo "=== validate_build.sh ==="
 echo ""
 
 # ── 1. Build ──────────────────────────────────────────────
-echo "[1/5] Building compiler..."
+echo "[1/6] Building compiler..."
 if bash "$REPO/saturn/tools/build.sh" > /dev/null 2>&1; then
     pass "compiler builds"
 else
@@ -41,7 +43,7 @@ fi
 # Skips *.ghidra.c — those are raw Ghidra-decompiler baselines kept for
 # Gap-0 provenance (H1) and aren't expected to compile directly with
 # rcc. Their dedicated pipeline lives in validate_byte_match.sh.
-echo "[2/5] Compiling experiment sources..."
+echo "[2/6] Compiling experiment sources..."
 for cfile in "$EXPDIR"/FUN_*.c "$EXPDIR"/race_tu1/FUN_*.c; do
     [ -f "$cfile" ] || continue
     case "$cfile" in *.ghidra.c) continue ;; esac
@@ -63,7 +65,7 @@ rm -f /tmp/validate_pp.c
 
 # ── 3. Stable outputs (diff against last commit) ─────────
 # Add new stable files here as functions reach their match ceiling.
-echo "[3/5] Checking .s stability vs HEAD..."
+echo "[3/6] Checking .s stability vs HEAD..."
 STABLE_FILES=(
     "saturn/experiments/daytona_byte_match/FUN_06004378.s"
     "saturn/experiments/daytona_byte_match/FUN_00280710.s"
@@ -81,7 +83,7 @@ for rel in "${STABLE_FILES[@]}"; do
 done
 
 # ── 4. Regression tests ──────────────────────────────────
-echo "[4/5] Regression tests..."
+echo "[4/6] Regression tests..."
 
 # Helper: compile to temp file and grep for a pattern.
 # Handles compiler crashes explicitly instead of grepping stale output.
@@ -277,7 +279,7 @@ rm -f "$pragma_err"
 # ── 5. Tier-1 byte-match check ────────────────────────────
 # Delegates to validate_byte_match.sh; one PASS/FAIL line so the
 # established 22/22 number stays meaningful (becomes 23/23).
-echo "[5/5] Byte-match regression check..."
+echo "[5/6] Byte-match regression check..."
 bm_log="$(mktemp)"
 if bash "$SCRIPT_DIR/validate_byte_match.sh" > "$bm_log" 2>&1; then
     bm_summary=$(grep -E '^=== [0-9]+ ok' "$bm_log" | head -n1)
@@ -288,6 +290,24 @@ else
     tail -n 8 "$bm_log" | sed 's/^/       /'
 fi
 rm -f "$bm_log"
+
+# ── 6. Broad-corpus smoke (M1) ────────────────────────────
+# 956 Ghidra race C files compiled through the shim header. Two
+# baselines pinned at saturn/experiments/broad_corpus_baselines/:
+# the passing set and the crashing set. Regression if a previously-
+# passing function starts failing, or if a file not in the crash
+# baseline now crashes rcc. ~15s runtime.
+echo "[6/6] Broad-corpus smoke..."
+bc_log="$(mktemp)"
+if bash "$SCRIPT_DIR/broad_corpus_smoke.sh" > "$bc_log" 2>&1; then
+    bc_summary=$(grep -E '^  race:' "$bc_log" | head -n1 | sed 's/^  //')
+    pass "broad-corpus: ${bc_summary:-no regressions}"
+else
+    fail "broad-corpus: regression detected — re-run broad_corpus_smoke.sh for details"
+    echo "       --- last 10 lines of broad-corpus output ---"
+    tail -n 10 "$bc_log" | sed 's/^/       /'
+fi
+rm -f "$bc_log"
 
 # ── Summary ───────────────────────────────────────────────
 echo ""

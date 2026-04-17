@@ -17,14 +17,14 @@ This file is **tracked**. Source of truth for remediation state.
 | C3 | FUN_06037E28 does not assemble             | high     | open              |
 | H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
-| M1 | Broad-corpus smoke stage                   | medium   | open              |
+| M1 | Broad-corpus smoke stage                   | medium   | **done** — stage 6, 956 race files, dual-set baselines |
 | M2 | Success-metric drift                       | medium   | **done** (`bfeafce` + doc-hygiene batch) |
 | M3 | Landmine regression tests                  | medium   | **done** — 2 direct tests + rationale for untestable landmines |
 | S1 | `input.c` pragma mid-function guard        | small    | **done** (guard + 2 stage-4 tests, destructively verified) |
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**6 done, 0 partial, 4 open.** See per-item Status lines below.
+**7 done, 0 partial, 3 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -329,7 +329,36 @@ shipping any further peephole work.
 ### M1. Corpus is too narrow for peephole confidence
 
 **Severity:** medium. Test leakage risk.
-**Status:** open.
+**Status:** **done.** `saturn/tools/broad_corpus_smoke.sh` compiles all
+956 Ghidra race `.c` files through the shim header and pins two sets
+of names at `saturn/experiments/broad_corpus_baselines/`:
+
+- `race.passing.txt` (168 entries) — functions that compile cleanly.
+- `race.crashing.txt` (15 entries) — functions that segfault rcc. Real
+  compiler bugs, logged for a future investigation pass.
+
+The remaining 773 noise-failures (cpp errors, Ghidra type mismatches,
+undeclared identifiers) are ignored — they're decompiler artifacts,
+not compiler issues.
+
+Regression conditions — any of these flips exits 1:
+- A function in `race.passing.txt` stops compiling.
+- A function not in `race.crashing.txt` starts crashing.
+
+Improvements (newly-passing or no-longer-crashing) print a note
+suggesting re-pin but don't gate.
+
+Wired as stage 6 of `validate_build.sh`. Adds ~15s to full
+pre-commit run. Destructively verified: fake entry in the passing
+baseline triggers `*** REGRESSION ***`; removing a real entry
+triggers the "newly passing" improvement note.
+
+**Scope note:** audit originally estimated ~39 files based on
+`src/race/*.s`. Actual Ghidra corpus is 956 race files plus thousands
+more across other modules (backup/main/init/etc). For now the smoke
+stage is race-module-only — the existing shim was tuned for race
+identifier prefixes. Other modules are a follow-up if the race-only
+coverage surfaces false confidence.
 
 **Evidence:**
 - 8 functions in the byte-match table. Every new peephole is implicitly
@@ -513,6 +542,12 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `M1` closed. Stage 6 of validate_build.sh smokes
+  956 Ghidra race .c files through the shim header in ~15s. Dual-set
+  baselines (`race.passing.txt` = 168, `race.crashing.txt` = 15) in
+  `saturn/experiments/broad_corpus_baselines/`. Regressions catch
+  pass→fail and not-crashing→crashing transitions. Improvements
+  print a note but don't gate. Destructively verified.
 - `2026-04-16` — `S1` closed. Guard in src/input.c:pragma() rejects
   mid-function pragmas with a clear error; two stage-4 tests
   (positive + negative) in validate_build.sh, destructively verified.
