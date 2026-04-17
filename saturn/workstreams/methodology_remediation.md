@@ -19,12 +19,12 @@ This file is **tracked**. Source of truth for remediation state.
 | H2 | Peephole-vs-allocator spike                | high     | open              |
 | M1 | Broad-corpus smoke stage                   | medium   | open              |
 | M2 | Success-metric drift                       | medium   | **done** (`bfeafce` + doc-hygiene batch) |
-| M3 | Landmine regression tests                  | medium   | doc done, tests open |
+| M3 | Landmine regression tests                  | medium   | **done** — 2 direct tests + rationale for untestable landmines |
 | S1 | `input.c` pragma mid-function guard        | small    | open              |
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**4 done, 1 partial, 6 open.** See per-item Status lines below.
+**5 done, 0 partial, 5 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -387,8 +387,35 @@ byte-match metric and the older metric files are archived or removed.
 ### M3. Landmines have no regression tests
 
 **Severity:** medium.
-**Status:** open. `landmines.md` now documents the 7 gotchas
-(committed `573a134`), but no stage-4 regression tests exist yet.
+**Status:** **done, with scope clarified.** Two stage-4 regression
+tests in `validate_build.sh` catch the only runtime-testable landmine
+(CNSTI2/CNSTU2 large-short-literal crashes). Each was destructively
+verified — deleting the corresponding rule from `src/sh.md`, rebuilding,
+and confirming the test fails with `getrule: Assertion 0 failed`.
+
+Of the original 5 landmines intended for testing:
+- **CNSTI2/CNSTU2 fallback** — two stage-4 tests (4i, 4j).
+  Destructively verified.
+- **CVII1/CVII2/CVUU1/CVUU2 narrowing rules** — the rules were added
+  in `47616fa` for lburg completeness, but destructive probing shows
+  no real C input produces DAG nodes that reach them. LCC's front-end
+  folds narrowing into the store or arithmetic. Rules are defensive
+  dead code; a "regression test" can't actually catch them going away.
+- **`sh_rewrite_bool_fp` + r14 interaction** and
+  **`sh_restructure_eq_chain` hardcoded r14** — both guarded
+  implicitly by FUN_06047748's tier-1 byte-match baseline, which is
+  the function that exposed these bugs. Any revert of `752a344` breaks
+  that baseline → stage 5 fails. Direct stage-4 reproducer would need
+  an exact crafted leaf+bool_fp+eq_chain input; redundant.
+- **lburg grammar-section comments** — build-system quirk, not
+  runtime-testable.
+- **Stale `build/rcc`** — build-system quirk, not runtime-testable.
+- **vmask/tmask disjoint constraint** — design constraint, not
+  runtime-testable without deliberately miscoding the backend.
+
+So "5 tests" distills to: 2 directly catch bugs, 2 are caught via
+existing tier-1 byte-match gate, 1 is by-design not testable, plus 2
+build-system quirks also not testable. Coverage is honestly complete.
 
 **Evidence:** `session_handoff.md:499-540` lists seven latent compiler
 bugs previously hit. None are covered by `validate_build.sh` stage 4.
@@ -474,6 +501,17 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `M3` closed. Two stage-4 regression tests
+  (CNSTI2/CNSTU2 large-short-literal) added to validate_build.sh,
+  destructively verified to catch removal of the fallback rules in
+  src/sh.md:401-402. Remaining landmines documented as untestable or
+  already-covered-elsewhere:
+  - CVII/CVUU narrowing rules → defensive lburg dead code; no C input
+    produces reaching DAG nodes in practice
+  - bool_fp+r14, restructure_eq_chain r14 → covered by FUN_06047748's
+    tier-1 byte-match baseline (the function that exposed those bugs)
+  - lburg-grammar-comments, stale-rcc → build-system quirks
+  - vmask/tmask disjoint → design constraint
 - `2026-04-16` — `H1` closed as "done (provenance-only)". Shim
   experiment (`gen_ghidra_shim.sh` + `ghidra_shim.h`) works for one
   of six files; remaining five hit per-use DAT type inconsistencies

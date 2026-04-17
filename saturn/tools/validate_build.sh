@@ -185,6 +185,61 @@ else
                      || fail "regtest: displacement addressing (missing @(disp,Rn) forms)"
 fi
 
+# ── Short-literal lburg rule coverage (landmines.md #4) ──
+# Pre-47616fa, rcc asserted in getrule on ASGNI2 / ASGNU2 with a large
+# int literal — no CNSTI2 fallback rule existed for values outside
+# -128..127.  Crash mode:
+#     (XXX->op=ASGNI2 at 1 is corrupt.)
+#     rcc: src/gen.c:181: getrule: Assertion `0' failed.
+#
+# Verified destructively (2026-04-16): deleting the CNSTI2/CNSTU2
+# "# large const" fallback rules from src/sh.md and rebuilding, each
+# of these inputs aborts as above. With the rules present, they
+# compile clean.
+#
+# The crash requires an actual store or local-variable assignment of a
+# large int literal to a short — simple return paths are covered by
+# CVII4 / emit2 fallbacks. The two 47616fa-also-added rule groups
+# *not* covered here:
+#   - CVII1/CVII2/CVUU1/CVUU2 "# truncate" register-level rules
+#     (lines 599-602). Defensive lburg-completeness; no real C input
+#     produces DAG nodes reaching them (LCC's front-end folds narrowing
+#     into the store). Destructive-delete tested with several probes,
+#     couldn't trigger a crash. Left in sh.md for safety.
+
+# 4i. Short local variable assigned a large int literal (CNSTI2 + ASGNI2)
+cat > /tmp/regtest.c <<'EOF'
+short f(void) { short x = 300; return x; }
+EOF
+regtest_grep "CNSTI2 fallback: large short literal in local" 'mov\.w' yes
+
+# 4j. Unsigned short store through pointer, large literal (CNSTU2 + ASGNU2)
+cat > /tmp/regtest.c <<'EOF'
+void f(unsigned short *p) { *p = 40000; }
+EOF
+regtest_grep "CNSTU2 fallback: large ushort literal via *p" 'mov\.w' yes
+
+# ── Landmine coverage not duplicated here ──────────────────
+# Landmines in saturn/workstreams/landmines.md for which a dedicated
+# stage-4 reproducer would be redundant or impractical:
+#
+#   - `sh_rewrite_bool_fp` + r14 interaction (fixed in 752a344).
+#     Currently guarded by FUN_06047748's tier-1 byte-match baseline —
+#     reverting the guard corrupts that function's output, which fails
+#     stage 5. Dedicated reproducer would need an exact crafted input.
+#
+#   - `sh_restructure_eq_chain` hardcoded r14 pop (fixed in 752a344).
+#     Same — guarded implicitly by FUN_06047748's baseline.
+#
+#   - LCC's vmask/tmask disjoint constraint. Design-level; not
+#     runtime-testable without deliberately miscoding the backend.
+#
+#   - lburg grammar-section comments re-parse only on sh.c regen.
+#     Build-system quirk; tested by the existence of the comments in
+#     src/sh.md parsing through in the very first build.
+#
+#   - stale build/rcc. Build-system quirk; same reasoning.
+
 # ── 5. Tier-1 byte-match check ────────────────────────────
 # Delegates to validate_byte_match.sh; one PASS/FAIL line so the
 # established 22/22 number stays meaningful (becomes 23/23).
