@@ -4953,10 +4953,12 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                  *   sh_rename_r14_var /      — register renames; run last
                  *   sh_leaf_rename_callee_     in phase 1 so they target
                  *   saved                     the final register choice.
-                 *                              Landmine: these two are
-                 *                              gated by mutually exclusive
-                 *                              conditions today; C2.c
-                 *                              tracks unifying them.
+                 *                              Both can fire on the same
+                 *                              function; the two-stage
+                 *                              composition is correct by
+                 *                              construction — see the
+                 *                              detailed comment next to
+                 *                              the call sites below.
                  * ────────────────────────────────────────────────── */
                 sh_peephole();
                 if (sh_gbr_param)
@@ -4968,6 +4970,38 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_fold_post_increment();
                 sh_fill_branch_delays();
                 sh_fill_cond_delays();
+
+                /* r14-rename composition (methodology_remediation C2.c).
+                 *
+                 * Both of the following can fire on the same function —
+                 * the conditions are NOT mutually exclusive. The only
+                 * case where both fire is a leaf function (ncalls == 0)
+                 * that also needs FP and had r14 already allocated as a
+                 * variable home (need_r14_rename set during prologue
+                 * planning at lines ~4861–4872 above).
+                 *
+                 * In that case the execution order produces a correct
+                 * two-stage rename:
+                 *   1. sh_rename_r14_var moves r14 → r13..r8 (whichever
+                 *      callee-saved was free at prologue planning time)
+                 *      and records the move in usedmask.
+                 *   2. sh_leaf_rename_callee_saved sees the post-step-1
+                 *      live set: r14 is no longer live, so its own
+                 *      r14 skip guard doesn't matter; it finds the sole
+                 *      remaining callee-saved (the step-1 destination)
+                 *      and moves it again to a caller-saved (r7..r4/r0).
+                 * Net effect: r14 → r7 (or similar), reached in two
+                 * passes instead of one. Inefficient but not incorrect.
+                 *
+                 * Invariant after both run:
+                 *   - if need_fp: r14 is live (freed by step 1 for FP use)
+                 *   - else:       r14 is not live
+                 * A new rename pass added between these (or after) must
+                 * preserve that invariant.
+                 *
+                 * Full unification into a single entry point was
+                 * considered; the call-site composition is simple enough
+                 * that unifying would only add indirection. */
                 if (need_r14_rename)
                         sh_rename_r14_var(r14_rename_to);
                 if (ncalls == 0)

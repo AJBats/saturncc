@@ -13,7 +13,7 @@ This file is **tracked**. Source of truth for remediation state.
 | # | Item                                        | Severity | Status            |
 |---|---------------------------------------------|----------|-------------------|
 | C1 | Automated byte-match verification          | critical | **done** (`ae235a3`, `573a134`) |
-| C2 | Peephole pass ordering contract            | critical | **partial** — a (docs) + b (sh_kill_line) done; c (r14 unification) open |
+| C2 | Peephole pass ordering contract            | critical | **done** — a (docs), b (sh_kill_line), c (r14 composition documented) |
 | C3 | FUN_06037E28 does not assemble             | high     | open              |
 | H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
 | H2 | Peephole-vs-allocator spike                | high     | open              |
@@ -24,7 +24,7 @@ This file is **tracked**. Source of truth for remediation state.
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**7 done, 1 partial (C2), 2 open.** See per-item Status lines below.
+**8 done, 0 partial, 2 open.** See per-item Status lines below.
 
 ## Audit context
 
@@ -212,10 +212,28 @@ smoke (M1, same session) gave the loudest signal and saved this
 from landing silently. Good demonstration that M1 is earning its
 keep.
 
-**C2.c — unify/serialize the two r14 renames.** Still open.
-`sh_rename_r14_var` and `sh_leaf_rename_callee_saved` both touch
-r14 but gate on mutually-exclusive conditions. Document the
-exclusion with an assertion or fold into a single entry point.
+**C2.c — unify/serialize the two r14 renames.** SHIPPED as
+documentation. Investigation turned up that the two passes are
+*not* in fact mutually exclusive (my earlier C2.a write-up was
+wrong about this): both fire together when a leaf function needs
+FP and had r14 allocated as a variable home. Execution order
+produces a correct two-stage rename by construction —
+`sh_rename_r14_var` moves r14→r13..r8 first, then
+`sh_leaf_rename_callee_saved` sees the updated state and moves
+the relocation destination to r7..r4/r0 in a second pass.
+
+Rather than unify the two into a single entry point (which would
+add indirection without reducing risk), the fix is a detailed
+comment block at the call site in `src/sh.md` around line 4969
+that:
+- states the composition is correct by construction,
+- walks through the two-stage rename with a worked example,
+- declares the post-condition invariant ("if need_fp → r14 live;
+  else → r14 not live"),
+- warns that any new rename pass added nearby must preserve
+  this invariant.
+
+The C2.a phase-1 comment was corrected accordingly.
 
 **Evidence:**
 - `src/sh.md:4903-4996` — pass driver lists ~20 passes across four
@@ -569,6 +587,13 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-04-16` — `C2.c` + `C2` overall closed. Investigation found
+  that the two r14-rename passes are *not* mutually exclusive (C2.a's
+  earlier framing was wrong); both fire when a leaf function needs
+  FP. The composition is correct by construction (r14→r13..r8 then
+  →r7..r4/r0). Fix is a detailed call-site comment documenting the
+  two-stage rename, the post-condition invariant, and a warning for
+  any future added rename. C2.a phase-1 comment corrected.
 - `2026-04-16` — `C2.b` shipped: `sh_kill_line(int j)` helper with
   bounds assertion. 19 direct `sh_lines[j][0] = 0` sites refactored
   through sed. Caught an infinite-recursion regression during the
