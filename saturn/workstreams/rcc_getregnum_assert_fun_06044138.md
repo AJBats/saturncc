@@ -1,5 +1,11 @@
 # rcc `getregnum` assertion on FUN_06044138
 
+> **Status: RESOLVED 2026-04-18.** Fixed in [src/gen.c](../../src/gen.c)'s
+> `getregnum()` — when the kid has a CSE'd original and the original
+> has a regnode, walk through and use that instead of aborting. FUN_06044138
+> now compiles cleanly as part of the race_FUN_06044060 TU. See commit
+> log for the rcc-side fix.
+
 ## Repro
 
 1. In [race_FUN_06044060/FUN_06044060.c](../experiments/daytona_byte_match/race_FUN_06044060/FUN_06044060.c),

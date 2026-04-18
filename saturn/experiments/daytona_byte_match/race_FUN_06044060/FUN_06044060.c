@@ -24,13 +24,14 @@
  * surface. Each entry notes which function(s) reference it.
  * ────────────────────────────────────────────────────────────── */
 
-/* Intra-TU forward declarations (callee defined later in this TU).
- * K&R-style (unspecified args) so Ghidra callers can pass whatever
- * Ghidra inferred without prototype-mismatch errors. */
-int FUN_06044834();    /* [008/196], called by #006 */
-uint FUN_06044788();   /* [007/196], called by #006 */
-void FUN_060449ac();   /* [011/196], called by #009 */
-void FUN_060449a0();   /* [010/196], called by #009 */
+/* Intra-TU forward declarations: none. Ghidra-decompiled bodies
+ * sometimes call same-TU functions with argument types the
+ * prototype-at-definition disagrees with (e.g. passing an int*
+ * where the definition takes a char*). Leaving the callee
+ * undeclared at the call site lets lcc treat it as implicit-int
+ * with unchecked args — the definition later in the TU fills in
+ * the real signature for the linker. Never modify the Ghidra
+ * source to appease the type checker. */
 
 
 /* ════════════════════ [001/196] FUN_06044060 ════════════════════ */
@@ -76,14 +77,6 @@ void FUN_060440e0(int param_1)
 
 /* ════════════════════ [003/196] FUN_06044138 ════════════════════ */
 
-/* ⚠ SKIPPED — rcc crashes with `getregnum` assertion in src/gen.c:825
- * on this body. Shim DAT types for 060443b0–0604441c are added in
- * ghidra_shim.h (so a re-attempt won't need to redo that work); the
- * body is re-wrapped #if 0 pending investigation. See
- * saturn/workstreams/rcc_getregnum_assert_fun_06044138.md. */
-
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044138  0x06044138 */
 
 
@@ -226,20 +219,7 @@ int * FUN_06044138(void)
   return piVar6;
 }
 
-#endif
-
 /* ════════════════════ [004/196] FUN_06044344 ════════════════════ */
-
-/* ⚠ SKIPPED — Ghidra emits non-C syntax that can't compile without
- * hand-rewriting:
- *  - struct-style member access (`uStack_1c._2_2_`, `._0_2_`,
- *    `._2_1_`) on a scalar `undefined4` local (bit-field split of
- *    the 32-bit word that Ghidra didn't promote to a union).
- *  - `CONCAT11(...)`, `CONCAT22(...)` — Ghidra helpers, not C.
- * Needs hand-decompilation into shift/mask operations before
- * sanitization can proceed. Out of scope for compile-clean phase. */
-
-#if 0
 
 int FUN_06044344(int param_1)
 
@@ -389,14 +369,7 @@ LAB_0604453a:
   return iVar9;
 }
 
-#endif
-
 /* ════════════════════ [005/196] FUN_06044588 ════════════════════ */
-
-/* ⚠ SKIPPED — scalar-as-struct Ghidra artifacts (`uStack_8._0_2_`,
- * `._2_1_`). Same class as #004; needs hand-decomp. */
-
-#if 0
 
 void FUN_06044588(void)
 
@@ -461,8 +434,6 @@ void FUN_06044588(void)
   return;
 }
 
-#endif
-
 /* ════════════════════ [006/196] FUN_060446F4 ════════════════════ */
 
 /* FUN_060446F4  0x060446F4 */
@@ -496,7 +467,7 @@ void FUN_060446f4(int param_1)
     }
     FUN_06044788(uVar2);
   }
-  *puVar1 = (undefined4)(puVar3 + 0x10);   /* cast: Ghidra puts ushort* into undefined4 storage */
+  *puVar1 = puVar3 + 0x10;
   return;
 }
 
@@ -627,16 +598,6 @@ void FUN_06044848(int param_1)
 
 /* ════════════════════ [010/196] FUN_060449A0 ════════════════════ */
 
-/* ⚠ SKIPPED — rcc backend lacks lburg rules for 64-bit signed
- * multiply-high: `(short)((ulonglong)((longlong)a * (longlong)b) >> 0x20)`.
- * Compiler fails with "compiler error in _label--Bad terminal 8566"
- * (getrule finds no matching tree for MULI8/shift/narrow combo).
- * Would need new rules in src/sh.md for dmuls.l + sts mach idiom.
- * Out of scope for compile-clean phase. Call-site cast to char*
- * and RAM externs added to ghidra_shim.h so a re-attempt doesn't
- * redo that work. */
-
-#if 0
 /* FUN_060449A0  0x060449A0 */
 
 
@@ -655,7 +616,7 @@ void FUN_060449a0(int *param_1,int param_2)
   iVar3 = param_1[2];
   iVar5 = *param_1;
   (*pcRam06044a70)((int)unaff_r13[6]);
-  iVar2 = FUN_06044834((char *)param_1);   /* cast: Ghidra typed param_1 as int*, callee takes char* */
+  iVar2 = FUN_06044834(param_1);
   iVar2 = (iVar2 + unaff_r13[6]) - (int)sRam06044a68;
   sVar1 = (short)((ulonglong)((longlong)(int)unaff_r13[4] * (longlong)iVar3) >> 0x20);
   sVar4 = -sVar1;
@@ -683,15 +644,8 @@ void FUN_060449a0(int *param_1,int param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [011/196] FUN_060449AC ════════════════════ */
 
-/* ⚠ SKIPPED — same rcc lburg gap as #010 (Bad terminal 8566 on
- * 64-bit signed multiply-high). Near-identical body; differs only
- * in magic byte-table offsets (0x6044a7c vs 0x6044a8c). */
-
-#if 0
 /* FUN_060449AC  0x060449AC */
 
 
@@ -710,7 +664,7 @@ void FUN_060449ac(int *param_1,int param_2)
   iVar3 = param_1[2];
   iVar5 = *param_1;
   (*pcRam06044a70)((int)unaff_r13[6]);
-  iVar2 = FUN_06044834((char *)param_1);   /* cast: Ghidra typed param_1 as int*, callee takes char* */
+  iVar2 = FUN_06044834(param_1);
   iVar2 = (iVar2 + unaff_r13[6]) - (int)sRam06044a68;
   sVar1 = (short)((ulonglong)((longlong)(int)unaff_r13[4] * (longlong)iVar3) >> 0x20);
   sVar4 = -sVar1;
@@ -738,8 +692,6 @@ void FUN_060449ac(int *param_1,int param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [012/196] FUN_060449B6 ════════════════════ */
 
 /* TODO: sanitize — raw Ghidra decomp below. */
@@ -764,7 +716,7 @@ void FUN_060449b6(int *param_1,int param_2)
   iVar4 = param_1[2];
   iVar6 = *param_1;
   (*pcRam06044a70)((int)unaff_r13[6]);
-  iVar2 = FUN_06044834((char *)param_1);   /* cast: Ghidra typed param_1 as int*, callee takes char* */
+  iVar2 = FUN_06044834(param_1);
   iVar2 = (iVar2 + unaff_r13[6]) - (int)sRam06044a68;
   sVar1 = (short)((ulonglong)((longlong)(int)unaff_r13[4] * (longlong)iVar4) >> 0x20);
   sVar5 = -sVar1;

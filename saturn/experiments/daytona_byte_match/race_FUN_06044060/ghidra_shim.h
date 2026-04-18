@@ -22,6 +22,19 @@ typedef signed char    sbyte;
 typedef long long           longlong;
 typedef unsigned long long  ulonglong;
 
+/* Ghidra concatenation pseudo-ops. CONCAT<M><N>(hi, lo) builds an
+ * (M+N)-byte value with `hi` in the high M bytes and `lo` in the
+ * low N bytes. These are Ghidra-dialect helpers, not real C. */
+#define CONCAT11(hi, lo) \
+    ((unsigned short)(((unsigned short)(unsigned char)(hi) << 8) \
+                      | (unsigned char)(lo)))
+#define CONCAT22(hi, lo) \
+    ((unsigned long)(((unsigned long)(unsigned short)(hi) << 16) \
+                     | (unsigned short)(lo)))
+#define CONCAT44(hi, lo) \
+    ((unsigned long long)(((unsigned long long)(unsigned long)(hi) << 32) \
+                          | (unsigned long)(lo)))
+
 /* "code" is Ghidra's function-type placeholder. Used as
  *   (*(code *)ptr)()
  * so it has to be a callable type. `int()` works — gives rcc a
@@ -103,6 +116,24 @@ extern int *DAT_06044410;
 extern char *DAT_06044414;
 extern char *DAT_06044418;
 extern int *DAT_0604441c;
+extern int DAT_06044420;
+extern int DAT_06044424;
+extern int DAT_06044620;
+extern int DAT_06044624;
+extern int DAT_06044628;
+extern byte *DAT_0604462c;
+extern int DAT_06044630;
+extern byte **DAT_06044634;
+extern int *DAT_06044638;
+extern byte **DAT_0604463c;
+extern int DAT_06044640;
+extern int DAT_06044644;
+extern undefined4 *DAT_06044648;
+extern byte **DAT_0604464c;
+extern int *DAT_06044650;
+extern char *DAT_06044654;
+extern ushort *DAT_06044658;
+extern int DAT_0604465c;
 extern int DAT_06044762;
 extern int DAT_06044764;
 extern undefined4 *DAT_06044768;

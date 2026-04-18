@@ -4,9 +4,10 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 6 / 196
-- Remaining: 189
-- Skipped (⚠): 5 — **HARD LINE STOP**
+- Sanitized: 11 / 196
+- Remaining: 185
+- Skipped (⚠): 0 — the previous 5 skips were all resolved by
+  rcc compiler fixes; Ghidra sources are pristine again.
 
 ## Per-function grind workflow
 
@@ -46,15 +47,15 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 
 - [x] 001. `FUN_06044060`
 - [x] 002. `FUN_060440E0`
-- [ ] 003. `FUN_06044138` ⚠ rcc getregnum assert — see `saturn/workstreams/rcc_getregnum_assert_fun_06044138.md`
-- [ ] 004. `FUN_06044344` ⚠ Ghidra artifacts (`uStack._N_N_` member access, `CONCAT11/22`) — needs hand-decomp
-- [ ] 005. `FUN_06044588` ⚠ scalar-as-struct Ghidra artifact (same class as #004)
+- [x] 003. `FUN_06044138`
+- [x] 004. `FUN_06044344`
+- [x] 005. `FUN_06044588`
 - [x] 006. `FUN_060446F4`
 - [x] 007. `FUN_06044788`
 - [x] 008. `FUN_06044834` — **byte-identical** (see `byte_match_baselines/`)
 - [x] 009. `FUN_06044848`
-- [ ] 010. `FUN_060449A0` ⚠ rcc lburg missing 64-bit mul-high rules (`(longlong)a*(longlong)b>>0x20`)
-- [ ] 011. `FUN_060449AC` ⚠ same rcc lburg gap as #010
+- [x] 010. `FUN_060449A0`
+- [x] 011. `FUN_060449AC`
 - [ ] 012. `FUN_060449B6`
 - [ ] 013. `FUN_06044A9A`
 - [ ] 014. `FUN_06044ADA`
