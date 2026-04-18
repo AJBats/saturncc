@@ -5583,7 +5583,7 @@ ushort * FUN_06045d04(void)
   case 6:
     return &switchD_06045d12__switchdataD_06045df0;
   case 8:
-    switchD_06045d12__caseD_4();
+    FUN_06045D3C();
     return DAT_06045de8;
   case 10:
     *(char *)((int)&switchD_06045d12__switchdataD_06045df0 + unaff_r11) = (char)iVar1;
@@ -5613,7 +5613,7 @@ ushort * FUN_06045d04(void)
 /* FUN_06045D3C  0x06045D3C */
 
 
-void switchD_06045d12__caseD_4(int param_1,int param_2,int param_3,int param_4)
+void FUN_06045D3C(int param_1,int param_2,int param_3,int param_4)
 
 {
   if (param_1 < param_4) {
@@ -5634,7 +5634,7 @@ void switchD_06045d12__caseD_4(int param_1,int param_2,int param_3,int param_4)
 /* FUN_06045D6A  0x06045D6A */
 
 
-undefined4 switchD_06045d12__caseD_8(void)
+undefined4 FUN_06045D6A(void)
 
 {
   caseD_4();
@@ -5688,7 +5688,7 @@ ushort * FUN_06045d80(void)
   case 6:
     return &switchD_06045d8c__switchdataD_06045dfc;
   case 8:
-    switchD_06045d8c__caseD_4();
+    FUN_06045DAA();
     return DAT_06045de8;
   case 10:
     *(ushort **)(unaff_gbr + 0x164) = &switchD_06045d8c__switchdataD_06045dfc;
@@ -5755,7 +5755,7 @@ ushort * FUN_06045d80(void)
 /* FUN_06045DAA  0x06045DAA */
 
 
-void switchD_06045d8c__caseD_4(int param_1,int param_2,int param_3)
+void FUN_06045DAA(int param_1,int param_2,int param_3)
 
 {
   if (param_1 < param_3) {
@@ -5773,7 +5773,7 @@ void switchD_06045d8c__caseD_4(int param_1,int param_2,int param_3)
 /* FUN_06045DCC  0x06045DCC */
 
 
-undefined4 switchD_06045d8c__caseD_8(void)
+undefined4 FUN_06045DCC(void)
 
 {
   caseD_4();
@@ -5872,7 +5872,7 @@ void FUN_06045e44(void)
 /* FUN_06045EA8  0x06045EA8 */
 
 
-void switchD_06045e5a__caseD_2(void)
+void FUN_06045EA8(void)
 
 {
   short extraout_r1;
@@ -5893,7 +5893,7 @@ void switchD_06045e5a__caseD_2(void)
 /* FUN_06045EC8  0x06045EC8 */
 
 
-void switchD_06045e5a__caseD_4(void)
+void FUN_06045EC8(void)
 
 {
   uint *puVar1;
@@ -5913,7 +5913,7 @@ void switchD_06045e5a__caseD_4(void)
 /* FUN_06045EE8  0x06045EE8 */
 
 
-void switchD_06045e5a__caseD_6(void)
+void FUN_06045EE8(void)
 
 {
   uint *puVar1;
@@ -5936,7 +5936,7 @@ void switchD_06045e5a__caseD_6(void)
 /* FUN_06045F0C  0x06045F0C */
 
 
-void switchD_06045e5a__caseD_c(void)
+void FUN_06045F0C(void)
 
 {
   uint *puVar1;

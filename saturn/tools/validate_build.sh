@@ -6,8 +6,9 @@
 # 2. All experiment C files compile without crashing
 # 3. Existing .s outputs are bit-identical to their last-committed versions
 # 4. Regression tests for known-fixed bugs
-# 5. Tier-1 byte-match: per-function diff count vs pinned baselines
-# 6. Broad-corpus smoke: 956 Ghidra race C files; catches new crashes
+# 5. Tier-1 byte-match (standalone corpus): per-function diff count vs pinned baselines
+# 6. Tier-1 byte-match (TU corpus): per-function diff count inside race_FUN_06044060 TU
+# 7. Broad-corpus smoke: 956 Ghidra race C files; catches new crashes
 #    and previously-passing regressions
 #
 # Run from the repo root:
@@ -30,7 +31,7 @@ echo "=== validate_build.sh ==="
 echo ""
 
 # ── 1. Build ──────────────────────────────────────────────
-echo "[1/6] Building compiler..."
+echo "[1/7] Building compiler..."
 if bash "$REPO/saturn/tools/build.sh" > /dev/null 2>&1; then
     pass "compiler builds"
 else
@@ -43,7 +44,7 @@ fi
 # Skips *.ghidra.c — those are raw Ghidra-decompiler baselines kept for
 # Gap-0 provenance (H1) and aren't expected to compile directly with
 # rcc. Their dedicated pipeline lives in validate_byte_match.sh.
-echo "[2/6] Compiling experiment sources..."
+echo "[2/7] Compiling experiment sources..."
 for cfile in "$EXPDIR"/FUN_*.c "$EXPDIR"/race_tu1/FUN_*.c; do
     [ -f "$cfile" ] || continue
     case "$cfile" in *.ghidra.c) continue ;; esac
@@ -84,7 +85,7 @@ rm -f /tmp/validate_tu_pp.c /tmp/validate_tu.s
 
 # ── 3. Stable outputs (diff against last commit) ─────────
 # Add new stable files here as functions reach their match ceiling.
-echo "[3/6] Checking .s stability vs HEAD..."
+echo "[3/7] Checking .s stability vs HEAD..."
 STABLE_FILES=(
     "saturn/experiments/daytona_byte_match/FUN_06004378.s"
     "saturn/experiments/daytona_byte_match/FUN_00280710.s"
@@ -102,7 +103,7 @@ for rel in "${STABLE_FILES[@]}"; do
 done
 
 # ── 4. Regression tests ──────────────────────────────────
-echo "[4/6] Regression tests..."
+echo "[4/7] Regression tests..."
 
 # Helper: compile to temp file and grep for a pattern.
 # Handles compiler crashes explicitly instead of grepping stale output.
@@ -368,7 +369,7 @@ rm -f "$sf_out"
 # ── 5. Tier-1 byte-match check ────────────────────────────
 # Delegates to validate_byte_match.sh; one PASS/FAIL line so the
 # established 22/22 number stays meaningful (becomes 23/23).
-echo "[5/6] Byte-match regression check..."
+echo "[5/7] Byte-match regression check (standalone corpus)..."
 bm_log="$(mktemp)"
 if bash "$SCRIPT_DIR/validate_byte_match.sh" > "$bm_log" 2>&1; then
     bm_summary=$(grep -E '^=== [0-9]+ ok' "$bm_log" | head -n1)
@@ -380,13 +381,34 @@ else
 fi
 rm -f "$bm_log"
 
+# ── 6. Tier-1 byte-match check, TU corpus ─────────────────
+# Same mechanic as step 5 but measures the 196-function TU
+# race_FUN_06044060 per-function. Each TU becomes one PASS/FAIL line.
+# Add new TUs here as they reach the measured phase.
+echo "[6/7] Byte-match regression check (TU corpus)..."
+TU_CORPUS=(
+    "race_FUN_06044060"
+)
+for tu in "${TU_CORPUS[@]}"; do
+    bm_log="$(mktemp)"
+    if bash "$SCRIPT_DIR/validate_byte_match_tu.sh" "$tu" > "$bm_log" 2>&1; then
+        bm_summary=$(grep -E '^=== [0-9]+ ok' "$bm_log" | head -n1)
+        pass "byte-match TU $tu: ${bm_summary:-no regressions}"
+    else
+        fail "byte-match TU $tu: regression detected — re-run validate_byte_match_tu.sh $tu"
+        echo "       --- last 10 lines of TU byte-match output ---"
+        tail -n 10 "$bm_log" | sed 's/^/       /'
+    fi
+    rm -f "$bm_log"
+done
+
 # ── 6. Broad-corpus smoke (M1) ────────────────────────────
 # 956 Ghidra race C files compiled through the shim header. Two
 # baselines pinned at saturn/experiments/broad_corpus_baselines/:
 # the passing set and the crashing set. Regression if a previously-
 # passing function starts failing, or if a file not in the crash
 # baseline now crashes rcc. ~15s runtime.
-echo "[6/6] Broad-corpus smoke..."
+echo "[7/7] Broad-corpus smoke..."
 bc_log="$(mktemp)"
 if bash "$SCRIPT_DIR/broad_corpus_smoke.sh" > "$bc_log" 2>&1; then
     bc_summary=$(grep -E '^  race:' "$bc_log" | head -n1 | sed 's/^  //')

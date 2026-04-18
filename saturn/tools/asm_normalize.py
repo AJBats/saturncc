@@ -44,10 +44,13 @@ COMMENT_BLOCK_RE = re.compile(r'/\*.*?\*/', re.DOTALL)
 
 
 def extract_function(lines, name):
+    # Case-insensitive compare: rcc emits lowercase hex in labels, prod
+    # uses uppercase. Treat FUN_060440e0 and FUN_060440E0 as the same name.
+    target = name.lower()
     start = None
     for i, line in enumerate(lines):
         m = ENTRY_RE.match(line)
-        if m and m.group(1) == name:
+        if m and m.group(1).lower() == target:
             start = i
             break
     if start is None:
@@ -55,7 +58,7 @@ def extract_function(lines, name):
     end = len(lines)
     for i in range(start + 1, len(lines)):
         m = ENTRY_RE.match(lines[i])
-        if m and m.group(1) != name:
+        if m and m.group(1).lower() != target:
             end = i
             break
     return lines[start:end]

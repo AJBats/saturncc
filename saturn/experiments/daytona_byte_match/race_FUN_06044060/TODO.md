@@ -8,11 +8,13 @@ diff lines** is.
 
 ## Status
 
+Measured as TU compile (`race_FUN_06044060/FUN_06044060.c` vs
+prod `race/FUN_06044060.s`), per-function diff after
+`asm_normalize.py`. Baselines pinned at
+`saturn/experiments/byte_match_baselines/race_FUN_06044060/`.
+
 - Byte-matched (0 diff): 1 / 196 — #008 `FUN_06044834`
-- In progress (pinned with non-zero diff): 2 / 196
-  - #016 `FUN_06044BCC` — baseline 438
-  - #179 `FUN_06047748` — baseline 26
-- Unmeasured: 187 / 196
+- Pinned with non-zero diff: 189 / 196 — aggregate **27,075 diff lines**
 - Skipped (⚠): 6 / 196 — #112-115, #124, #127. All Gap 18
   (de-fused `mac.l` dot-product or single-mulhi CSE into
   `ASGNI8(VREGP, ...)`). Deferred until Gap 18 backend work lands.
@@ -23,10 +25,11 @@ diff lines** is.
 1. Pick the next unchecked, non-skipped function below.
 2. Human review the diff — eyeball what's actually different:
    ```bash
-   wsl bash saturn/tools/asmdiff.sh <FUN_NAME>
+   wsl bash saturn/tools/asmdiff_tu.sh race_FUN_06044060 <FUN_NAME>
    ```
-   Output lands in `build/cmp/<FUN_NAME>.s` (prod, normalized)
-   next to our `.s` output for side-by-side viewing in VS Code.
+   Emits normalized prod and our slices at
+   `build/cmp/<FUN_NAME>.prod.s` and `build/cmp/<FUN_NAME>.our.s`
+   for VS Code side-by-side. Also prints the live diff-line count.
 3. Classify the divergence. Usually one of:
    - **Known gap** — matches something in
      `saturn/workstreams/gap_catalog.md`. Note the gap number and
@@ -39,19 +42,21 @@ diff lines** is.
      or extend an existing gap.
    - **New gap** — if it's a pattern we haven't seen before, add
      it to `gap_catalog.md`.
-4. If you close the diff to 0, pin it as a regression gate:
+4. After any change, measure the TU and re-pin only the moved
+   baselines (pin mode writes every baseline; run `check` first
+   to see what moved, then decide):
    ```bash
-   wsl bash saturn/tools/validate_byte_match.sh pin <FUN_NAME>
+   wsl bash saturn/tools/validate_byte_match_tu.sh race_FUN_06044060         # check
+   wsl bash saturn/tools/validate_byte_match_tu.sh race_FUN_06044060 pin     # re-pin all
    ```
-   Then tick the box below with `— byte-identical`.
-5. If you shrink the diff but don't reach 0, update the pin to
-   the new baseline and tick with `— <N> diff (was <M>)`.
-6. Before committing, always:
+   If the diff closes to 0, tick with `— byte-identical`. If it
+   shrinks, tick with `— <N> diff (was <M>)`.
+5. Before committing, always:
    ```bash
    wsl bash saturn/tools/validate_build.sh
    ```
-   32/32 must be green, no stable `.s` drift. See
-   `.claude/rules/validate-before-commit.md`.
+   All checks must be green, no stable `.s` drift, no TU regressions.
+   See `.claude/rules/validate-before-commit.md`.
 
 **Scope discipline:** don't rabbit-hole on the first function's
 gap if it's going to take days. Skim the TU breadth-first once
@@ -82,7 +87,7 @@ progress goes in a trailing annotation (e.g. `— 12 diff (was 438)`).
 - [ ] 013. `FUN_06044A9A`
 - [ ] 014. `FUN_06044ADA`
 - [ ] 015. `FUN_06044B20`
-- [ ] 016. `FUN_06044BCC` — 438 diff (pinned baseline)
+- [ ] 016. `FUN_06044BCC` — 446 diff (pinned baseline)
 - [ ] 017. `FUN_06044D64`
 - [ ] 018. `FUN_06044D74`
 - [ ] 019. `FUN_06044D80`
@@ -245,7 +250,7 @@ progress goes in a trailing annotation (e.g. `— 12 diff (was 438)`).
 - [ ] 176. `FUN_060474D4`
 - [ ] 177. `FUN_06047548`
 - [ ] 178. `FUN_06047588`
-- [ ] 179. `FUN_06047748` — 26 diff (pinned baseline)
+- [ ] 179. `FUN_06047748` — 27 diff (pinned baseline)
 - [ ] 180. `FUN_06047770`
 - [ ] 181. `FUN_060477D4`
 - [ ] 182. `FUN_060477D6`
