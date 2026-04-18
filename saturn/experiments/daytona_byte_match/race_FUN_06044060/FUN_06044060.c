@@ -930,8 +930,6 @@ void FUN_06044bcc(void)
 
 /* ════════════════════ [017/196] FUN_06044D64 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044D64  0x06044D64 */
 
 
@@ -942,12 +940,8 @@ undefined4 FUN_06044d64(undefined4 param_1)
   return param_1;
 }
 
-#endif
-
 /* ════════════════════ [018/196] FUN_06044D74 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044D74  0x06044D74 */
 
 
@@ -957,7 +951,7 @@ void FUN_06044d74(void)
 
 {
   undefined4 *puVar1;
-  
+
   puVar1 = DAT_06044da0;
   if (_DAT_ffffffe2 < 0) {
     puVar1 = DAT_06044da4;
@@ -977,12 +971,8 @@ void FUN_06044d74(void)
   return;
 }
 
-#endif
-
 /* ════════════════════ [019/196] FUN_06044D80 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044D80  0x06044D80 */
 
 
@@ -1003,8 +993,6 @@ void FUN_06044d80(undefined4 *param_1)
   param_1[0xb] = 0;
   return;
 }
-
-#endif
 
 /* ════════════════════ [020/196] FUN_06044DA8 ════════════════════ */
 
