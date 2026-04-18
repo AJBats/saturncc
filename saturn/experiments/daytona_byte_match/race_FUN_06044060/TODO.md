@@ -72,7 +72,7 @@ single gap fix often closes diffs across dozens of functions).
 Prod-order. Tick when tier-1 diff is 0 AND pinned. Partial
 progress goes in a trailing annotation (e.g. `— 12 diff (was 438)`).
 
-- [ ] 001. `FUN_06044060`
+- [ ] 001. `FUN_06044060` — 70 diff (pinned); blocked on backend (see `workstreams/byte_match_001_blockers.md`)
 - [ ] 002. `FUN_060440E0`
 - [ ] 003. `FUN_06044138`
 - [ ] 004. `FUN_06044344`

@@ -45,7 +45,14 @@ extern int FUN_06045760();
  * runtime global pointers (pcRam060440c0..dc, PTR_FUN/SUB_060440c8..d4).
  * Those symbols are just pool slots in this function; prod loads the
  * pool slot directly and jsr's it. Rewrite to direct calls so our
- * emit matches prod's single-indirect `mov.l LPn,r0; jsr @r0` pattern. */
+ * emit matches prod's single-indirect `mov.l LPn,r0; jsr @r0` pattern.
+ *
+ * Remaining 70-line diff is all backend-level — documented in
+ * saturn/workstreams/byte_match_001_blockers.md:
+ *   - save-all-callee-saved prologue (SHC convention)
+ *   - register allocator priority (prod uses r8-r10, LCC picks r11+)
+ *   - FUN_06044F30 arg setup via shll16+neg vs pool loads
+ *   - shim-entry calls to FUN_060450F2 / FUN_06045006 (entry_alias) */
 extern int FUN_06044F30();  /* not in this TU */
 
 void FUN_06044060(int param_1)
