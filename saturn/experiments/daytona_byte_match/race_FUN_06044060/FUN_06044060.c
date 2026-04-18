@@ -24,6 +24,12 @@
  * surface. Each entry notes which function(s) reference it.
  * ────────────────────────────────────────────────────────────── */
 
+/* Intra-TU forward declarations (callee defined later in this TU).
+ * K&R-style (unspecified args) so Ghidra callers can pass whatever
+ * Ghidra inferred without prototype-mismatch errors. */
+int FUN_06044834();    /* [008/196], called by #006 */
+void FUN_06044788();   /* [007/196], called by #006 */
+
 
 /* ════════════════════ [001/196] FUN_06044060 ════════════════════ */
 
@@ -231,6 +237,7 @@ int * FUN_06044138(void)
  * Needs hand-decompilation into shift/mask operations before
  * sanitization can proceed. Out of scope for compile-clean phase. */
 
+#if 0
 
 int FUN_06044344(int param_1)
 
@@ -387,6 +394,7 @@ LAB_0604453a:
 /* ⚠ SKIPPED — scalar-as-struct Ghidra artifacts (`uStack_8._0_2_`,
  * `._2_1_`). Same class as #004; needs hand-decomp. */
 
+#if 0
 
 void FUN_06044588(void)
 
@@ -455,8 +463,6 @@ void FUN_06044588(void)
 
 /* ════════════════════ [006/196] FUN_060446F4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060446F4  0x060446F4 */
 
 
@@ -488,11 +494,9 @@ void FUN_060446f4(int param_1)
     }
     FUN_06044788(uVar2);
   }
-  *puVar1 = puVar3 + 0x10;
+  *puVar1 = (undefined4)(puVar3 + 0x10);   /* cast: Ghidra puts ushort* into undefined4 storage */
   return;
 }
-
-#endif
 
 /* ════════════════════ [007/196] FUN_06044788 ════════════════════ */
 

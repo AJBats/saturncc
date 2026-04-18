@@ -4,8 +4,9 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 3 / 196
-- Remaining: 193
+- Sanitized: 4 / 196
+- Remaining: 192
+- Skipped (⚠): 3 (hard-stop at 5)
 
 ## Per-function grind workflow
 
@@ -48,7 +49,7 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [ ] 003. `FUN_06044138` ⚠ rcc getregnum assert — see `saturn/workstreams/rcc_getregnum_assert_fun_06044138.md`
 - [ ] 004. `FUN_06044344` ⚠ Ghidra artifacts (`uStack._N_N_` member access, `CONCAT11/22`) — needs hand-decomp
 - [ ] 005. `FUN_06044588` ⚠ scalar-as-struct Ghidra artifact (same class as #004)
-- [ ] 006. `FUN_060446F4`
+- [x] 006. `FUN_060446F4`
 - [ ] 007. `FUN_06044788`
 - [x] 008. `FUN_06044834` — **byte-identical** (see `byte_match_baselines/`)
 - [ ] 009. `FUN_06044848`
