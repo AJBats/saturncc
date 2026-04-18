@@ -924,7 +924,7 @@ static void progbeg(int argc, char *argv[]) {
         ireg_prio[17] = ireg[7];
         ireg_prio[16] = ireg[15];
         iregw = mkwildcard(ireg_prio);
-        tmask[IREG] = INTTMP;
+        tmask[IREG] = INTTMP | 0x000000f0;  /* H2 spike: include r4-r7 as caller-saved scratch once freed by putreg */
         vmask[IREG] = INTVAR;
         tmask[FREG] = 0;
         vmask[FREG] = 0;

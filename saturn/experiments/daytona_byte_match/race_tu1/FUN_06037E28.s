@@ -11,7 +11,6 @@ _FUN_06037E28:
 	mov.l	r8,@-r15
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
-	add	#-20,r15
 	mov.l	L38,r1
 	jsr	@r1
 	mov	r4,r14
@@ -31,7 +30,6 @@ _FUN_06037E28:
 	cmp/eq	#10,r0
 	bf	L2
 	mov	#10,r0
-	add	#20,r15
 	lds.l	@r15+,macl
 	lds.l	@r15+,pr
 	mov.l	@r15+,r8
@@ -99,11 +97,9 @@ L4:
 	mov	r1,r10
 	mov	r14,r1
 	add	#92,r1
-	mov.l	@r1,r1
-	mov.l	r1,@(16,r15)
-	mov.l	@(16,r15),r1
-	mov	#9,r2
-	cmp/gt	r2,r1
+	mov.l	@r1,r14
+	mov	#9,r1
+	cmp/gt	r1,r14
 	bt	L8
 	shll	r0
 	mov	r0,r1
@@ -395,20 +391,19 @@ L14:
 	mov	r1,r0
 	cmp/eq	#2,r0
 	bf	L16
-	mov.w	L75,r1
+	mov.w	L75,r14
 	bra	L17
-	mov.l	r1,@(12,r15)
+	nop
 	.align 2
 L75:	.short	128
 	.align 2
 L72:	.long	_sub_06038160
 L16:
-	mov.w	L76,r1
-	mov.l	r1,@(12,r15)
+	mov.w	L76,r14
 L17:
 	mov.l	L77,r1
 	jsr	@r1
-	mov.l	@(12,r15),r4
+	mov	r14,r4
 L18:
 	mov	r14,r1
 	mov.w	L78,r2
@@ -577,20 +572,19 @@ L23:
 	mov	r1,r0
 	cmp/eq	#2,r0
 	bf	L25
-	mov.w	L108,r1
+	mov.w	L108,r14
 	bra	L26
-	mov.l	r1,@(8,r15)
+	nop
 	.align 2
 L108:	.short	128
 	.align 2
 L74:	.long	3129907
 L25:
-	mov.w	L109,r1
-	mov.l	r1,@(8,r15)
+	mov.w	L109,r14
 L26:
 	mov.l	L84,r1
 	jsr	@r1
-	mov.l	@(8,r15),r4
+	mov	r14,r4
 L27:
 	mov.l	L106,r1
 	jsr	@r1
@@ -759,38 +753,33 @@ L30:
 	exts.b	r2,r2
 	mov.l	L90,r3
 	add	r3,r2
-	mov.l	r2,@(4,r15)
 	mov	#60,r3
-	mov	r1,r2
-	add	#18,r2
-	mov.b	@r2,r2
-	muls.w	r2,r3
-	sts	macl,r2
-	mov.l	@(4,r15),r3
-	add	r2,r3
-	mov	r3,r2
+	mov	r1,r4
+	add	#18,r4
+	mov.b	@r4,r4
+	muls.w	r4,r3
+	sts	macl,r3
+	add	r3,r2
 	mov.l	@r2,r2
 	mov.l	r2,@r1
 	mov	r14,r1
 	mov	r1,r2
 	add	#8,r2
-	mov.l	r2,@(0,r15)
 	mov	#12,r3
-	mov.l	L89,r2
-	mov.b	@r2,r2
-	muls.w	r2,r3
-	sts	macl,r2
-	exts.b	r2,r2
-	mov.l	L90,r3
-	add	r3,r2
-	mov	#60,r3
+	mov.l	L89,r4
+	mov.b	@r4,r4
+	muls.w	r4,r3
+	sts	macl,r3
+	exts.b	r3,r3
+	mov.l	L90,r4
+	add	r4,r3
+	mov	#60,r4
 	add	#18,r1
 	mov.b	@r1,r1
-	muls.w	r1,r3
+	muls.w	r1,r4
 	sts	macl,r1
-	add	r1,r2
-	mov.l	@(8,r2),r1
-	mov.l	@(0,r15),r2
+	add	r1,r3
+	mov.l	@(8,r3),r1
 	mov.l	r1,@r2
 L31:
 	mov.l	L115,r1
@@ -944,7 +933,6 @@ L36:
 	mov	r1,r0
 	shll	r0
 L1:
-	add	#20,r15
 	lds.l	@r15+,macl
 	lds.l	@r15+,pr
 	mov.l	@r15+,r8

@@ -509,7 +509,8 @@ Node gen(Node forest) {
 	for (p = forest; p; p = p->x.next)
 		for (i = 0; i < NELEMS(p->x.kids) && p->x.kids[i]; i++) {
 			assert(p->x.kids[i]->syms[RX]);
-			if (p->x.kids[i]->syms[RX]->temporary) {
+			if (p->x.kids[i]->syms[RX]->temporary ||
+			    p->x.kids[i]->syms[RX]->sclass == REGISTER) {
 				p->x.kids[i]->x.prevuse =
 					p->x.kids[i]->syms[RX]->x.lastuse;
 				p->x.kids[i]->syms[RX]->x.lastuse = p->x.kids[i];
@@ -619,7 +620,7 @@ static void ralloc(Node p) {
 		Node kid = p->x.kids[i];
 		Symbol r = kid->syms[RX];
 		assert(r && kid->x.registered);
-		if (r->sclass != REGISTER && r->x.lastuse == kid)
+		if (r->x.lastuse == kid)
 			putreg(r);
 	}
 	if (!p->x.registered && NeedsReg[opindex(p->op)]
