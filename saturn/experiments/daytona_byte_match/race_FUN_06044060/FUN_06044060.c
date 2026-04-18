@@ -46,8 +46,6 @@ void FUN_06044060(int param_1)
 
 /* ════════════════════ [002/196] FUN_060440E0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060440E0  0x060440E0 */
 
 
@@ -55,7 +53,7 @@ void FUN_060440e0(int param_1)
 
 {
   int iVar1;
-  
+
   iVar1 = 4;
   do {
     param_1 = param_1 + 0x30;
@@ -67,8 +65,6 @@ void FUN_060440e0(int param_1)
   } while (iVar1 != 0);
   return;
 }
-
-#endif
 
 /* ════════════════════ [003/196] FUN_06044138 ════════════════════ */
 

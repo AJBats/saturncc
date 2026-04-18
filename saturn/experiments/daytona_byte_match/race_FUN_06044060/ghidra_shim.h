@@ -140,6 +140,9 @@ extern char *puRam0602a6c8;
 extern code *pcRam060440c0;
 extern char *pcRam060440c4;
 extern code *pcRam060440dc;
+extern code *pcRam06044128;
+extern code *pcRam0604412c;
+extern code *pcRam06044134;
 
 /* cross-function callees (FUN_* identifiers used but not defined) */
 extern int FUN_0602A664();
