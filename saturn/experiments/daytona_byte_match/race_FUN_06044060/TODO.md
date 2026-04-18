@@ -47,7 +47,7 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 002. `FUN_060440E0`
 - [ ] 003. `FUN_06044138` ⚠ rcc getregnum assert — see `saturn/workstreams/rcc_getregnum_assert_fun_06044138.md`
 - [ ] 004. `FUN_06044344` ⚠ Ghidra artifacts (`uStack._N_N_` member access, `CONCAT11/22`) — needs hand-decomp
-- [ ] 005. `FUN_06044588`
+- [ ] 005. `FUN_06044588` ⚠ scalar-as-struct Ghidra artifact (same class as #004)
 - [ ] 006. `FUN_060446F4`
 - [ ] 007. `FUN_06044788`
 - [x] 008. `FUN_06044834` — **byte-identical** (see `byte_match_baselines/`)

@@ -384,9 +384,8 @@ LAB_0604453a:
 
 /* ════════════════════ [005/196] FUN_06044588 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
-/* FUN_06044588  0x06044588 */
+/* ⚠ SKIPPED — scalar-as-struct Ghidra artifacts (`uStack_8._0_2_`,
+ * `._2_1_`). Same class as #004; needs hand-decomp. */
 
 
 void FUN_06044588(void)
