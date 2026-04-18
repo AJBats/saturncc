@@ -22,6 +22,14 @@ typedef signed char    sbyte;
 typedef long long           longlong;
 typedef unsigned long long  ulonglong;
 
+/* Ghidra emits C99-style `bool`/`true`/`false` in decomp bodies.
+ * Our frontend is C89-ish; typedef `bool` to int and macro the
+ * constants so the bodies parse. Semantics are preserved because
+ * SH-2 treats any non-zero int as truthy. */
+typedef int bool;
+#define true  1
+#define false 0
+
 /* Ghidra concatenation pseudo-ops. CONCAT<M><N>(hi, lo) builds an
  * (M+N)-byte value with `hi` in the high M bytes and `lo` in the
  * low N bytes. These are Ghidra-dialect helpers, not real C. */
@@ -213,6 +221,28 @@ extern code PTR_LAB_06045604;
 extern code *DAT_06045608;
 extern int DAT_0604560c;
 extern int DAT_06045610;
+extern undefined4 uRam06045644;
+extern code *pcRam06045648;
+extern code *pcRam0604564c;
+extern undefined4 uRam06045688;
+extern undefined4 uRam0604568a;
+extern undefined4 uRam0604568c;
+extern undefined4 uRam0604568e;
+extern int iRam06045690;
+extern int iRam06045694;
+extern undefined4 uRam060456f8;
+extern undefined4 uRam060456fa;
+extern undefined4 *puRam0604570c;
+extern int _DAT_ffffff00;
+extern int _DAT_ffffff10;
+extern int _DAT_ffffff14;
+extern int _DAT_ffffff1c;
+extern undefined4 *puRam06045710;
+extern int *piRam06045770;
+extern undefined4 *puRam06045774;
+extern undefined4 *puRam06045778;
+extern undefined4 *puRam0604577c;
+extern int iRam06045780;
 extern int DAT_0604776c;
 extern code PTR_DAT_060383a0;
 extern code PTR_DAT_060384b0;

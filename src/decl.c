@@ -215,6 +215,16 @@ static Symbol dclglobal(int sclass, char *id, Type ty, Coordinate *pos) {
 	if (p && p->scope == GLOBAL) {
 		if (p->sclass != TYPEDEF && eqtype(ty, p->type, 1))
 			ty = compose(ty, p->type);
+		else if (p->sclass != TYPEDEF && isfunc(ty) && isfunc(p->type))
+			/* Target relaxation: accept mismatched function
+			 * signatures (return type, arg count/types) between
+			 * forward decl and definition. Ghidra's decompiler
+			 * regularly produces calls-as-value and void-returning
+			 * defs that disagree with address-of sites that
+			 * expect a value. Keep the later declaration's type
+			 * (via compose with the new ty) to match the real
+			 * ABI. */
+			warning("redeclaration of `%s' with different signature (previously declared at %w)\n", p->name, &p->src);
 		else
 			error("redeclaration of `%s' previously declared at %w\n", p->name, &p->src);
 
