@@ -10,11 +10,12 @@
 #define GHIDRA_SHIM_H
 
 /* Ghidra placeholder types */
-typedef unsigned char  byte;
-typedef unsigned char  undefined1;
-typedef unsigned short undefined2;
-typedef unsigned long  undefined4;
-typedef unsigned char  undefined;
+typedef unsigned char       byte;
+typedef unsigned char       undefined1;
+typedef unsigned short      undefined2;
+typedef unsigned long       undefined4;
+typedef unsigned long long  undefined8;
+typedef unsigned char       undefined;
 typedef unsigned short ushort;
 typedef unsigned int   uint;
 typedef unsigned long  ulong;
@@ -243,6 +244,43 @@ extern undefined4 *puRam06045774;
 extern undefined4 *puRam06045778;
 extern undefined4 *puRam0604577c;
 extern int iRam06045780;
+extern int DAT_06045b0c;
+extern int DAT_06045b80;
+extern int DAT_06045bac;
+extern undefined2 DAT_06045cec;
+extern undefined2 DAT_06045cf8;
+extern int *PTR_DAT_06045de0;
+extern int *PTR_DAT_06045de4;
+extern int DAT_06045de8;
+extern int DAT_06045dec;
+extern int DAT_06045e40;
+extern int DAT_06045f16;
+extern int DAT_06045f1a;
+extern int DAT_06045f20;
+/* Ghidra emitted these as C++-namespaced helpers
+ * (`switchD_X::switchdataD_Y`) for switch-jump-table dispatchers;
+ * we textually replaced `::` with `__` so they parse as regular
+ * identifiers. Declared here as opaque int blobs — the real
+ * addresses are resolved at link time. See dispatchers at #099,
+ * #102, etc. */
+extern int switchD_06045d12__switchdataD_06045df0;
+extern int switchD_06045d8c__switchdataD_06045dfc;
+extern int DAT_06045f18;
+extern int DAT_06045f1c;
+extern int DAT_06045f26;
+extern int DAT_06045fb0;
+extern int DAT_06046518;
+extern int DAT_0604651c;
+extern int DAT_06046630;
+extern int DAT_06046634;
+extern int DAT_06046658;
+extern undefined4 uRam06046700;
+extern code *pcRam06046704;
+extern code *pcRam06046708;
+/* Ghidra pseudo-op: called after "Control flow encountered bad
+ * instruction data". Stub out — the flow is technically
+ * unreachable in well-formed input. */
+void halt_baddata(void);
 extern int DAT_0604776c;
 extern code PTR_DAT_060383a0;
 extern code PTR_DAT_060384b0;

@@ -219,6 +219,8 @@ static int sh_disp_cost(Node a, int sz);
 %term ASGNI1=1077
 %term ASGNI2=2101
 %term ASGNI4=4149
+%term ASGNI8=8245
+%term ASGNU8=8246
 %term ASGNP4=4151
 %term ASGNU1=1078
 %term ASGNU2=2102
@@ -230,6 +232,8 @@ static int sh_disp_cost(Node a, int sz);
 %term INDIRI1=1093
 %term INDIRI2=2117
 %term INDIRI4=4165
+%term INDIRI8=8261
+%term INDIRU8=8262
 %term INDIRP4=4167
 %term INDIRU1=1094
 %term INDIRU2=2118
@@ -526,6 +530,37 @@ reg:  RSHU8(mulhi_s, c32i)  "# mul_hi32_s\n"  3
 reg:  RSHU8(mulhi_u, c32i)  "# mul_hi32_u\n"  3
 reg:  RSHU8(mulhi_s, c32u)  "# mul_hi32_s\n"  3
 reg:  RSHU8(mulhi_u, c32u)  "# mul_hi32_u\n"  3
+
+/* 64-bit multiply-low idiom. Ghidra also emits the LOW word of a
+ * widening multiply: `(uint)((longlong)a * (longlong)b)`. SH-2
+ * emits this with the same dmuls.l/dmulu.l but `sts macl` instead
+ * of `sts mach`. Trees come through as CVxI4(MULI8/MULU8(...)).
+ * Handle in the RSH+I/RSH+U emit case as a sibling of mul-high. */
+reg:  CVII4(mulhi_s)  "# mul_lo32_s\n"  3
+reg:  CVII4(mulhi_u)  "# mul_lo32_u\n"  3
+reg:  CVUI4(mulhi_s)  "# mul_lo32_s\n"  3
+reg:  CVUI4(mulhi_u)  "# mul_lo32_u\n"  3
+
+/* 8-byte local-storage support — pattern-matched to Ghidra's
+ * "longlong lVar = a*b; hi = lVar>>32; lo = (uint)lVar" idiom.
+ * ASGNI8/U8 to a local slot emits dmuls.l + sts macl + sts mach
+ * into the two 4-byte halves of the slot. Subsequent INDIRI8
+ * reads then shift/cast pick up the appropriate half.
+ *
+ * No general 64-bit register support: an INDIRI8 that isn't
+ * under RSHU8(...,32) or a CVxI4(...) narrow will still fail
+ * with "Bad terminal" — which is the correct diagnostic. */
+stmt: ASGNI8(ADDRLP4, mulhi_s)  "# mulstore8_local_s\n"  4
+stmt: ASGNI8(ADDRLP4, mulhi_u)  "# mulstore8_local_u\n"  4
+stmt: ASGNU8(ADDRLP4, mulhi_s)  "# mulstore8_local_s\n"  4
+stmt: ASGNU8(ADDRLP4, mulhi_u)  "# mulstore8_local_u\n"  4
+
+reg:  RSHU8(INDIRI8(ADDRLP4), c32i)  "# load8_local_hi\n"  2
+reg:  RSHU8(INDIRU8(ADDRLP4), c32i)  "# load8_local_hi\n"  2
+reg:  CVUI4(INDIRI8(ADDRLP4))        "# load8_local_lo\n"  2
+reg:  CVII4(INDIRI8(ADDRLP4))        "# load8_local_lo\n"  2
+reg:  CVUI4(INDIRU8(ADDRLP4))        "# load8_local_lo\n"  2
+reg:  CVII4(INDIRU8(ADDRLP4))        "# load8_local_lo\n"  2
 
 con1:  CNSTI4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
 con1:  CNSTU4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
@@ -1309,6 +1344,34 @@ static void emit2(Node p) {
                 int kop;
                 if (!p->kids[0])
                         break;
+                /* 8-byte mulstore: ASGNI8/U8(ADDRLP4, mulhi_{s,u}).
+                 * Stores dmuls.l/dmulu.l result into two 4-byte
+                 * halves of a longlong local — low word (MACL) at
+                 * offset 0, high word (MACH) at offset 4. */
+                if (opsize(p->op) == 8
+                    && specific(p->kids[0]->op) == ADDRL+P
+                    && p->kids[1]) {
+                        Node mul = p->kids[1];
+                        while (mul && (generic(mul->op) == LOAD
+                                    || generic(mul->op) == CVI
+                                    || generic(mul->op) == CVU))
+                                mul = mul->kids[0];
+                        if (mul && generic(mul->op) == MUL
+                            && opsize(mul->op) == 8) {
+                                int r1 = getregnum(mul->kids[0]->kids[0]);
+                                int r2 = getregnum(mul->kids[1]->kids[0]);
+                                int soff = p->kids[0]->syms[0]->x.offset
+                                    + framesize;
+                                sh_uses_macl = 1;
+                                print("\t%s\tr%d,r%d\n",
+                                    optype(mul->op) == I
+                                        ? "dmuls.l" : "dmulu.l",
+                                    r1, r2);
+                                print("\tsts\tmacl,@(%d,r14)\n", soff);
+                                print("\tsts\tmach,@(%d,r14)\n", soff + 4);
+                                break;
+                        }
+                }
                 kop = generic(p->kids[0]->op);
                 /* Same no-op bail-out as INDIR: ASGN(VREGP,reg)
                  * routes through emit2 but doesn't need any output
@@ -1434,6 +1497,47 @@ static void emit2(Node p) {
                 }
                 print("\tsts\tmacl,r%d\n", dst);
                 break;
+        case CVI+I: case CVU+I: {
+                /* 64-bit multiply-LOW idiom: CVxI4(MULI8/MULU8(...)).
+                 * Ghidra emits `(uint)((longlong)a * (longlong)b)` when
+                 * it wants the low 32 bits of a widening multiply. On
+                 * SH-2 that's dmuls.l / dmulu.l + sts MACL. The
+                 * mul-HIGH sibling lives in case RSH+U (opsize 8).
+                 *
+                 * CVxI4(INDIRI8/U8(ADDRLP4)) — load low 4 bytes of an
+                 * 8-byte local slot (stored earlier by the ASGNI8
+                 * mulstore8 rules). Just emit mov.l @(off,fp),r. */
+                Node k = p->kids[0];
+                if (k && (generic(k->op) == INDIR)
+                    && k->kids[0]
+                    && (specific(k->kids[0]->op) == ADDRL+P)) {
+                        int off = k->kids[0]->syms[0]->x.offset + framesize;
+                        dst = getregnum(p);
+                        print("\tmov.l\t@(%d,r14),r%d\n", off, dst);
+                        break;
+                }
+                while (k && (generic(k->op) == LOAD
+                          || generic(k->op) == CVI
+                          || generic(k->op) == CVU))
+                        k = k->kids[0];
+                if (k && generic(k->op) == MUL && opsize(k->op) == 8
+                    && k->kids[0] && k->kids[1]
+                    && k->kids[0]->kids[0] && k->kids[1]->kids[0]) {
+                        int r1 = getregnum(k->kids[0]->kids[0]);
+                        int r2 = getregnum(k->kids[1]->kids[0]);
+                        dst = getregnum(p);
+                        sh_uses_macl = 1;
+                        print("\t%s\tr%d,r%d\n",
+                              optype(k->op) == I ? "dmuls.l" : "dmulu.l",
+                              r1, r2);
+                        print("\tsts\tmacl,r%d\n", dst);
+                        break;
+                }
+                /* Fall through: other CVI+I / CVU+I cases (size-4
+                 * passthrough, size-8 narrow) emit nothing — the
+                 * register was already the right width. */
+                break;
+        }
         case LSH+I: case LSH+U: {
                 /* Composite left shift — decompose into shll/shll2/
                  * shll8/shll16 sequences. */
@@ -1473,6 +1577,20 @@ static void emit2(Node p) {
                  * Any other 64-bit arithmetic use will fail with
                  * "Bad terminal" — we intentionally do not claim
                  * general long-long support. */
+                if (opsize(p->op) == 8
+                    && p->kids[0]
+                    && generic(p->kids[0]->op) == INDIR
+                    && p->kids[0]->kids[0]
+                    && specific(p->kids[0]->kids[0]->op) == ADDRL+P) {
+                        /* RSHU8(INDIRI8/U8(ADDRLP4), 32) — load high
+                         * half of an 8-byte local (written earlier by
+                         * mulstore8). Just mov.l the +4 slot. */
+                        int off = p->kids[0]->kids[0]->syms[0]->x.offset
+                            + framesize;
+                        dst = getregnum(p);
+                        print("\tmov.l\t@(%d,r14),r%d\n", off + 4, dst);
+                        break;
+                }
                 if (opsize(p->op) == 8) {
                         Node mul = p->kids[0];
                         int r1, r2, is_signed_mul;

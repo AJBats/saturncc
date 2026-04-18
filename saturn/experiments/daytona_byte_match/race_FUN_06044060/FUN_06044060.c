@@ -4875,8 +4875,6 @@ uint FUN_0604595a(void)
 
 /* ════════════════════ [081/196] FUN_0604595E ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604595E  0x0604595E */
 
 
@@ -4929,12 +4927,9 @@ uint FUN_0604595e(void)
   return uVar2;
 }
 
-#endif
 
 /* ════════════════════ [082/196] FUN_060459C4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060459C4  0x060459C4 */
 
 
@@ -4976,12 +4971,9 @@ void FUN_060459c4(int *param_1,undefined4 *param_2)
   return;
 }
 
-#endif
 
 /* ════════════════════ [083/196] FUN_06045A2C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045A2C  0x06045A2C */
 
 
@@ -5027,12 +5019,9 @@ uint FUN_06045a2c(void)
   return uVar1;
 }
 
-#endif
 
 /* ════════════════════ [084/196] FUN_06045A7E ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045A7E  0x06045A7E */
 
 
@@ -5063,12 +5052,9 @@ uint FUN_06045a7e(void)
   return uVar1;
 }
 
-#endif
 
 /* ════════════════════ [085/196] FUN_06045AC0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045AC0  0x06045AC0 */
 
 
@@ -5092,12 +5078,9 @@ int * FUN_06045ac0(void)
   return (int *)(unaff_r14 + 0x40);
 }
 
-#endif
 
 /* ════════════════════ [086/196] FUN_06045ADC ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045ADC  0x06045ADC */
 
 
@@ -5121,12 +5104,9 @@ int * FUN_06045adc(void)
   return (int *)(unaff_r14 + 0x40);
 }
 
-#endif
 
 /* ════════════════════ [087/196] FUN_06045AF4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045AF4  0x06045AF4 */
 
 
@@ -5146,12 +5126,9 @@ void FUN_06045af4(void)
   return;
 }
 
-#endif
 
 /* ════════════════════ [088/196] FUN_06045B10 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045B10  0x06045B10 */
 
 
@@ -5186,12 +5163,9 @@ uint FUN_06045b10(void)
   return uVar1;
 }
 
-#endif
 
 /* ════════════════════ [089/196] FUN_06045B48 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045B48  0x06045B48 */
 
 
@@ -5220,12 +5194,9 @@ uint FUN_06045b48(void)
   return uVar1;
 }
 
-#endif
 
 /* ════════════════════ [090/196] FUN_06045B74 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045B74  0x06045B74 */
 
 
@@ -5260,12 +5231,9 @@ int FUN_06045b74(int param_1)
   return iVar1;
 }
 
-#endif
 
 /* ════════════════════ [091/196] FUN_06045BA0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045BA0  0x06045BA0 */
 
 
@@ -5300,12 +5268,9 @@ int FUN_06045ba0(int param_1)
   return iVar1;
 }
 
-#endif
 
 /* ════════════════════ [092/196] FUN_06045BC4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045BC4  0x06045BC4 */
 
 
@@ -5332,12 +5297,9 @@ int FUN_06045bc4(int param_1)
   return iVar1;
 }
 
-#endif
 
 /* ════════════════════ [093/196] FUN_06045BC6 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045BC6  0x06045BC6 */
 
 
@@ -5364,12 +5326,9 @@ int FUN_06045bc6(int param_1)
   return iVar1;
 }
 
-#endif
 
 /* ════════════════════ [094/196] FUN_06045C00 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045C00  0x06045C00 */
 
 
@@ -5396,12 +5355,9 @@ int FUN_06045c00(int param_1)
   return iVar1;
 }
 
-#endif
 
 /* ════════════════════ [095/196] FUN_06045C02 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045C02  0x06045C02 */
 
 
@@ -5428,12 +5384,9 @@ int FUN_06045c02(int param_1)
   return iVar1;
 }
 
-#endif
 
 /* ════════════════════ [096/196] FUN_06045C3C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045C3C  0x06045C3C */
 
 
@@ -5515,12 +5468,9 @@ void FUN_06045c3c(int param_1,undefined1 *param_2,undefined4 param_3,int param_4
   halt_baddata();
 }
 
-#endif
 
 /* ════════════════════ [097/196] FUN_06045C9C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045C9C  0x06045C9C */
 
 
@@ -5562,12 +5512,9 @@ int FUN_06045c9c(void)
   return iVar5;
 }
 
-#endif
 
 /* ════════════════════ [098/196] FUN_06045CCC ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045CCC  0x06045CCC */
 
 
@@ -5596,12 +5543,9 @@ undefined2 * FUN_06045ccc(int param_1)
   return puVar2 + 2;
 }
 
-#endif
 
 /* ════════════════════ [099/196] FUN_06045D04 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045D04  0x06045D04 */
 
 
@@ -5633,21 +5577,21 @@ ushort * FUN_06045d04(void)
       iVar1 = iVar2;
     }
     if (iVar1 < *(int *)(unaff_r11 + 4)) {
-      return &switchD_06045d12::switchdataD_06045df0;
+      return &switchD_06045d12__switchdataD_06045df0;
     }
     break;
   case 6:
-    return &switchD_06045d12::switchdataD_06045df0;
+    return &switchD_06045d12__switchdataD_06045df0;
   case 8:
-    switchD_06045d12::caseD_4();
+    switchD_06045d12__caseD_4();
     return DAT_06045de8;
   case 10:
-    *(char *)((int)&switchD_06045d12::switchdataD_06045df0 + unaff_r11) = (char)iVar1;
+    *(char *)((int)&switchD_06045d12__switchdataD_06045df0 + unaff_r11) = (char)iVar1;
                     /* WARNING: Bad instruction - Truncating control flow here */
     halt_baddata();
   case 0xc:
   case 0:
-    return &switchD_06045d12::switchdataD_06045df0;
+    return &switchD_06045d12__switchdataD_06045df0;
   case 0xe:
   case 2:
     if (iVar3 <= iVar1) {
@@ -5657,22 +5601,19 @@ ushort * FUN_06045d04(void)
       iVar1 = iVar2;
     }
     if (*(int *)(unaff_r11 + 4) <= iVar1) {
-      return &switchD_06045d12::switchdataD_06045df0;
+      return &switchD_06045d12__switchdataD_06045df0;
     }
   }
-  return &switchD_06045d12::switchdataD_06045df0;
+  return &switchD_06045d12__switchdataD_06045df0;
 }
 
-#endif
 
 /* ════════════════════ [100/196] FUN_06045D3C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045D3C  0x06045D3C */
 
 
-void switchD_06045d12::caseD_4(int param_1,int param_2,int param_3,int param_4)
+void switchD_06045d12__caseD_4(int param_1,int param_2,int param_3,int param_4)
 
 {
   if (param_1 < param_4) {
@@ -5687,28 +5628,22 @@ void switchD_06045d12::caseD_4(int param_1,int param_2,int param_3,int param_4)
   return;
 }
 
-#endif
 
 /* ════════════════════ [101/196] FUN_06045D6A ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045D6A  0x06045D6A */
 
 
-undefined4 switchD_06045d12::caseD_8(void)
+undefined4 switchD_06045d12__caseD_8(void)
 
 {
   caseD_4();
   return DAT_06045de8;
 }
 
-#endif
 
 /* ════════════════════ [102/196] FUN_06045D80 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045D80  0x06045D80 */
 
 
@@ -5729,7 +5664,7 @@ ushort * FUN_06045d80(void)
   int unaff_gbr;
   
   pcVar3 = *(char **)(unaff_r12 + 4);
-  pcVar1 = (char *)(int)*(short *)((int)&switchD_06045d8c::switchdataD_06045dfc + (in_r0 & 0xe));
+  pcVar1 = (char *)(int)*(short *)((int)&switchD_06045d8c__switchdataD_06045dfc + (in_r0 & 0xe));
   pcVar2 = *(char **)(unaff_r10 + 4);
   switch(in_r0 & 0xe) {
   case 0:
@@ -5739,7 +5674,7 @@ ushort * FUN_06045d80(void)
       pcVar2 = pcVar3;
     }
     if (*(int *)(unaff_r11 + 4) <= (int)pcVar2) {
-      return &switchD_06045d8c::switchdataD_06045dfc;
+      return &switchD_06045d8c__switchdataD_06045dfc;
     }
     break;
   case 4:
@@ -5747,61 +5682,61 @@ ushort * FUN_06045d80(void)
       pcVar2 = pcVar3;
     }
     if ((int)pcVar2 < *(int *)(unaff_r11 + 4)) {
-      return &switchD_06045d8c::switchdataD_06045dfc;
+      return &switchD_06045d8c__switchdataD_06045dfc;
     }
     break;
   case 6:
-    return &switchD_06045d8c::switchdataD_06045dfc;
+    return &switchD_06045d8c__switchdataD_06045dfc;
   case 8:
-    switchD_06045d8c::caseD_4();
+    switchD_06045d8c__caseD_4();
     return DAT_06045de8;
   case 10:
-    *(ushort **)(unaff_gbr + 0x164) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x148) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 300) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x114) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0xf8) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0xdc) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0xc4) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0xa8) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x90) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x78) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x5c) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x44) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x2c) = &switchD_06045d8c::switchdataD_06045dfc;
-    *(ushort **)(unaff_gbr + 0x10) = &switchD_06045d8c::switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x164) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x148) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 300) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x114) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0xf8) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0xdc) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0xc4) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0xa8) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x90) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x78) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x5c) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x44) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x2c) = &switchD_06045d8c__switchdataD_06045dfc;
+    *(ushort **)(unaff_gbr + 0x10) = &switchD_06045d8c__switchdataD_06045dfc;
                     /* WARNING: Bad instruction - Truncating control flow here */
     halt_baddata();
   case 0xc:
     pcVar3[0x6045dfc] = ']';
     pcVar3[0x6045dfd] = -4;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + (int)*pcVar1) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + (int)*pcVar1) = 0x5dfc;
     *(undefined2 *)
-     ((int)&switchD_06045d8c::switchdataD_06045dfc +
+     ((int)&switchD_06045d8c__switchdataD_06045dfc +
      (((uint)pcVar1 & 0xff00) >> 8 | ((uint)pcVar1 & 0xff) << 8 | (uint)pcVar1 & 0xffff0000)) =
          0x5dfc;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + ((uint)pcVar1 & 0xff)) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + ((uint)pcVar1 & 0xff)) = 0x5dfc;
     pcVar1 = in_r2 + 1;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + (int)*in_r2) = 0x5dfc;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + (int)*pcVar1) = 0x5dfc;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + (int)*in_r3) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + (int)*in_r2) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + (int)*pcVar1) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + (int)*in_r3) = 0x5dfc;
     *(undefined2 *)
-     ((int)&switchD_06045d8c::switchdataD_06045dfc +
+     ((int)&switchD_06045d8c__switchdataD_06045dfc +
      (((uint)pcVar1 & 0xff00) >> 8 | ((uint)pcVar1 & 0xff) << 8 | (uint)pcVar1 & 0xffff0000)) =
          0x5dfc;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + ((uint)pcVar1 & 0xff)) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + ((uint)pcVar1 & 0xff)) = 0x5dfc;
     pcVar1 = in_r3 + 1;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + (int)*in_r3) = 0x5dfc;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + (int)*pcVar2) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + (int)*in_r3) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + (int)*pcVar2) = 0x5dfc;
     *(undefined2 *)
-     ((int)&switchD_06045d8c::switchdataD_06045dfc +
+     ((int)&switchD_06045d8c__switchdataD_06045dfc +
      (((uint)pcVar1 & 0xff00) >> 8 | ((uint)pcVar1 & 0xff) << 8 | (uint)pcVar1 & 0xffff0000)) =
          0x5dfc;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + ((uint)pcVar1 & 0xff)) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + ((uint)pcVar1 & 0xff)) = 0x5dfc;
     pcVar1 = pcVar2 + 1;
-    *(undefined2 *)((int)&switchD_06045d8c::switchdataD_06045dfc + (int)*pcVar2) = 0x5dfc;
+    *(undefined2 *)((int)&switchD_06045d8c__switchdataD_06045dfc + (int)*pcVar2) = 0x5dfc;
     *(undefined2 *)
-     ((int)&switchD_06045d8c::switchdataD_06045dfc +
+     ((int)&switchD_06045d8c__switchdataD_06045dfc +
      (((uint)pcVar1 & 0xff00) >> 8 | ((uint)pcVar1 & 0xff) << 8 | (uint)pcVar1 & 0xffff0000)) =
          0x5dfc;
                     /* WARNING: Bad instruction - Truncating control flow here */
@@ -5811,19 +5746,16 @@ ushort * FUN_06045d80(void)
                     /* WARNING: Bad instruction - Truncating control flow here */
     halt_baddata();
   }
-  return &switchD_06045d8c::switchdataD_06045dfc;
+  return &switchD_06045d8c__switchdataD_06045dfc;
 }
 
-#endif
 
 /* ════════════════════ [103/196] FUN_06045DAA ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045DAA  0x06045DAA */
 
 
-void switchD_06045d8c::caseD_4(int param_1,int param_2,int param_3)
+void switchD_06045d8c__caseD_4(int param_1,int param_2,int param_3)
 
 {
   if (param_1 < param_3) {
@@ -5835,28 +5767,22 @@ void switchD_06045d8c::caseD_4(int param_1,int param_2,int param_3)
   return;
 }
 
-#endif
 
 /* ════════════════════ [104/196] FUN_06045DCC ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045DCC  0x06045DCC */
 
 
-undefined4 switchD_06045d8c::caseD_8(void)
+undefined4 switchD_06045d8c__caseD_8(void)
 
 {
   caseD_4();
   return DAT_06045de8;
 }
 
-#endif
 
 /* ════════════════════ [105/196] FUN_06045E06 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045E06  0x06045E06 */
 
 
@@ -5879,15 +5805,15 @@ void FUN_06045e06(uint param_1)
   return;
 }
 
-#endif
 
 /* ════════════════════ [106/196] FUN_06045E44 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — calls FUN_06045fc0 (which returns undefined8) and
+ * lcc CSE-widens the int local that captures extraout_r1 to 8-byte,
+ * triggering ASGNI8(VREGP, CVII8(...)) the backend can't handle
+ * without register-pair support. Deferred. */
+
 #if 0
-/* FUN_06045E44  0x06045E44 */
-
-
 void FUN_06045e44(void)
 
 {
@@ -5945,17 +5871,21 @@ void FUN_06045e44(void)
   *puVar2 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-
 #endif
+
 
 /* ════════════════════ [107/196] FUN_06045EA8 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
+ * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
+ * regs the backend cannot yet allocate. Deferred with #111/#112. */
+
 #if 0
+
 /* FUN_06045EA8  0x06045EA8 */
 
 
-void switchD_06045e5a::caseD_2(void)
+void switchD_06045e5a__caseD_2(void)
 
 {
   short extraout_r1;
@@ -5970,17 +5900,26 @@ void switchD_06045e5a::caseD_2(void)
   in_r7[2] = *(ushort *)(unaff_gbr + 0x94) | DAT_06045f1c;
   return;
 }
-
 #endif
 
 /* ════════════════════ [108/196] FUN_06045EC8 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
+ * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
+ * regs the backend cannot yet allocate. Deferred with #111/#112. */
+
 #if 0
+
 /* FUN_06045EC8  0x06045EC8 */
 
+/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
+ * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
+ * regs the backend cannot yet allocate. Deferred with #111/#112. */
 
-void switchD_06045e5a::caseD_4(void)
+#if 0
+
+
+void switchD_06045e5a__caseD_4(void)
 
 {
   uint *puVar1;
@@ -5994,17 +5933,20 @@ void switchD_06045e5a::caseD_4(void)
   *in_r7 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-
 #endif
 
 /* ════════════════════ [109/196] FUN_06045EE8 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
+ * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
+ * regs the backend cannot yet allocate. Deferred with #111/#112. */
+
 #if 0
+
 /* FUN_06045EE8  0x06045EE8 */
 
 
-void switchD_06045e5a::caseD_6(void)
+void switchD_06045e5a__caseD_6(void)
 
 {
   uint *puVar1;
@@ -6021,17 +5963,14 @@ void switchD_06045e5a::caseD_6(void)
   *in_r7 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-
 #endif
 
 /* ════════════════════ [110/196] FUN_06045F0C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045F0C  0x06045F0C */
 
 
-void switchD_06045e5a::caseD_c(void)
+void switchD_06045e5a__caseD_c(void)
 
 {
   uint *puVar1;
@@ -6046,16 +5985,16 @@ void switchD_06045e5a::caseD_c(void)
   *in_r7 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-
 #endif
 
 /* ════════════════════ [111/196] FUN_06045F46 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — decomp has both "bad instruction data" warnings
+ * AND heavy 64-bit CSE (lcc emits ASGNI8(VREGP, CVII8(...)) to
+ * hoist longlong values across uses). The latter needs full
+ * register-pair support in rcc's backend. Deferred. */
+
 #if 0
-/* FUN_06045F46  0x06045F46 */
-
-
 /* WARNING: Control flow encountered bad instruction data */
 /* WARNING: Instruction at (ram,0x06045f70) overlaps instruction at (ram,0x06045f6f)
     */
@@ -6144,16 +6083,19 @@ void FUN_06045f46(char param_1,undefined1 *param_2,undefined4 *param_3,int param
     halt_baddata();
   }
 }
-
 #endif
+
 
 /* ════════════════════ [112/196] FUN_06045FC0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — returns undefined8 and uses a longlong local to
+ * stash a dmuls.l result before splitting it into hi/lo halves.
+ * Compiles partially via the new mulstore8 rules but lcc also
+ * emits ASGNI8 to VREGP for intermediate widening, which needs
+ * full 8-byte register-pair handling in rcc (bigger scope than
+ * the simple mul-store-to-ADDRLP4 idiom). Deferred. */
+
 #if 0
-/* FUN_06045FC0  0x06045FC0 */
-
-
 undefined8 FUN_06045fc0(int *param_1)
 
 {
@@ -6541,13 +6483,18 @@ undefined8 FUN_06045fc0(int *param_1)
   }
   return CONCAT44(0xfffffff0,iVar8);
 }
-
 #endif
+
 
 /* ════════════════════ [113/196] FUN_060463E4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — heavy 64-bit CSE (20+ longlong casts).
+ * lcc stores longlong operand into ASGNI8(VREGP, ...) then
+ * re-reads via INDIRI8(VREGP); backend needs register-pair
+ * support to allocate 8-byte VREGs. Deferred. */
+
 #if 0
+
 /* FUN_060463E4  0x060463E4 */
 
 
@@ -6888,13 +6835,17 @@ void FUN_060463e4(void)
   } while (iVar6 != 0);
   return;
 }
-
 #endif
 
 /* ════════════════════ [114/196] FUN_06046478 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — heavy 64-bit CSE (20+ longlong casts).
+ * lcc stores longlong operand into ASGNI8(VREGP, ...) then
+ * re-reads via INDIRI8(VREGP); backend needs register-pair
+ * support to allocate 8-byte VREGs. Deferred. */
+
 #if 0
+
 /* FUN_06046478  0x06046478 */
 
 
@@ -7235,13 +7186,17 @@ void FUN_06046478(void)
   } while (iVar6 != 0);
   return;
 }
-
 #endif
 
 /* ════════════════════ [115/196] FUN_06046520 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — heavy 64-bit CSE (20+ longlong casts).
+ * lcc stores longlong operand into ASGNI8(VREGP, ...) then
+ * re-reads via INDIRI8(VREGP); backend needs register-pair
+ * support to allocate 8-byte VREGs. Deferred. */
+
 #if 0
+
 /* FUN_06046520  0x06046520 */
 
 
@@ -7600,13 +7555,16 @@ LAB_060465e2:
     }
   } while( true );
 }
-
 #endif
 
 /* ════════════════════ [116/196] FUN_06046602 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — calls an 8-byte-returning function;
+ * lcc CSEs the result to ASGNI8(VREGP, ...) which needs
+ * register-pair support rcc does not yet have. Deferred. */
+
 #if 0
+
 /* FUN_06046602  0x06046602 */
 
 
@@ -7632,13 +7590,16 @@ void FUN_06046602(void)
   }
   return;
 }
-
 #endif
 
 /* ════════════════════ [117/196] FUN_0604660A ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — calls an 8-byte-returning function;
+ * lcc CSEs the result to ASGNI8(VREGP, ...) which needs
+ * register-pair support rcc does not yet have. Deferred. */
+
 #if 0
+
 /* FUN_0604660A  0x0604660A */
 
 
@@ -7664,13 +7625,10 @@ int FUN_0604660a(void)
   } while (iVar2 != 0);
   return (int)sVar1;
 }
-
 #endif
 
 /* ════════════════════ [118/196] FUN_0604669E ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604669E  0x0604669E */
 
 
@@ -7709,12 +7667,9 @@ void FUN_0604669e(undefined4 param_1,undefined4 param_2,ushort param_3)
   return;
 }
 
-#endif
 
 /* ════════════════════ [119/196] FUN_060466A0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060466A0  0x060466A0 */
 
 
@@ -7753,12 +7708,9 @@ void FUN_060466a0(undefined4 param_1,undefined4 param_2,ushort param_3)
   return;
 }
 
-#endif
 
 /* ════════════════════ [120/196] FUN_0604670C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604670C  0x0604670C */
 
 
@@ -7790,7 +7742,6 @@ uint FUN_0604670c(void)
   return uVar1;
 }
 
-#endif
 
 /* ════════════════════ [121/196] FUN_0604674E ════════════════════ */
 
@@ -9840,7 +9791,7 @@ void FUN_06047548(int param_1,undefined4 param_2,undefined1 param_3)
   byte bVar4;
   undefined1 *unaff_gbr;
   
-  sVar1 = *(short *)((int)&switchD_06047550::switchdataD_0604757c + (in_r0 & 0xe));
+  sVar1 = *(short *)((int)&switchD_06047550__switchdataD_0604757c + (in_r0 & 0xe));
   switch(in_r0 & 0xe) {
   case 0:
     return;

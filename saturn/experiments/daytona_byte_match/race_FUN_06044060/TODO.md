@@ -4,10 +4,13 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 80 / 196
-- Remaining: 116
-- Skipped (⚠): 0 — the previous 5 skips were all resolved by
-  rcc compiler fixes; Ghidra sources are pristine again.
+- Sanitized: 109 / 196
+- Remaining: 76
+- Skipped (⚠): 11 — all in the 106-117 range, all due to
+  64-bit multiply-result CSE (lcc stores longlong values into
+  ASGNI8(VREGP, ...) which needs register-pair support rcc does
+  not yet have). Revisiting requires a real 8-byte-register
+  allocator in the backend.
 
 ## Per-function grind workflow
 
@@ -125,46 +128,46 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 078. `FUN_060458DA`
 - [x] 079. `FUN_060458DE`
 - [x] 080. `FUN_0604595A`
-- [ ] 081. `FUN_0604595E`
-- [ ] 082. `FUN_060459C4`
-- [ ] 083. `FUN_06045A2C`
-- [ ] 084. `FUN_06045A7E`
-- [ ] 085. `FUN_06045AC0`
-- [ ] 086. `FUN_06045ADC`
-- [ ] 087. `FUN_06045AF4`
-- [ ] 088. `FUN_06045B10`
-- [ ] 089. `FUN_06045B48`
-- [ ] 090. `FUN_06045B74`
-- [ ] 091. `FUN_06045BA0`
-- [ ] 092. `FUN_06045BC4`
-- [ ] 093. `FUN_06045BC6`
-- [ ] 094. `FUN_06045C00`
-- [ ] 095. `FUN_06045C02`
-- [ ] 096. `FUN_06045C3C`
-- [ ] 097. `FUN_06045C9C`
-- [ ] 098. `FUN_06045CCC`
-- [ ] 099. `FUN_06045D04`
-- [ ] 100. `FUN_06045D3C`
-- [ ] 101. `FUN_06045D6A`
-- [ ] 102. `FUN_06045D80`
-- [ ] 103. `FUN_06045DAA`
-- [ ] 104. `FUN_06045DCC`
-- [ ] 105. `FUN_06045E06`
-- [ ] 106. `FUN_06045E44`
-- [ ] 107. `FUN_06045EA8`
-- [ ] 108. `FUN_06045EC8`
-- [ ] 109. `FUN_06045EE8`
-- [ ] 110. `FUN_06045F0C`
-- [ ] 111. `FUN_06045F46`
-- [ ] 112. `FUN_06045FC0`
-- [ ] 113. `FUN_060463E4`
-- [ ] 114. `FUN_06046478`
-- [ ] 115. `FUN_06046520`
-- [ ] 116. `FUN_06046602`
-- [ ] 117. `FUN_0604660A`
-- [ ] 118. `FUN_0604669E`
-- [ ] 119. `FUN_060466A0`
-- [ ] 120. `FUN_0604670C`
+- [x] 081. `FUN_0604595E`
+- [x] 082. `FUN_060459C4`
+- [x] 083. `FUN_06045A2C`
+- [x] 084. `FUN_06045A7E`
+- [x] 085. `FUN_06045AC0`
+- [x] 086. `FUN_06045ADC`
+- [x] 087. `FUN_06045AF4`
+- [x] 088. `FUN_06045B10`
+- [x] 089. `FUN_06045B48`
+- [x] 090. `FUN_06045B74`
+- [x] 091. `FUN_06045BA0`
+- [x] 092. `FUN_06045BC4`
+- [x] 093. `FUN_06045BC6`
+- [x] 094. `FUN_06045C00`
+- [x] 095. `FUN_06045C02`
+- [x] 096. `FUN_06045C3C`
+- [x] 097. `FUN_06045C9C`
+- [x] 098. `FUN_06045CCC`
+- [x] 099. `FUN_06045D04`
+- [x] 100. `FUN_06045D3C`
+- [x] 101. `FUN_06045D6A`
+- [x] 102. `FUN_06045D80`
+- [x] 103. `FUN_06045DAA`
+- [x] 104. `FUN_06045DCC`
+- [x] 105. `FUN_06045E06`
+- [ ] 106. `FUN_06045E44` ⚠ 64-bit CSE (ASGNI8/VREGP)
+- [ ] 107. `FUN_06045EA8` ⚠ 64-bit CSE
+- [ ] 108. `FUN_06045EC8` ⚠ 64-bit CSE
+- [ ] 109. `FUN_06045EE8` ⚠ 64-bit CSE
+- [x] 110. `FUN_06045F0C`
+- [ ] 111. `FUN_06045F46` ⚠ 64-bit CSE + bad-instr warnings
+- [ ] 112. `FUN_06045FC0` ⚠ returns undefined8; 64-bit local
+- [ ] 113. `FUN_060463E4` ⚠ heavy 64-bit CSE
+- [ ] 114. `FUN_06046478` ⚠ heavy 64-bit CSE
+- [ ] 115. `FUN_06046520` ⚠ heavy 64-bit CSE
+- [ ] 116. `FUN_06046602` ⚠ calls 8-byte-returning function
+- [ ] 117. `FUN_0604660A` ⚠ calls 8-byte-returning function
+- [x] 118. `FUN_0604669E`
+- [x] 119. `FUN_060466A0`
+- [x] 120. `FUN_0604670C`
 - [ ] 121. `FUN_0604674E`
 - [ ] 122. `FUN_060467B2`
 - [ ] 123. `FUN_060467B4`
