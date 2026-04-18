@@ -98,6 +98,7 @@ static int sh_sp_locals_only;  /* locals exist but FP is not used (SP-relative) 
 static int sh_all_returns_inlined;
 static int sh_uses_macl;
 static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
+static int sh_weird_rule_1;  /* #pragma sh_weird_rule_1: see sh_apply_weird_rule_1 */
 
 /* Switch jump table: recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
@@ -775,6 +776,8 @@ static void sh_pragma(char *name) {
                         gbr_base_cname = string(token);
         } else if (strcmp(name, "gbr_param") == 0) {
                 sh_gbr_param = 1;
+        } else if (strcmp(name, "sh_weird_rule_1") == 0) {
+                sh_weird_rule_1 = 1;
         }
 }
 
@@ -2482,6 +2485,71 @@ static void sh_route_via_r0(void) {
                         strcpy(new_lines[nout++], sh_lines[i]);
         }
 
+        memcpy(sh_lines, new_lines, sizeof sh_lines);
+        sh_nlines = nout;
+}
+
+/* #pragma sh_weird_rule_1 implementation.
+ *
+ * Across the full Daytona CCE prod corpus (3873 functions, 19,087
+ * disp-mode loads), there are exactly 3 cases where SHC chose
+ * indexed addressing when displacement would have fit. Two of the
+ * three are adjacent .w loads in FUN_06044834:
+ *
+ *     mov.w @(14,r4),r0     ; first .w disp — kept as disp
+ *     mov r0,r1
+ *     mov #0x1A,r0
+ *     mov.w @(r0,r4),r0     ; would have fit disp, SHC chose indexed
+ *     add r0,r1
+ *     mov #0x1E,r0
+ *     mov.w @(r0,r4),r0     ; same
+ *     add r0,r1
+ *
+ * No generalizable rule explains this — it's one function out of
+ * 3873 showing a pattern that costs 2 extra bytes per load for no
+ * visible benefit. Most likely explanation: a Sega engineer wrote
+ * this function (or annotated it with a compiler hint we don't
+ * have) for reasons we cannot recover from the binary.
+ *
+ * This pragma is the opt-in mechanism to replicate that exact
+ * SHC output shape on a per-function basis. The C source declares
+ * intent; the compiler executes it.
+ *
+ * Rule: after the first .w displacement load targeting r0, convert
+ * every subsequent .w disp-load to indexed form
+ * (mov #K,r0; mov.w @(r0,rN),r0). Applies only to the function
+ * decorated with `#pragma sh_weird_rule_1`. Cleared at function
+ * end, so no TU-wide leakage.
+ *
+ * If new prod anomalies surface that don't fit this pattern, they
+ * get their own numbered weird rule — don't widen this one. */
+static void sh_apply_weird_rule_1(void) {
+        static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
+        int i, nout = 0, first_seen = 0;
+
+        for (i = 0; i < sh_nlines; i++) {
+                int disp, rN;
+
+                if (sh_lines[i][0] == 0) {
+                        new_lines[nout++][0] = 0;
+                        continue;
+                }
+                if (sscanf(sh_lines[i],
+                           "\tmov.w\t@(%d,r%d),r0\n",
+                           &disp, &rN) == 2) {
+                        if (!first_seen) {
+                                first_seen = 1;
+                                strcpy(new_lines[nout++], sh_lines[i]);
+                                continue;
+                        }
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\tmov\t#%d,r0\n", disp);
+                        snprintf(new_lines[nout++], SH_MAX_LINELEN,
+                                 "\tmov.w\t@(r0,r%d),r0\n", rN);
+                        continue;
+                }
+                strcpy(new_lines[nout++], sh_lines[i]);
+        }
         memcpy(sh_lines, new_lines, sizeof sh_lines);
         sh_nlines = nout;
 }
@@ -5192,6 +5260,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                  *                              mov.X @(disp,Rn); disp range
                  *                              check depends on pool
                  *                              shrinks above being in.
+                 *   sh_apply_weird_rule_1    — opt-in via #pragma; converts
+                 *                              all but the first .w disp-to-r0
+                 *                              load into indexed form. Only
+                 *                              fires in functions where prod
+                 *                              evidence shows this exact
+                 *                              anomaly (FUN_06044834 at the
+                 *                              moment; rare across the corpus).
                  *   sh_route_via_r0          — route operands through R0 to
                  *                              enable indexed addressing;
                  *                              runs after ext-elim so R0
@@ -5219,6 +5294,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_elim_redundant_ext();
                 sh_fold_mov_extw_to_movw();
                 sh_fold_base_displacement();
+                if (sh_weird_rule_1)
+                        sh_apply_weird_rule_1();
                 sh_route_via_r0();
                 sh_fold_post_increment();
                 sh_fill_branch_delays();
@@ -5516,6 +5593,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
         shlit_flush();
         sh_gbr_param = 0;
+        sh_weird_rule_1 = 0;
 }
 
 static void defconst(int suffix, int size, Value v) {

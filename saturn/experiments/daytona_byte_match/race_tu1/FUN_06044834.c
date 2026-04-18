@@ -22,6 +22,7 @@
  * (≤30). SHC heuristic unverified — under investigation.
  */
 
+#pragma sh_weird_rule_1
 int FUN_06044834(char *param_1) {
     return -((int)*(short *)(param_1 + 0xe)
            + (int)*(short *)(param_1 + 0x1a)

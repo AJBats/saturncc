@@ -5,11 +5,13 @@ _FUN_06044834:
 	mov.w	@(14,r4),r0
 	mov	r0,r1
 	exts.w	r1,r1
-	mov.w	@(26,r4),r0
+	mov	#26,r0
+	mov.w	@(r0,r4),r0
 	mov	r0,r2
 	exts.w	r2,r2
 	add	r2,r1
-	mov.w	@(30,r4),r0
+	mov	#30,r0
+	mov.w	@(r0,r4),r0
 	mov	r0,r2
 	exts.w	r2,r2
 	add	r2,r1
