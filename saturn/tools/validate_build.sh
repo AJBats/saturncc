@@ -71,14 +71,16 @@ for tu in "$EXPDIR"/race_FUN_*/FUN_*.c; do
     [ -f "$tu" ] || continue
     tu_dir="$(dirname "$tu")"
     tu_name="$(basename "$tu_dir")"
+    # Write .s to /tmp rather than alongside the .c — TU .s is an
+    # ever-changing output, not a stable reference artifact.
     if cpp -P "$tu" /tmp/validate_tu_pp.c 2>/dev/null \
-       && "$RCC" -target=sh/hitachi /tmp/validate_tu_pp.c "${tu%.c}.s" 2>/dev/null; then
+       && "$RCC" -target=sh/hitachi /tmp/validate_tu_pp.c /tmp/validate_tu.s 2>/dev/null; then
         pass "compile TU $tu_name"
     else
         fail "compile TU $tu_name"
     fi
 done
-rm -f /tmp/validate_tu_pp.c
+rm -f /tmp/validate_tu_pp.c /tmp/validate_tu.s
 
 # ── 3. Stable outputs (diff against last commit) ─────────
 # Add new stable files here as functions reach their match ceiling.
