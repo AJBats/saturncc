@@ -89,7 +89,14 @@ Tree call(Tree f, Type fty, Coordinate src) {
 		}
 	expect(')');
 	if (proto && *proto && *proto != voidtype)
-		error("insufficient number of arguments to %s\n",
+		/* Ghidra-dialect relaxation: decomp bodies sometimes
+		 * call a prototyped function with fewer arguments than
+		 * the prototype declares (the SH-2 calling convention
+		 * passes args in r4-r7, so "missing" args are just
+		 * whatever happens to be live in those registers). Warn
+		 * instead of erroring — the linker will still match on
+		 * name; codegen just won't set up the later arg slots. */
+		warning("insufficient number of arguments to %s\n",
 			funcname(f));
 	if (r)
 		args = tree(RIGHT, voidtype, r, args);

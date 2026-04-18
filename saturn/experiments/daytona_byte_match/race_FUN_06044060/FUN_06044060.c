@@ -791,8 +791,6 @@ void FUN_06044ada(void)
 
 /* ════════════════════ [015/196] FUN_06044B20 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044B20  0x06044B20 */
 
 
@@ -839,8 +837,6 @@ uint FUN_06044b20(int *param_1)
   }
   return uVar2;
 }
-
-#endif
 
 /* ════════════════════ [016/196] FUN_06044BCC ════════════════════ */
 
