@@ -840,8 +840,6 @@ uint FUN_06044b20(int *param_1)
 
 /* ════════════════════ [016/196] FUN_06044BCC ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044BCC  0x06044BCC */
 
 
@@ -929,8 +927,6 @@ void FUN_06044bcc(void)
   } while (iVar10 < 4);
   return;
 }
-
-#endif
 
 /* ════════════════════ [017/196] FUN_06044D64 ════════════════════ */
 
