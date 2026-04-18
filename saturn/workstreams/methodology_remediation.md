@@ -16,7 +16,7 @@ This file is **tracked**. Source of truth for remediation state.
 | C2 | Peephole pass ordering contract            | critical | **done** — a (docs), b (sh_kill_line), c (r14 composition documented) |
 | C3 | FUN_06037E28 does not assemble             | high     | **done** (`775f13f`, `3af4fa5`) — 38 errors → 0 |
 | H1 | Preserve Ghidra C baselines                | high     | **done (provenance-only)** — files committed; compilability probe punted |
-| H2 | Peephole-vs-allocator spike                | high     | open              |
+| H2 | Peephole-vs-allocator spike                | high     | **done** (`385eafb`) |
 | M1 | Broad-corpus smoke stage                   | medium   | **done** — stage 6, 956 race files, dual-set baselines |
 | M2 | Success-metric drift                       | medium   | **done** (`bfeafce` + doc-hygiene batch) |
 | M3 | Landmine regression tests                  | medium   | **done** — 2 direct tests + rationale for untestable landmines |
@@ -24,7 +24,8 @@ This file is **tracked**. Source of truth for remediation state.
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
 | — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
 
-**9 done, 0 partial, 1 open.** See per-item Status lines below.
+**10 done, 0 partial, 0 open.** See per-item Status lines below. The
+proof-of-thesis milestone (FUN_06044834 byte-identical) remains.
 
 ## Audit context
 
@@ -405,7 +406,36 @@ per function.
 
 **Severity:** high. Structural. Acknowledged in the handoff but not
 being paid down.
-**Status:** open.
+**Status:** **done** (`385eafb`). The spike answered the binary
+question with "yes, LCC's allocator is extensible for this class of
+change" and shipped the fix instead of punting to the peephole
+layer.
+
+**What shipped:** a three-line change that frees parameter registers
+(r4–r7) for reuse after their last DAG use. Previously the allocator
+pinned them for the whole function, forcing temps to stack. Now the
+allocator uses them as additional scratch once parameters are
+consumed. The `freemask`/`askreg`/`spillee` machinery already
+handled register reuse — the change just unblocks parameter regs
+from participating.
+
+**Impact:** two corpus improvements (FUN_06037E28 1074→1062,
+FUN_06044BCC 459→445), zero regressions across 201 test subjects
+(10 curated, 168 broad-corpus smoke, 9 additional broad-corpus
+spot-checks, 2 synthetic calling-convention tests, 12 stage-4
+regression tests). The change is a pressure-relief valve — low-
+pressure functions unchanged; register-pressured functions get
+fewer spills.
+
+**Autopsy note.** An earlier subagent survey of `gen.c` concluded
+the change was not tractable — citing static parameter-register
+pinning via `askregvar`, spillee's tmask requirement, and the lack
+of physical-register liveness tracking. The autopsy missed that
+these constraints can be satisfied by extending `x.lastuse`
+tracking to REGISTER-sclass symbols. Running the minimal change
+and measuring took less time than the survey. Lesson: for "is X
+tractable" questions about unfamiliar code, spike first and
+autopsy only if the spike fails.
 
 **Evidence:**
 - `session_handoff.md:263-265`, `280-288`, `329-335`, `388-410` —
@@ -654,6 +684,15 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `385eafb` — `H2` closed. Spike produced a working 3-line allocator
+  change: extend `x.lastuse` tracking to REGISTER-sclass symbols,
+  drop the `!= REGISTER` guard on `putreg` in `ralloc`, widen
+  `tmask` to include r4–r7. Two corpus improvements
+  (FUN_06037E28 1074→1062, FUN_06044BCC 459→445), zero regressions
+  across 201 test subjects. Baselines re-pinned. The subagent
+  autopsy predicting "not tractable <50 lines" was wrong — it
+  missed that the existing freemask/askreg/spillee machinery
+  already handles the reuse once parameter regs are freed.
 - `2026-04-16` — `C3` closed. E28 assembles cleanly (0 errors, was
   38). Four fixes in the pool emission pipeline: literal splitting
   for widely-spread references, pending-pool tail-distance estimate,

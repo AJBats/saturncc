@@ -172,6 +172,35 @@ label appears at column 0 followed by `:`. Current implementation in
 
 ---
 
+### Parameter registers (r4-r7) are now freed at their last DAG use
+
+**Trigger:** any pass added to `src/sh.md` that assumes an argument
+register (r4–r7) holds the incoming parameter value for the entire
+function body — for example, an emit-time lookup that says "if it's
+an arg, rN is definitely still the caller's value here."
+
+**Result:** may read a stale value. Since `385eafb` (H2 spike), the
+allocator frees r4–r7 at their last DAG-node use and reuses them
+for temporaries. After that point, rN holds whatever the allocator
+put there — not the original parameter.
+
+**Why:** `src/gen.c`'s `ralloc` now calls `putreg(r)` at last-use
+for `sclass == REGISTER` symbols (previously temporary-only). The
+extended `x.lastuse` tracking in `setup()` lets this fire for
+parameters. `tmask` was widened (`0x0e | 0xf0`) so `askreg` picks
+r4–r7 once freed.
+
+**Workaround:** don't hand-wave "arg = rN" — use `usedmask` or
+walk the emitted body. If you need to reference an original
+parameter value after some unspecified point, explicitly keep it
+live (e.g., pin via `target()` or rely on the compiler to spill).
+
+**Invariant to preserve:** until the allocator's lastuse point for
+a parameter, that parameter's rN is the caller's value. After,
+treat rN as "any live-in temporary."
+
+---
+
 ### Bulk `sed` over `src/sh.md` will rewrite a helper's own body
 
 **Trigger:** running a `sed` substitution to refactor a widespread

@@ -49,8 +49,11 @@ are aspects of the same underlying problem".
 
   ┌─────────────────────────────────────────┐
   │ Gap 7B: base→displacement fold     ✓   │  SHIPPED (15a717b)
+  │ Gap 7A: param-reg reuse (partial)  ~   │  SHIPPED (385eafb);
+  │                                        │  base-factoring CSE
+  │                                        │  still open at
+  │                                        │  peephole layer
   └──────────────────┬──────────────────────┘
-                     │ Layer A (allocator) still open;
                      │ shared root with Gap 4 (allocator
                      │ doesn't keep long-lived derived
                      │ values in regs)
@@ -292,21 +295,26 @@ add #K,rB; mov.X @rB,rC` (and the store mirror) into
   FUN_06040EA0) but principled; would need the constant-store value
   to be in R0 for byte/word stores.
 
-#### Layer A (allocator) — open, deeper
+#### Layer A (allocator) — partial, shipped
 
-**Status:** open. Shares root cause with Gap 4.
+**Status:** partial — `385eafb` shipped parameter-register reuse
+after last DAG use (methodology_remediation H2 spike). The
+allocator now uses r4–r7 as additional scratch once parameters
+are consumed, shrinking spill pressure on register-saturated
+functions (FUN_06037E28 -12 lines, FUN_06044BCC -14 lines).
 
-Copying `r4 → r1` before each `add` to preserve r4 happens because
-our allocator assumes r4 is live. Production mutates r4 directly
-since r4 is dead at the epilogue. An allocator-side fix that
-understood parameter-register liveness would drop the copies and
-match prod's exact register choice (r4 as persistent base). Smaller
-change than the peephole but deeper — requires `gen.c` surgery.
+What's still open: **base-factoring CSE.** Production does more
+than just mutate r4 — it identifies clustered `@(K_i, rA)`
+accesses, hoists `add #K_center, rA` once when rA is dead-at-
+epilogue, and rewrites the group as relative displacements off
+the mutated base. FUN_0604025C is the canonical example: prod
+does `add #0x10, r4` once, then expresses four subsequent stores
+as `@(3,r4)`, `@(2,r4)`, `@(4,r4)`, return. That requires a
+peephole-layer pass similar to the shipped `sh_fold_base_displacement`
+but with cluster-detection logic. Allocator can't see it — the
+offsets are visible per-node, not as a group.
 
-**See also:** methodology_remediation H2 — spike this as the
-smallest concrete allocator fix to answer "is `gen.c` extensible
-enough for vmask/liveness-aware changes?" before committing to
-Gap 5's full fix.
+Shares root cause with Gap 4 (loop-invariant spill elimination).
 
 ---
 
