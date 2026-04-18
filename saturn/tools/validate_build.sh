@@ -361,6 +361,61 @@ else
 fi
 rm -f "$pragma_err"
 
+# 4x. CODEGEN: #pragma regsave extends prologue to [lowest_dirty..r14].
+# Under high register pressure where the allocator naturally uses
+# r8, r9, r11 (skipping r10 because it's not needed), regsave must
+# extend the save set to the full r8..r14 contiguous range. Verified
+# by counting the `mov.l rN,@-r15` pushes for r8..r14 in prologue.
+cat > /tmp/regtest.c <<'EOF'
+#pragma regsave(stress)
+extern int ext(int);
+int stress(int a, int b, int c, int d) {
+    int x1 = ext(a); int x2 = ext(b); int x3 = ext(c);
+    int x4 = ext(d); int x5 = ext(a + b); int x6 = ext(c + d);
+    int x7 = ext(x1 + x2);
+    return x1 + x2 + x3 + x4 + x5 + x6 + x7;
+}
+EOF
+rs_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$rs_out" 2>/dev/null
+pushed=""
+for n in 14 13 12 11 10 9 8; do
+    if grep -q "mov.l[[:space:]]*r$n,@-r15" "$rs_out"; then
+        pushed="$pushed r$n"
+    fi
+done
+if [ "$pushed" = " r14 r13 r12 r11 r10 r9 r8" ]; then
+    pass "regtest: #pragma regsave extends prologue to r8..r14 contiguous"
+else
+    fail "regtest: #pragma regsave prologue missing r8..r14 (got:$pushed)"
+fi
+rm -f "$rs_out"
+
+# 4y. CODEGEN: WITHOUT #pragma regsave, the allocator is free to skip
+# unused callee-saved regs. Same function body as 4x minus the
+# pragma must NOT push every reg in r8..r14.
+cat > /tmp/regtest.c <<'EOF'
+extern int ext(int);
+int stress(int a, int b, int c, int d) {
+    int x1 = ext(a); int x2 = ext(b); int x3 = ext(c);
+    int x4 = ext(d); int x5 = ext(a + b); int x6 = ext(c + d);
+    int x7 = ext(x1 + x2);
+    return x1 + x2 + x3 + x4 + x5 + x6 + x7;
+}
+EOF
+rs_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$rs_out" 2>/dev/null
+full_range=1
+for n in 14 13 12 11 10 9 8; do
+    grep -q "mov.l[[:space:]]*r$n,@-r15" "$rs_out" || full_range=0
+done
+if [ "$full_range" = "0" ]; then
+    pass "regtest: without #pragma regsave, prologue skips unused callee-saved"
+else
+    fail "regtest: without #pragma regsave, prologue wrongly pushes full r8..r14"
+fi
+rm -f "$rs_out"
+
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
 #     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)

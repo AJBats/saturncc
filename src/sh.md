@@ -964,6 +964,35 @@ static void sh_record_func_attr(char *name, int attr) {
         sh_func_attrs = a;
 }
 
+/* Returns nonzero if the function named `name` was declared with any
+ * attr bit in `attrs`. Uses strcmp rather than pointer-equality
+ * because the interning paths for the pragma parser and the C
+ * frontend are both the global string table — same pointer in
+ * theory, but strcmp is cheap and keeps this robust under refactor. */
+static int sh_func_has_attr(const char *name, int attrs) {
+        struct sh_func_attr *a;
+        if (!name) return 0;
+        for (a = sh_func_attrs; a; a = a->next)
+                if (strcmp(a->name, name) == 0)
+                        return (a->flags & attrs) != 0;
+        return 0;
+}
+
+/* #pragma regsave bit-extension: find lowest set bit in [r8..r14] of
+ * `mask`; if any, set every bit in [lowest..14]. Idempotent, so it's
+ * safe to call both before the body-liveness rebuild and again after
+ * (the rebuild AND's with live-set and would otherwise strip the
+ * extended-but-unused bits that prod saves anyway). */
+static unsigned sh_regsave_extend(unsigned mask) {
+        int j, lowest = -1;
+        for (j = 8; j <= 14; j++)
+                if (mask & (1u << j)) { lowest = j; break; }
+        if (lowest >= 0)
+                for (j = lowest; j <= 14; j++)
+                        mask |= 1u << j;
+        return mask;
+}
+
 static void sh_record_global_reg(char *varname, int regnum) {
         struct sh_global_reg *g;
         for (g = sh_global_regs; g; g = g->next)
@@ -5812,6 +5841,21 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         if (need_fp)
                 usedmask[IREG] |= 1u << 14;
+
+        /* #pragma regsave: SHC v5.0 §3.10 — save the contiguous range
+         * [lowest_dirty..r14] at prologue, even if intermediate regs
+         * were never touched. This is the rule our corpus shows prod
+         * following for every tagged function. Inserted AFTER the
+         * speculative r14 rename so we don't force r14 into usedmask
+         * before the rename decision is made — the rename only fires
+         * when the allocator picked r14 as a var home, and regsave
+         * shouldn't change that signal. Re-applied after the post-
+         * peephole rebuild (see sizeisave rebuild block below) because
+         * that rebuild AND's with body-liveness and would otherwise
+         * strip the extended-but-never-referenced regs back out. */
+        if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
+                usedmask[IREG] = sh_regsave_extend(usedmask[IREG]);
+
         sizeisave = 4 * bitcount(usedmask[IREG]);
         if (ncalls)
                 sizeisave += 4;
@@ -5996,6 +6040,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         unsigned keep = usedmask[IREG] & live;
                         if (need_fp)
                                 keep |= 1u << 14;
+                        /* regsave re-extension: the body-liveness AND
+                         * above would drop r8..r14 bits that regsave
+                         * deliberately included but the body never
+                         * references. Re-extend so the save-range rule
+                         * survives the post-peephole trim. */
+                        if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
+                                keep = sh_regsave_extend(keep);
                         if (keep != usedmask[IREG]) {
                                 usedmask[IREG] = keep;
                                 sizeisave = 4 * bitcount(usedmask[IREG]);
