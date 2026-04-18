@@ -744,8 +744,6 @@ void FUN_060449b6(int *param_1,int param_2)
 
 /* ════════════════════ [013/196] FUN_06044A9A ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044A9A  0x06044A9A */
 
 
@@ -773,8 +771,6 @@ void FUN_06044a9a(void)
   *puVar1 = puVar3 + 0x20;
   return;
 }
-
-#endif
 
 /* ════════════════════ [014/196] FUN_06044ADA ════════════════════ */
 
