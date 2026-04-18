@@ -16,7 +16,21 @@ int lineno;		/* line number of current line */
 
 /* SaturnCompiler backend hook for unrecognized #pragma directives. */
 void (*shc_pragma_hook)(char *name) = 0;
-static char *deferred_pragma = 0;
+
+/* Pragmas encountered before shc_pragma_hook is wired (which happens
+ * in the backend's progbeg, AFTER main.c reads the first lookahead
+ * token) are deferred and replayed on flush_deferred_pragmas(). The
+ * original implementation stored only the pragma name, which worked
+ * for argument-less pragmas like `#pragma gbr_param` but silently
+ * dropped any parenthesized argument list. We now capture the rest
+ * of the line verbatim and redirect `cp` into that saved buffer at
+ * replay time so the hook's parser sees identical input. */
+struct deferred_pragma {
+	char *name;
+	char *args;   /* rest-of-line after name, null-terminated */
+	struct deferred_pragma *next;
+};
+static struct deferred_pragma *deferred_pragmas;
 
 void nextline(void) {
 	do {
@@ -111,15 +125,43 @@ static void pragma(void) {
 			(*shc_pragma_hook)(token);
 		}
 	} else if (t == ID && !shc_pragma_hook) {
-		deferred_pragma = string(token);
+		struct deferred_pragma *e;
+		char *start = (char *)cp, *end = start;
+		while (*end && *end != '\n')
+			end++;
+		NEW(e, PERM);
+		e->name = string(token);
+		e->args = stringn(start, end - start);
+		/* Prepended; flush reverses for FIFO replay order. */
+		e->next = deferred_pragmas;
+		deferred_pragmas = e;
 	}
 }
 
 void flush_deferred_pragmas(void) {
-	if (deferred_pragma && shc_pragma_hook) {
-		(*shc_pragma_hook)(deferred_pragma);
-		deferred_pragma = 0;
+	struct deferred_pragma *e, *prev = 0, *next;
+	unsigned char *saved_cp, *saved_limit;
+	if (!shc_pragma_hook)
+		return;
+	/* Reverse the list so pragmas fire in source order. */
+	for (e = deferred_pragmas; e; e = next) {
+		next = e->next;
+		e->next = prev;
+		prev = e;
 	}
+	deferred_pragmas = prev;
+	saved_cp = cp;
+	saved_limit = limit;
+	for (e = deferred_pragmas; e; e = e->next) {
+		cp = (unsigned char *)e->args;
+		/* limit must be past the null terminator so the lexer /
+		 * pragma parsers won't wander past the saved buffer. */
+		limit = cp + strlen(e->args) + 1;
+		(*shc_pragma_hook)(e->name);
+	}
+	cp = saved_cp;
+	limit = saved_limit;
+	deferred_pragmas = 0;
 }
 
 /* resynch - set line number/file name in # n [ "file" ], #pragma, etc. */

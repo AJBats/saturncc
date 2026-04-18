@@ -292,6 +292,75 @@ else
     fail "regtest: #pragma between two function bodies rejected (should accept)"
 fi
 
+# SHC v5.0 §3.10 / §3.11 register-save + global-register pragmas
+# (pragma_global_register.md workstream, Phase B).
+# All four must parse without diagnostic at file scope, including when
+# placed BEFORE any declaration — that path goes through deferred
+# flush which historically dropped pragma args. Also covers argument
+# parsing errors on malformed input.
+
+# 4t. POSITIVE: four pragmas at top-of-file (deferred-flush path).
+cat > /tmp/regtest.c <<'EOF'
+#pragma regsave(a, b)
+#pragma noregsave(c)
+#pragma noregalloc(d)
+#pragma global_register(ctx=R10, scratch=R14)
+int a(int x) { return x; }
+int b(int x) { return x; }
+int c(int x) { return x; }
+int d(int x) { return x; }
+EOF
+pragma_err="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$pragma_err"
+if [ ! -s "$pragma_err" ]; then
+    pass "regtest: top-of-file regsave/noregsave/noregalloc/global_register accepted"
+else
+    fail "regtest: top-of-file pragmas rejected — $(head -1 "$pragma_err")"
+fi
+rm -f "$pragma_err"
+
+# 4u. NEGATIVE: regsave missing '('.
+cat > /tmp/regtest.c <<'EOF'
+#pragma regsave
+int a(int x) { return x; }
+EOF
+pragma_err="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$pragma_err"
+if grep -q "#pragma regsave expects '('" "$pragma_err"; then
+    pass "regtest: #pragma regsave missing '(' rejected with expected message"
+else
+    fail "regtest: #pragma regsave missing '(' not rejected as expected"
+fi
+rm -f "$pragma_err"
+
+# 4v. NEGATIVE: global_register with out-of-range register.
+cat > /tmp/regtest.c <<'EOF'
+#pragma global_register(ctx=R5)
+int a(int x) { return x; }
+EOF
+pragma_err="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$pragma_err"
+if grep -q "register must be R8..R14" "$pragma_err"; then
+    pass "regtest: #pragma global_register out-of-range rejected with expected message"
+else
+    fail "regtest: #pragma global_register out-of-range not rejected as expected"
+fi
+rm -f "$pragma_err"
+
+# 4w. NEGATIVE: global_register missing '=' between var and reg.
+cat > /tmp/regtest.c <<'EOF'
+#pragma global_register(ctx R10)
+int a(int x) { return x; }
+EOF
+pragma_err="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$pragma_err"
+if grep -q "#pragma global_register expects '='" "$pragma_err"; then
+    pass "regtest: #pragma global_register missing '=' rejected with expected message"
+else
+    fail "regtest: #pragma global_register missing '=' not rejected as expected"
+fi
+rm -f "$pragma_err"
+
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
 #     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)

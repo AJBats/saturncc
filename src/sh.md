@@ -928,11 +928,191 @@ static int sh_disp_cost(Node a, int sz) {
         return SH_GBR_REJECT;
 }
 
-/* #pragma handler wired up through the input.c hook. Recognizes
- * `#pragma gbr_base (name)` — the syntax Hitachi SHC uses — and
- * records the identifier as the base symbol for GBR-relative
- * addressing. Unknown pragmas are silently ignored (same behavior
- * as unmodified LCC). */
+/* Per-function register-save attribute storage. Populated by
+ * #pragma regsave / noregsave / noregalloc during parse; consumed
+ * by prologue/epilogue emission and the allocator in a later phase.
+ * PERM-arena allocated so entries persist for the whole TU. Names
+ * are interned via stringn() so pointer equality is lookup-safe. */
+#define SH_ATTR_REGSAVE    0x01
+#define SH_ATTR_NOREGSAVE  0x02
+#define SH_ATTR_NOREGALLOC 0x04
+
+struct sh_func_attr {
+        char *name;
+        int flags;
+        struct sh_func_attr *next;
+};
+static struct sh_func_attr *sh_func_attrs;
+
+/* TU-wide global-register bindings from #pragma global_register.
+ * Allowed registers are R8..R14 per SHC v5.0 §3.11. */
+struct sh_global_reg {
+        char *varname;
+        int regnum;
+        struct sh_global_reg *next;
+};
+static struct sh_global_reg *sh_global_regs;
+
+static void sh_record_func_attr(char *name, int attr) {
+        struct sh_func_attr *a;
+        for (a = sh_func_attrs; a; a = a->next)
+                if (a->name == name) { a->flags |= attr; return; }
+        NEW(a, PERM);
+        a->name = name;
+        a->flags = attr;
+        a->next = sh_func_attrs;
+        sh_func_attrs = a;
+}
+
+static void sh_record_global_reg(char *varname, int regnum) {
+        struct sh_global_reg *g;
+        for (g = sh_global_regs; g; g = g->next)
+                if (g->varname == varname) {
+                        if (g->regnum != regnum)
+                                warning("#pragma global_register: %s rebound "
+                                        "from R%d to R%d\n",
+                                        varname, g->regnum, regnum);
+                        g->regnum = regnum;
+                        return;
+                }
+        NEW(g, PERM);
+        g->varname = varname;
+        g->regnum = regnum;
+        g->next = sh_global_regs;
+        sh_global_regs = g;
+}
+
+/* Raw-pointer ident read off cp. Returns interned string or NULL.
+ * Does not call gettok(), so it cannot accidentally cross a newline
+ * into the next source line. Stops at the first non-ident char. */
+static char *sh_pragma_read_ident(void) {
+        char *start;
+        while (*cp == ' ' || *cp == '\t')
+                cp++;
+        if (!((*cp >= 'A' && *cp <= 'Z') ||
+              (*cp >= 'a' && *cp <= 'z') ||
+              *cp == '_'))
+                return NULL;
+        start = (char *)cp;
+        while ((*cp >= 'A' && *cp <= 'Z') ||
+               (*cp >= 'a' && *cp <= 'z') ||
+               (*cp >= '0' && *cp <= '9') ||
+               *cp == '_')
+                cp++;
+        return stringn(start, (char *)cp - start);
+}
+
+static void sh_pragma_skip_spaces(void) {
+        while (*cp == ' ' || *cp == '\t')
+                cp++;
+}
+
+/* Parse `(f1, f2, ...)` and set `attr` on each named function. */
+static void sh_parse_func_list(const char *pragma_name, int attr) {
+        char *fname;
+        sh_pragma_skip_spaces();
+        if (*cp != '(') {
+                error("#pragma %s expects '('\n", pragma_name);
+                return;
+        }
+        cp++;
+        for (;;) {
+                sh_pragma_skip_spaces();
+                if (*cp == ')') { cp++; return; }
+                if (*cp == '\n' || *cp == 0) {
+                        error("#pragma %s missing ')'\n", pragma_name);
+                        return;
+                }
+                fname = sh_pragma_read_ident();
+                if (!fname) {
+                        error("#pragma %s expects function identifier\n",
+                              pragma_name);
+                        return;
+                }
+                sh_record_func_attr(fname, attr);
+                sh_pragma_skip_spaces();
+                if (*cp == ',') { cp++; continue; }
+                if (*cp == ')') { cp++; return; }
+                error("#pragma %s expects ',' or ')'\n", pragma_name);
+                return;
+        }
+}
+
+/* Parse `(var1=Rn, var2=Rm, ...)`. Rn must be R8..R14. */
+static void sh_parse_global_register(void) {
+        char *var, *reg;
+        int regnum;
+        sh_pragma_skip_spaces();
+        if (*cp != '(') {
+                error("#pragma global_register expects '('\n");
+                return;
+        }
+        cp++;
+        for (;;) {
+                sh_pragma_skip_spaces();
+                if (*cp == ')') { cp++; return; }
+                if (*cp == '\n' || *cp == 0) {
+                        error("#pragma global_register missing ')'\n");
+                        return;
+                }
+                var = sh_pragma_read_ident();
+                if (!var) {
+                        error("#pragma global_register expects variable name\n");
+                        return;
+                }
+                sh_pragma_skip_spaces();
+                if (*cp != '=') {
+                        error("#pragma global_register expects '=' after %s\n",
+                              var);
+                        return;
+                }
+                cp++;
+                reg = sh_pragma_read_ident();
+                if (!reg) {
+                        error("#pragma global_register expects register name\n");
+                        return;
+                }
+                /* Parse Rn or rn where n is 8..14. */
+                regnum = -1;
+                if ((reg[0] == 'R' || reg[0] == 'r') &&
+                    reg[1] >= '0' && reg[1] <= '9') {
+                        regnum = reg[1] - '0';
+                        if (reg[2] >= '0' && reg[2] <= '9') {
+                                regnum = regnum * 10 + (reg[2] - '0');
+                                if (reg[3] != 0)
+                                        regnum = -1;
+                        } else if (reg[2] != 0) {
+                                regnum = -1;
+                        }
+                }
+                if (regnum < 8 || regnum > 14) {
+                        error("#pragma global_register: register must be "
+                              "R8..R14, got %s\n", reg);
+                        return;
+                }
+                sh_record_global_reg(var, regnum);
+                sh_pragma_skip_spaces();
+                if (*cp == ',') { cp++; continue; }
+                if (*cp == ')') { cp++; return; }
+                error("#pragma global_register expects ',' or ')'\n");
+                return;
+        }
+}
+
+/* #pragma handler wired up through the input.c hook. Recognizes:
+ *   - `#pragma gbr_base (name)` — Hitachi GBR base symbol
+ *   - `#pragma gbr_param` — Saturn-specific GBR prologue
+ *   - `#pragma sh_weird_rule_1` — see sh_apply_weird_rule_1
+ *   - `#pragma regsave (f1, f2, ...)` — SHC v5.0 §3.10: save/restore
+ *     R8..R14 at prologue/epilogue and around calls
+ *   - `#pragma noregsave (f1, f2, ...)` — SHC v5.0 §3.10: skip
+ *     prologue/epilogue save of R8..R14
+ *   - `#pragma noregalloc (f1, f2, ...)` — SHC v5.0 §3.10: allocator
+ *     does not touch R8..R14 (bridge pragma)
+ *   - `#pragma global_register (var=Rn, ...)` — SHC v5.0 §3.11:
+ *     TU-wide binding of a global variable to one of R8..R14
+ * Unknown pragmas are silently ignored (same behavior as unmodified
+ * LCC). */
 static void sh_pragma(char *name) {
         if (strcmp(name, "gbr_base") == 0) {
                 while (*cp == ' ' || *cp == '\t')
@@ -948,6 +1128,14 @@ static void sh_pragma(char *name) {
                 sh_gbr_param = 1;
         } else if (strcmp(name, "sh_weird_rule_1") == 0) {
                 sh_weird_rule_1 = 1;
+        } else if (strcmp(name, "regsave") == 0) {
+                sh_parse_func_list("regsave", SH_ATTR_REGSAVE);
+        } else if (strcmp(name, "noregsave") == 0) {
+                sh_parse_func_list("noregsave", SH_ATTR_NOREGSAVE);
+        } else if (strcmp(name, "noregalloc") == 0) {
+                sh_parse_func_list("noregalloc", SH_ATTR_NOREGALLOC);
+        } else if (strcmp(name, "global_register") == 0) {
+                sh_parse_global_register();
         }
 }
 
