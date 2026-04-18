@@ -4,8 +4,8 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 134 / 196
-- Remaining: 56
+- Sanitized: 154 / 196
+- Remaining: 36
 - Skipped (⚠): 6 — #112-115 and #124, #127. All hit Gap 18
   (LCC CSE-hoists 64-bit values into ASGNI8(VREGP, ...) shapes
   with no lburg rule; the #112-115 set is de-fused `mac.l`
@@ -192,26 +192,26 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 138. `FUN_06046BD4`
 - [x] 139. `FUN_06046BF4`
 - [x] 140. `FUN_06046C14`
-- [ ] 141. `FUN_06046CD0`
-- [ ] 142. `FUN_06046CF0`
-- [ ] 143. `FUN_06046D10`
-- [ ] 144. `FUN_06046D30`
-- [ ] 145. `FUN_06046D78`
-- [ ] 146. `FUN_06046D98`
-- [ ] 147. `FUN_06046E0E`
-- [ ] 148. `FUN_06046E64`
-- [ ] 149. `FUN_06046EBC`
-- [ ] 150. `FUN_06046FD4`
-- [ ] 151. `FUN_06047014`
-- [ ] 152. `FUN_0604708C`
-- [ ] 153. `FUN_060470A8`
-- [ ] 154. `FUN_060470C4`
-- [ ] 155. `FUN_060470D6`
-- [ ] 156. `FUN_060470EC`
-- [ ] 157. `FUN_060470FE`
-- [ ] 158. `FUN_06047118`
-- [ ] 159. `FUN_06047140`
-- [ ] 160. `FUN_06047184`
+- [x] 141. `FUN_06046CD0`
+- [x] 142. `FUN_06046CF0`
+- [x] 143. `FUN_06046D10`
+- [x] 144. `FUN_06046D30`
+- [x] 145. `FUN_06046D78`
+- [x] 146. `FUN_06046D98`
+- [x] 147. `FUN_06046E0E`
+- [x] 148. `FUN_06046E64`
+- [x] 149. `FUN_06046EBC`
+- [x] 150. `FUN_06046FD4`
+- [x] 151. `FUN_06047014`
+- [x] 152. `FUN_0604708C`
+- [x] 153. `FUN_060470A8`
+- [x] 154. `FUN_060470C4`
+- [x] 155. `FUN_060470D6`
+- [x] 156. `FUN_060470EC`
+- [x] 157. `FUN_060470FE`
+- [x] 158. `FUN_06047118`
+- [x] 159. `FUN_06047140`
+- [x] 160. `FUN_06047184`
 - [ ] 161. `FUN_060471F0`
 - [ ] 162. `FUN_0604720C`
 - [ ] 163. `FUN_06047228`
