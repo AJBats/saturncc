@@ -226,6 +226,33 @@ the sed can't match them.
 
 ---
 
+### `cfunc` must be cleared before `expect('}')` in function tail
+
+**Trigger:** a file-scope `#pragma` (e.g. `sh_weird_rule_1`) placed
+immediately after a function's closing `}`, with no intervening
+top-level declaration.
+
+**Result:** `input.c`'s pragma gate errors with `"#pragma X must
+appear at file scope, not inside a function body"` — because
+`expect('}')` in [decl.c](../../src/decl.c) calls `gettok()` to
+advance past the `}`, and the lookahead scans the following
+`#pragma` directive while `cfunc` is still non-null.
+
+**History:** Surfaced on 2026-04-18 when sanitizing
+`FUN_06044060` in the race_FUN_06044060 TU — FUN_06044834
+(already pragma'd) sat directly after the new function with no
+other declarations between. When FUN_06044834 was the first
+unwrapped function, nothing preceded the pragma so the bug was
+invisible.
+
+**Fix shipped:** move `cfunc = NULL;` to *before* `expect('}');`
+in [decl.c](../../src/decl.c) function-body tail. Don't reorder
+these back — the `}` lookahead must see `cfunc` already cleared.
+Regression guard: `regtest: #pragma between two function bodies
+accepted` in `validate_build.sh` stage 4q.
+
+---
+
 ## Build / harness
 
 ### `$(pwd)` mangling under WSL-invoked Bash

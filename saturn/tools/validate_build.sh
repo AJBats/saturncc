@@ -255,6 +255,23 @@ else
 fi
 rm -f "$pragma_err"
 
+# 4q. POSITIVE: #pragma between two function bodies compiles clean.
+# Regression guard for the cfunc/expect('}') lookahead bug — see
+# landmines.md "cfunc must be cleared before expect('}') in function
+# tail". If cfunc = NULL is moved back after expect('}'), the gettok()
+# lookahead past the first function's '}' tokenizes this pragma while
+# cfunc is still set, falsely rejecting it as mid-function.
+cat > /tmp/regtest.c <<'EOF'
+void f(void) {}
+#pragma gbr_param
+int g(int x) { return x; }
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>/dev/null; then
+    pass "regtest: #pragma between two function bodies accepted"
+else
+    fail "regtest: #pragma between two function bodies rejected (should accept)"
+fi
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:

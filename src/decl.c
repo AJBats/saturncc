@@ -805,10 +805,15 @@ static void funcdefn(int sclass, char *id, Type ty, Symbol params[], Coordinate 
 		(*IR->stabfend)(cfunc, lineno);
 	foreach(stmtlabs, LABELS, checklab, NULL);
 	exitscope();
+	/* Clear cfunc before expect('}'), which calls gettok() — the
+	 * lookahead scans past the '}' and may fire a #pragma hook. The
+	 * Saturn backend's pragma gate in input.c rejects pragmas while
+	 * cfunc != NULL, which would false-positive on a file-scope
+	 * #pragma immediately following a function body. */
+	cfunc = NULL;
 	expect('}');
 	labels = stmtlabs = NULL;
 	retv  = NULL;
-	cfunc = NULL;
 }
 static void oldparam(Symbol p, void *cl) {
 	int i;
