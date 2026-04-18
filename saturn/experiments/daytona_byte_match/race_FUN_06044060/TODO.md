@@ -4,8 +4,8 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 19 / 196
-- Remaining: 177
+- Sanitized: 23 / 196
+- Remaining: 173
 - Skipped (⚠): 0 — the previous 5 skips were all resolved by
   rcc compiler fixes; Ghidra sources are pristine again.
 
@@ -64,10 +64,10 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 017. `FUN_06044D64`
 - [x] 018. `FUN_06044D74`
 - [x] 019. `FUN_06044D80`
-- [ ] 020. `FUN_06044DA8`
-- [ ] 021. `FUN_06044DB8`
-- [ ] 022. `FUN_06044E28`
-- [ ] 023. `FUN_06044E3C`
+- [x] 020. `FUN_06044DA8`
+- [x] 021. `FUN_06044DB8`
+- [x] 022. `FUN_06044E28`
+- [x] 023. `FUN_06044E3C`
 - [ ] 024. `FUN_06045006`
 - [ ] 025. `FUN_06045008`
 - [ ] 026. `FUN_06045020`
