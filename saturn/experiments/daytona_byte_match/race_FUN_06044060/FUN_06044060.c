@@ -28,7 +28,7 @@
  * K&R-style (unspecified args) so Ghidra callers can pass whatever
  * Ghidra inferred without prototype-mismatch errors. */
 int FUN_06044834();    /* [008/196], called by #006 */
-void FUN_06044788();   /* [007/196], called by #006 */
+uint FUN_06044788();   /* [007/196], called by #006 */
 
 
 /* ════════════════════ [001/196] FUN_06044060 ════════════════════ */
@@ -500,11 +500,12 @@ void FUN_060446f4(int param_1)
 
 /* ════════════════════ [007/196] FUN_06044788 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044788  0x06044788 */
 
-
+/* Note: Ghidra emits `unaff_rN` locals (uninitialized) for register
+ * values the callee reads that weren't resolved as formal params.
+ * Left as uninitialized locals — compile-clean only, codegen output
+ * is expected to be wrong and byte-match phase will revisit. */
 uint FUN_06044788(int *param_1)
 
 {
@@ -547,8 +548,6 @@ uint FUN_06044788(int *param_1)
   }
   return uVar2;
 }
-
-#endif
 
 /* ════════════════════ [008/196] FUN_06044834 ════════════════════ */
 
