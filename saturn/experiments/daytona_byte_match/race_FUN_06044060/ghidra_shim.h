@@ -284,6 +284,99 @@ extern int DAT_0604717e;
 extern int DAT_06047180;
 extern int DAT_060471bc;
 extern int DAT_060472c6;
+extern int DAT_060472e0;
+/* ---- FUN_06047548 (#177) ---- */
+extern int switchD_06047550__switchdataD_0604757c;
+extern code *PTR_FUN_06043ed8;
+extern code *PTR_FUN_06043ee0;
+extern code *PTR_FUN_06043ee8;
+extern code *PTR_SUB_06043ecc;
+extern code *PTR_SUB_06043ed0;
+extern code *PTR_SUB_06043ed4;
+extern code *PTR_SUB_06043edc;
+extern int DAT_06044000;
+extern int DAT_06044024;
+extern int DAT_06044048;
+/* ---- FUN_06047770+ (#180) ---- */
+extern int DAT_060477b0;
+/* ---- FUN_060477FC (#183) and related ---- */
+extern short DAT_06047884;
+extern short DAT_06047886;
+extern short DAT_06047888;
+extern short DAT_0604788a;
+extern undefined4 *DAT_0604788c;
+extern code *DAT_06047890;
+extern int *DAT_06047894;
+extern char *DAT_06047898;
+extern int DAT_0604789c;
+extern int *PTR_LAB_060478a0;
+extern code *DAT_060478a4;
+extern int DAT_060478a8;
+extern int DAT_060478ac;
+extern int DAT_060478b0;
+extern int DAT_060478b4;
+extern short DAT_0604793a;
+extern short DAT_0604793c;
+extern short DAT_0604793e;
+extern short DAT_06047940;
+extern short DAT_06047942;
+extern short DAT_06047944;
+extern int DAT_06047948;
+extern int *PTR_LAB_0604794c;
+extern code *DAT_06047950;
+extern int DAT_06047954;
+extern int DAT_06047958;
+extern int DAT_0604795c;
+extern code *DAT_06047960;
+extern int *DAT_06047964;
+/* ---- FUN_0604791A (#185) ---- */
+extern int DAT_06047968;
+/* ---- FUN_0604796C (#186) ---- */
+extern int DAT_0604799c;
+/* ---- FUN_06047986 (#187) ---- */
+extern short DAT_06047998;
+/* ---- FUN_060479A0 (#188) ---- */
+extern short DAT_060479d2;
+extern short DAT_060479d4;
+/* ---- FUN_060479D6+ (#189, #190) ---- */
+extern undefined2 DAT_06047a48;
+extern undefined2 DAT_06047a4a;
+extern int *DAT_06047a50;
+extern undefined2 *DAT_06047a54;
+extern int DAT_06047a58;
+extern int *PTR_DAT_06047a5c;
+extern int *PTR_DAT_06047a60;
+extern int DAT_06047a64;
+extern int *PTR_DAT_06047a68;
+/* ---- FUN_06047A84 (#191) ---- */
+extern undefined2 DAT_06047ac6;
+extern undefined2 DAT_06047ac8;
+extern undefined2 DAT_06047aca;
+extern short DAT_06047acc;
+extern undefined2 DAT_06047ace;
+extern undefined2 DAT_06047ad0;
+extern undefined4 DAT_06047ad4;
+extern undefined4 DAT_06047ad8;
+extern byte *DAT_06047adc;
+/* ---- FUN_06047AE0 (#192) ---- */
+extern undefined2 DAT_06047af8;
+extern undefined2 DAT_06047afa;
+extern undefined4 **DAT_06047afc;
+/* ---- FUN_06047B00/B34 (#193, #194) ---- */
+extern undefined2 DAT_06047b6c;
+extern undefined2 DAT_06047b6e;
+extern undefined2 DAT_06047b70;
+extern undefined2 DAT_06047b72;
+extern undefined4 DAT_06047b74;
+extern undefined4 DAT_06047b78;
+extern undefined4 DAT_06047b7c;
+extern undefined4 DAT_06047b80;
+extern undefined4 DAT_06047b84;
+extern undefined4 DAT_06047b88;
+extern undefined4 DAT_06047b8c;
+/* ---- FUN_06047D3C (#195) ---- */
+extern int DAT_06047db0;
+extern int PTR_DAT_06047db8;
 extern undefined4 uRam06046700;
 extern code *pcRam06046704;
 extern code *pcRam06046708;

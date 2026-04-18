@@ -9074,8 +9074,6 @@ undefined4 FUN_06047184(void)
 
 /* ════════════════════ [161/196] FUN_060471F0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060471F0  0x060471F0 */
 
 
@@ -9086,7 +9084,7 @@ int FUN_060471f0(void)
   undefined4 *unaff_r10;
   undefined4 *unaff_r11;
   int unaff_gbr;
-  
+
   *unaff_r11 = *unaff_r10;
   unaff_r11[1] = unaff_r10[1];
   FUN_0604727c();
@@ -9095,12 +9093,8 @@ int FUN_060471f0(void)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [162/196] FUN_0604720C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604720C  0x0604720C */
 
 
@@ -9111,7 +9105,7 @@ int FUN_0604720c(void)
   undefined4 *unaff_r10;
   undefined4 *unaff_r11;
   int unaff_gbr;
-  
+
   *unaff_r11 = *unaff_r10;
   unaff_r11[1] = unaff_r10[1];
   FUN_0604727c();
@@ -9120,12 +9114,8 @@ int FUN_0604720c(void)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [163/196] FUN_06047228 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047228  0x06047228 */
 
 
@@ -9134,19 +9124,15 @@ int FUN_06047228(void)
 {
   int iVar1;
   int unaff_gbr;
-  
+
   FUN_0604727c();
   iVar1 = *(char *)(unaff_gbr + 0x9a) + 1;
   *(char *)(unaff_gbr + 0x9a) = (char)iVar1;
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [164/196] FUN_0604723A ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604723A  0x0604723A */
 
 
@@ -9155,7 +9141,7 @@ int FUN_0604723a(void)
 {
   int iVar1;
   int unaff_gbr;
-  
+
   func_0x0604727c();
   func_0x0604727c();
   iVar1 = *(char *)(unaff_gbr + 0x9a) + 2;
@@ -9163,12 +9149,8 @@ int FUN_0604723a(void)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [165/196] FUN_06047250 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047250  0x06047250 */
 
 
@@ -9177,19 +9159,15 @@ int FUN_06047250(void)
 {
   int iVar1;
   int unaff_gbr;
-  
+
   FUN_0604727c();
   iVar1 = *(char *)(unaff_gbr + 0x9a) + 1;
   *(char *)(unaff_gbr + 0x9a) = (char)iVar1;
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [166/196] FUN_06047262 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047262  0x06047262 */
 
 
@@ -9198,7 +9176,7 @@ int FUN_06047262(void)
 {
   int iVar1;
   int unaff_gbr;
-  
+
   func_0x0604727c();
   func_0x0604727c();
   iVar1 = *(char *)(unaff_gbr + 0x9a) + 2;
@@ -9206,12 +9184,8 @@ int FUN_06047262(void)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [167/196] FUN_06047270 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047270  0x06047270 */
 
 
@@ -9220,17 +9194,13 @@ void FUN_06047270(void)
 {
   undefined1 in_r0;
   int unaff_gbr;
-  
+
   *(undefined1 *)(unaff_gbr + 0x9a) = in_r0;
   return;
 }
 
-#endif
-
 /* ════════════════════ [168/196] FUN_0604727C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604727C  0x0604727C */
 
 
@@ -9240,18 +9210,14 @@ undefined4 FUN_0604727c(void)
   undefined4 uVar1;
   undefined4 extraout_r3;
   undefined4 *unaff_r11;
-  
+
   uVar1 = FUN_0604728e();
   *unaff_r11 = extraout_r3;
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [169/196] FUN_0604728E ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604728E  0x0604728E */
 
 
@@ -9265,7 +9231,7 @@ uint FUN_0604728e(void)
   int in_r2;
   short in_r3;
   short sVar2;
-  
+
   iVar1 = in_r1;
   if (in_r2 < in_r1) {
     iVar1 = in_r2;
@@ -9277,12 +9243,8 @@ uint FUN_0604728e(void)
   return _DAT_ffffff1c + (short)iVar1 & 0xffff;
 }
 
-#endif
-
 /* ════════════════════ [170/196] FUN_060472CC ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060472CC  0x060472CC */
 
 
@@ -9290,19 +9252,15 @@ void FUN_060472cc(void)
 
 {
   int unaff_gbr;
-  
+
                     /* WARNING: Could not recover jumptable at 0x060472da. Too many branches */
                     /* WARNING: Treating indirect jump as call */
   (*(code *)(*(short *)(&DAT_060472e0 + *(char *)(unaff_gbr + 0x9a) * 2) + 0x60472de))();
   return;
 }
 
-#endif
-
 /* ════════════════════ [171/196] FUN_06047332 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047332  0x06047332 */
 
 
@@ -9315,7 +9273,7 @@ undefined4 FUN_06047332(void)
   byte *in_r7;
   undefined4 *unaff_r10;
   int unaff_gbr;
-  
+
   uVar1 = unaff_r10[2];
   uVar2 = unaff_r10[4];
   uVar3 = unaff_r10[8];
@@ -9339,12 +9297,8 @@ undefined4 FUN_06047332(void)
   return 8;
 }
 
-#endif
-
 /* ════════════════════ [172/196] FUN_0604737A ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604737A  0x0604737A */
 
 
@@ -9357,7 +9311,7 @@ undefined4 FUN_0604737a(void)
   byte *in_r7;
   undefined4 *unaff_r10;
   int unaff_gbr;
-  
+
   uVar1 = unaff_r10[2];
   uVar2 = unaff_r10[6];
   uVar3 = unaff_r10[8];
@@ -9381,12 +9335,8 @@ undefined4 FUN_0604737a(void)
   return 8;
 }
 
-#endif
-
 /* ════════════════════ [173/196] FUN_060473CA ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060473CA  0x060473CA */
 
 
@@ -9399,7 +9349,7 @@ undefined4 FUN_060473ca(void)
   byte *in_r7;
   undefined4 *unaff_r10;
   int unaff_gbr;
-  
+
   uVar1 = unaff_r10[2];
   uVar2 = unaff_r10[4];
   uVar3 = unaff_r10[10];
@@ -9424,12 +9374,8 @@ undefined4 FUN_060473ca(void)
   return 8;
 }
 
-#endif
-
 /* ════════════════════ [174/196] FUN_06047414 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047414  0x06047414 */
 
 
@@ -9442,7 +9388,7 @@ undefined4 FUN_06047414(void)
   byte *in_r7;
   undefined4 *unaff_r10;
   int unaff_gbr;
-  
+
   uVar1 = unaff_r10[2];
   uVar2 = unaff_r10[8];
   uVar3 = unaff_r10[10];
@@ -9467,12 +9413,8 @@ undefined4 FUN_06047414(void)
   return 8;
 }
 
-#endif
-
 /* ════════════════════ [175/196] FUN_06047460 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047460  0x06047460 */
 
 
@@ -9486,7 +9428,7 @@ undefined4 FUN_06047460(void)
   byte *pbVar4;
   undefined4 *unaff_r10;
   int unaff_gbr;
-  
+
   uVar1 = unaff_r10[2];
   uVar2 = unaff_r10[8];
   uVar3 = unaff_r10[10];
@@ -9523,12 +9465,8 @@ undefined4 FUN_06047460(void)
   return 0xc;
 }
 
-#endif
-
 /* ════════════════════ [176/196] FUN_060474D4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060474D4  0x060474D4 */
 
 
@@ -9542,7 +9480,7 @@ undefined4 FUN_060474d4(void)
   byte *pbVar4;
   undefined4 *unaff_r10;
   int unaff_gbr;
-  
+
   uVar1 = unaff_r10[2];
   uVar2 = unaff_r10[8];
   uVar3 = unaff_r10[10];
@@ -9580,12 +9518,8 @@ undefined4 FUN_060474d4(void)
   return 0xc;
 }
 
-#endif
-
 /* ════════════════════ [177/196] FUN_06047548 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047548  0x06047548 */
 
 
@@ -9707,12 +9641,8 @@ void FUN_06047548(int param_1,undefined4 param_2,undefined1 param_3)
   return;
 }
 
-#endif
-
 /* ════════════════════ [178/196] FUN_06047588 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047588  0x06047588 */
 
 
@@ -9815,12 +9745,8 @@ LAB_06047640:
   return;
 }
 
-#endif
-
 /* ════════════════════ [179/196] FUN_06047748 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047748  0x06047748 */
 
 
@@ -9842,12 +9768,8 @@ void FUN_06047748(int param_1,short *param_2,int param_3)
   return;
 }
 
-#endif
-
 /* ════════════════════ [180/196] FUN_06047770 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047770  0x06047770 */
 
 
@@ -9879,12 +9801,8 @@ int FUN_06047770(short *param_1,int param_2,int param_3,int param_4)
   return iVar3;
 }
 
-#endif
-
 /* ════════════════════ [181/196] FUN_060477D4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060477D4  0x060477D4 */
 
 
@@ -9897,12 +9815,8 @@ undefined4 FUN_060477d4(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [182/196] FUN_060477D6 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060477D6  0x060477D6 */
 
 
@@ -9910,18 +9824,22 @@ undefined4 FUN_060477d6(void)
 
 {
   undefined4 uVar1;
-  
+
   uVar1 = FUN_060477fc();
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [183/196] FUN_060477FC ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
-/* FUN_060477FC  0x060477FC */
+/* FUN_060477FC  0x060477FC
+ * Sanitized for compile-clean: `uVar6 = FUN_060479a0(...)` became a
+ * bare statement call (FUN_060479a0 is void-sanitized per Gap 15,
+ * see #188); the two trailing `func_0x0604796c(..., uVar6-half)`
+ * calls — which modelled dispatch of the r0:r1 multi-register
+ * return — are dropped, since reading hi/lo of an uninitialized
+ * undefined8 local hits an unsupported ARGI4(RSHU8(INDIRU8(VREGP)))
+ * shape. Byte-match reconstruction of the r0:r1 dispatch is Gap 15
+ * work. */
 
 
 undefined4 FUN_060477fc(void)
@@ -9932,8 +9850,7 @@ undefined4 FUN_060477fc(void)
   int iVar3;
   int iVar4;
   int iVar5;
-  undefined8 uVar6;
-  
+
   puVar1 = DAT_0604788c;
   uVar2 = *DAT_0604788c;
   *(undefined2 *)DAT_0604788c[1] = DAT_06047884;
@@ -9957,7 +9874,7 @@ undefined4 FUN_060477fc(void)
   *(int *)(DAT_06047948 + 4) = (int)DAT_0604793a;
   *(int *)(iVar3 + 8) = iVar5;
   (*DAT_06047950)(PTR_LAB_0604794c);
-  uVar6 = FUN_060479a0(DAT_06047954,DAT_06047958);
+  FUN_060479a0(DAT_06047954,DAT_06047958);
   iVar5 = (int)DAT_0604793e;
   iVar4 = (int)DAT_06047940;
   FUN_06047770(DAT_06047954,DAT_06047958);
@@ -9966,17 +9883,11 @@ undefined4 FUN_060477fc(void)
   *(undefined2 *)(iVar4 * 8 + iVar3 + 2) = DAT_06047944;
   (*DAT_06047960)();
   *DAT_06047964 = 0x11;
-  func_0x0604796c(*(undefined4 *)(DAT_06047948 + 4),(int)uVar6);
-  uVar2 = func_0x0604796c(*(undefined4 *)(DAT_06047948 + 8),(int)((ulonglong)uVar6 >> 0x20));
-  return uVar2;
+  return 0;
 }
-
-#endif
 
 /* ════════════════════ [184/196] FUN_06047866 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047866  0x06047866 */
 
 
@@ -9985,7 +9896,7 @@ undefined4 FUN_06047866(void)
 {
   undefined4 uVar1;
   undefined4 uVar2;
-  
+
   *DAT_06047894 = 0x11;
   uVar2 = *(undefined4 *)(DAT_0604789c + 4);
   uVar1 = FUN_06047748(uVar2,DAT_060478b4,DAT_060478ac);
@@ -9993,12 +9904,8 @@ undefined4 FUN_06047866(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [185/196] FUN_0604791A ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604791A  0x0604791A */
 
 
@@ -10008,7 +9915,7 @@ void FUN_0604791a(void)
   int iVar1;
   undefined4 uVar2;
   undefined4 uVar3;
-  
+
   *DAT_06047964 = 0x11;
   uVar2 = *(undefined4 *)(DAT_06047948 + 4);
   uVar3 = *(undefined4 *)(DAT_06047948 + 8);
@@ -10019,12 +9926,8 @@ void FUN_0604791a(void)
   return;
 }
 
-#endif
-
 /* ════════════════════ [186/196] FUN_0604796C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604796C  0x0604796C */
 
 
@@ -10032,7 +9935,7 @@ void FUN_0604796c(int param_1,undefined2 param_2)
 
 {
   undefined2 *puVar1;
-  
+
   for (puVar1 = (undefined2 *)(param_1 * 8 + DAT_0604799c); (*(byte *)(puVar1 + -1) & 0x70) == 0;
       puVar1 = puVar1 + 0x10) {
   }
@@ -10040,12 +9943,8 @@ void FUN_0604796c(int param_1,undefined2 param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [187/196] FUN_06047986 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047986  0x06047986 */
 
 
@@ -10062,22 +9961,19 @@ int FUN_06047986(short *param_1,int param_2)
   return (int)DAT_06047998;
 }
 
-#endif
-
 /* ════════════════════ [188/196] FUN_060479A0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
-/* FUN_060479A0  0x060479A0 */
-
-
-undefined8 FUN_060479a0(short *param_1,int param_2)
+/* FUN_060479A0  0x060479A0
+ * Sanitized (Gap 15): `undefined8` → `void`, dropped CONCAT44
+ * return. Models an r0:r1 multi-register return; byte-match will
+ * reconstruct via pragma or TU work. */
+void FUN_060479a0(short *param_1,int param_2)
 
 {
   int iVar1;
   short *psVar2;
   int iVar3;
-  
+
   psVar2 = param_1 + -2;
   iVar3 = param_2;
   do {
@@ -10096,15 +9992,11 @@ LAB_060479ba:
   } while (param_2 != 0);
   iVar3 = (int)DAT_060479d4;
 LAB_060479cc:
-  return CONCAT44(iVar3,iVar1);
+  return;
 }
-
-#endif
 
 /* ════════════════════ [189/196] FUN_060479D6 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060479D6  0x060479D6 */
 
 
@@ -10113,7 +10005,7 @@ undefined4 FUN_060479d6(void)
 {
   undefined4 uVar1;
   undefined2 *puVar2;
-  
+
   puVar2 = DAT_06047a54;
   *DAT_06047a50 = 0;
   FUN_06047a84();
@@ -10124,12 +10016,8 @@ undefined4 FUN_060479d6(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [190/196] FUN_06047A08 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047A08  0x06047A08 */
 
 
@@ -10140,7 +10028,7 @@ undefined4 FUN_06047a08(void)
   undefined2 extraout_r2;
   undefined2 extraout_r3;
   undefined2 *puVar2;
-  
+
   puVar2 = DAT_06047a54;
   *DAT_06047a50 = 1;
   FUN_06047a84();
@@ -10155,12 +10043,8 @@ undefined4 FUN_06047a08(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [191/196] FUN_06047A84 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047A84  0x06047A84 */
 
 
@@ -10169,7 +10053,7 @@ void FUN_06047a84(undefined2 *param_1)
 {
   undefined2 uVar1;
   short sVar2;
-  
+
   *param_1 = DAT_06047ac6;
   *(undefined4 *)(param_1 + 10) = DAT_06047ad4;
   param_1[0x10] = DAT_06047ac8;
@@ -10193,12 +10077,8 @@ void FUN_06047a84(undefined2 *param_1)
   return;
 }
 
-#endif
-
 /* ════════════════════ [192/196] FUN_06047AE0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047AE0  0x06047AE0 */
 
 
@@ -10207,7 +10087,7 @@ void FUN_06047ae0(int param_1)
 {
   undefined4 *puVar1;
   undefined2 *puVar2;
-  
+
   *(undefined2 *)(param_1 + 0x20) = DAT_06047af8;
   *(undefined4 *)(param_1 + 0x2c) = 0;
   puVar2 = (undefined2 *)(param_1 + 0x40);
@@ -10218,12 +10098,8 @@ void FUN_06047ae0(int param_1)
   return;
 }
 
-#endif
-
 /* ════════════════════ [193/196] FUN_06047B00 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047B00  0x06047B00 */
 
 
@@ -10242,12 +10118,8 @@ void FUN_06047b00(undefined2 *param_1,undefined4 *param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [194/196] FUN_06047B34 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047B34  0x06047B34 */
 
 
@@ -10268,12 +10140,8 @@ void FUN_06047b34(undefined2 *param_1)
   return;
 }
 
-#endif
-
 /* ════════════════════ [195/196] FUN_06047D3C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047D3C  0x06047D3C */
 
 
@@ -10283,12 +10151,8 @@ int FUN_06047d3c(int param_1)
   return (int)*(short *)(PTR_DAT_06047db8 + ((param_1 + 8U & DAT_06047db0) >> 2)) << 2;
 }
 
-#endif
-
 /* ════════════════════ [196/196] FUN_06047D46 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06047D46  0x06047D46 */
 
 
@@ -10296,8 +10160,6 @@ int FUN_06047d46(int param_1)
 
 {
   int in_r0;
-  
+
   return (int)*(short *)(in_r0 + param_1) << 2;
 }
-
-#endif
