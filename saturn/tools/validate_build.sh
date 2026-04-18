@@ -291,6 +291,59 @@ else
     fail "regtest: #pragma between two function bodies rejected (should accept)"
 fi
 
+# 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
+# Ghidra decompiles the dmuls.l/sts mach pair as
+#     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)
+# Backend collapses the whole shape (including LCC-inserted LOAD and
+# CV wrappers) to a single dmuls.l + sts mach emission. Regression
+# guard against bitrot in the mulhi_s / mulhi_u lburg nonterminals
+# or the RSH+U8 case in the emit switch.
+cat > /tmp/regtest.c <<'EOF'
+typedef unsigned long long ulonglong;
+typedef long long longlong;
+short mulhi_s(int a, int b) {
+    return (short)((ulonglong)((longlong)a * (longlong)b) >> 32);
+}
+short mulhi_u(unsigned a, unsigned b) {
+    return (short)((ulonglong)((ulonglong)a * (ulonglong)b) >> 32);
+}
+EOF
+mulhi_out="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c "$mulhi_out" 2>/dev/null \
+   && grep -q "dmuls.l" "$mulhi_out" \
+   && grep -q "dmulu.l" "$mulhi_out" \
+   && [ "$(grep -c 'sts.*mach' "$mulhi_out")" = "2" ]; then
+    pass "regtest: 64-bit mul-high emits dmuls.l/dmulu.l + sts mach"
+else
+    fail "regtest: 64-bit mul-high did not emit expected dmuls/dmulu + sts mach"
+fi
+rm -f "$mulhi_out"
+
+# 4s. Ghidra-dialect scalar-as-struct field access.
+# Ghidra decompiles partial-word reads/writes on undefined4 locals
+# as `x._N_M_` where N is the byte offset and M the access width.
+# Strict C rejects this (scalar has no members), but rcc's expr.c
+# parses `_N_M_` on int types as sugar for byte-offset pointer
+# arithmetic. Verify the subfield write lowers to a `mov.b`/`mov.w`
+# at the correct stack displacement.
+cat > /tmp/regtest.c <<'EOF'
+typedef unsigned long undefined4;
+void f(void) {
+    undefined4 x;
+    x._0_2_ = 0x1234;
+    x._2_1_ = 0x56;
+}
+EOF
+sf_out="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c "$sf_out" 2>/dev/null \
+   && grep -q "mov.w" "$sf_out" \
+   && grep -q "mov.b" "$sf_out"; then
+    pass "regtest: Ghidra scalar-as-struct access (_N_M_) lowers to partial-word store"
+else
+    fail "regtest: Ghidra scalar-as-struct field parse or emit broken"
+fi
+rm -f "$sf_out"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:

@@ -199,10 +199,12 @@ static int sh_disp_cost(Node a, int sz);
 %term CNSTI1=1045
 %term CNSTI2=2069
 %term CNSTI4=4117
+%term CNSTI8=8213
 %term CNSTP4=4119
 %term CNSTU1=1046
 %term CNSTU2=2070
 %term CNSTU4=4118
+%term CNSTU8=8214
 
 %term ARGB=41
 %term ARGF4=4129
@@ -241,18 +243,22 @@ static int sh_disp_cost(Node a, int sz);
 %term CVII1=1157
 %term CVII2=2181
 %term CVII4=4229
+%term CVII8=8325
 %term CVIU1=1158
 %term CVIU2=2182
 %term CVIU4=4230
+%term CVIU8=8326
 %term CVPP4=4247
 %term CVPU4=4246
 %term CVUI1=1205
 %term CVUI2=2229
 %term CVUI4=4277
+%term CVUI8=8373
 %term CVUP4=4279
 %term CVUU1=1206
 %term CVUU2=2230
 %term CVUU4=4278
+%term CVUU8=8374
 
 %term NEGF4=4289
 %term NEGF8=8385
@@ -296,7 +302,9 @@ static int sh_disp_cost(Node a, int sz);
 %term MODU4=4454
 
 %term RSHI4=4469
+%term RSHI8=8565
 %term RSHU4=4470
+%term RSHU8=8566
 
 %term BANDI4=4485
 %term BANDU4=4486
@@ -318,7 +326,9 @@ static int sh_disp_cost(Node a, int sz);
 %term MULF4=4561
 %term MULF8=8657
 %term MULI4=4565
+%term MULI8=8661
 %term MULU4=4566
+%term MULU8=8662
 
 %term EQF4=4577
 %term EQF8=8673
@@ -360,10 +370,12 @@ static int sh_disp_cost(Node a, int sz);
 %term LOADI1=1253
 %term LOADI2=2277
 %term LOADI4=4325
+%term LOADI8=8421
 %term LOADP4=4327
 %term LOADU1=1254
 %term LOADU2=2278
 %term LOADU4=4326
+%term LOADU8=8422
 
 %term VREGP=711
 %%
@@ -401,6 +413,13 @@ reg:  CNSTP4  "# large const\n"  2
  * that fit in short range, so the same code path works here. */
 reg:  CNSTI2  "# large const\n"  2
 reg:  CNSTU2  "# large const\n"  2
+
+/* Fallback for byte constants outside -128..127/0..127. emit via
+ * the same pool path as larger types — safe because SH-2 loads
+ * bytes with sign-extension and the assembler widens the literal
+ * as needed. */
+reg:  CNSTI1  "# large const\n"  2
+reg:  CNSTU1  "# large const\n"  2
 
 reg:  ADDRGP4  "# addrg\n"  2
 
@@ -465,12 +484,63 @@ reg:  SUBP4(reg,reg)  "?\tmov\tr%0,r%c\n\tsub\tr%1,r%c\n"  1
 reg:  MULI4(reg,reg)  "# mul32\n"  3
 reg:  MULU4(reg,reg)  "# mul32\n"  3
 
+/* ── 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l) ──────
+ * SH-2 has no native 64-bit arithmetic, but has 32×32→64 widening
+ * multiplies that write MACH:MACL. Ghidra decompiles the resulting
+ * instruction pair back into C as
+ *     (T)(((longlong)a * (longlong)b) >> 32)
+ * i.e. take the high word of the 64-bit product. We match this
+ * whole tree shape in one lburg rule and emit dmuls.l/dmulu.l +
+ * sts mach in the RSH emit case below. Any other 64-bit arithmetic
+ * use will still fail with "Bad terminal" — we intentionally do
+ * not claim general long-long support.
+ *
+ * LCC wraps the MULI8/MULU8 in LOAD and/or CV nodes depending on
+ * surrounding expression context, so mulhi_s / mulhi_u are
+ * recursive wrapper nonterminals that peel those off. Emit code
+ * walks back down to the MULI8/MULU8 to get the source regs. */
+c32i:  CNSTI4  "%a"  (range(a, 32, 32) == 0 ? 0 : SH_GBR_REJECT)
+c32i:  CNSTI8  "%a"  (range(a, 32, 32) == 0 ? 0 : SH_GBR_REJECT)
+c32u:  CNSTU4  "%a"  (range(a, 32, 32) == 0 ? 0 : SH_GBR_REJECT)
+c32u:  CNSTU8  "%a"  (range(a, 32, 32) == 0 ? 0 : SH_GBR_REJECT)
+
+/* Extension to 8-byte from any 4-byte int/uint source. */
+ext8s:  CVII8(reg)  ""  0
+ext8s:  CVUI8(reg)  ""  0
+ext8u:  CVIU8(reg)  ""  0
+ext8u:  CVUU8(reg)  ""  0
+
+mulhi_s:  MULI8(ext8s, ext8s)  ""  0
+mulhi_s:  LOADI8(mulhi_s)      ""  0
+mulhi_s:  LOADU8(mulhi_s)      ""  0
+mulhi_s:  CVIU8(mulhi_s)       ""  0
+mulhi_s:  CVUU8(mulhi_s)       ""  0
+
+mulhi_u:  MULU8(ext8u, ext8u)  ""  0
+mulhi_u:  LOADI8(mulhi_u)      ""  0
+mulhi_u:  LOADU8(mulhi_u)      ""  0
+mulhi_u:  CVIU8(mulhi_u)       ""  0
+mulhi_u:  CVUU8(mulhi_u)       ""  0
+
+reg:  RSHU8(mulhi_s, c32i)  "# mul_hi32_s\n"  3
+reg:  RSHU8(mulhi_u, c32i)  "# mul_hi32_u\n"  3
+reg:  RSHU8(mulhi_s, c32u)  "# mul_hi32_s\n"  3
+reg:  RSHU8(mulhi_u, c32u)  "# mul_hi32_u\n"  3
+
 con1:  CNSTI4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
 con1:  CNSTU4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
 con2:  CNSTI4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
 con2:  CNSTU4  "%a"  (range(a, 2, 2) == 0 ? 0 : SH_GBR_REJECT)
 con8i:  CNSTI4  "%a"  (range(a, 8, 8) == 0 ? 0 : SH_GBR_REJECT)
 con16i: CNSTI4  "%a"  (range(a, 16, 16) == 0 ? 0 : SH_GBR_REJECT)
+
+/* Generic shift-amount nonterminal — matches any non-negative
+ * shift constant up to 31. The LSH/RSH emit code already
+ * decomposes arbitrary n into shll16/shll8/shll2/shll (and the
+ * shlr family / repeated shar). The specific con1/con2/con8i/
+ * con16i rules still win on cost when applicable. */
+conshi: CNSTI4  "%a"  (range(a, 0, 31) == 0 ? 0 : SH_GBR_REJECT)
+conshi: CNSTU4  "%a"  (range(a, 0, 31) == 0 ? 0 : SH_GBR_REJECT)
 
 reg:  LSHI4(reg,con1)   "# lsh\n"  1
 reg:  LSHU4(reg,con1)   "# lsh\n"  1
@@ -484,6 +554,15 @@ reg:  RSHI4(reg,con1)   "# rsh\n"  1
 reg:  RSHU4(reg,con1)   "# rsh\n"  1
 reg:  RSHI4(reg,con2)   "# rsh\n"  1
 reg:  RSHU4(reg,con2)   "# rsh\n"  1
+
+/* Fallback: any non-negative constant shift. Emit loops through
+ * the SH-2 shift instructions to cover arbitrary amounts. Cost
+ * higher than the specific rules so those still win when they
+ * can match. */
+reg:  LSHI4(reg,conshi)  "# lsh\n"  4
+reg:  LSHU4(reg,conshi)  "# lsh\n"  4
+reg:  RSHI4(reg,conshi)  "# rsh\n"  4
+reg:  RSHU4(reg,conshi)  "# rsh\n"  4
 
 reg:  BANDI4(reg,bmask)  "\textu.b\tr%0,r%c\n"  0
 reg:  BANDU4(reg,bmasu)  "\textu.b\tr%0,r%c\n"  0
@@ -508,6 +587,14 @@ reg:  LOADU2(reg)  "\tmov\tr%0,r%c\n"  move(a)
 reg:  LOADI4(reg)  "\tmov\tr%0,r%c\n"  move(a)
 reg:  LOADU4(reg)  "\tmov\tr%0,r%c\n"  move(a)
 reg:  LOADP4(reg)  "\tmov\tr%0,r%c\n"  move(a)
+/* 8-byte LOAD pass-through — only reachable when an 8-byte
+ * subtree has already been fully matched by the mul-hi32 rule,
+ * so the reg holds a 32-bit narrow result and a plain `mov`
+ * is correct. Any other 64-bit LOAD use would silently lose
+ * the high word; that's OK because the only 64-bit pattern we
+ * claim is mul-high. */
+reg:  LOADI8(reg)  "\tmov\tr%0,r%c\n"  move(a)
+reg:  LOADU8(reg)  "\tmov\tr%0,r%c\n"  move(a)
 
 reg:  INDIRI1(reg)  "\tmov.b\t@r%0,r%c\n"  1
 reg:  INDIRU1(reg)  "\tmov.b\t@r%0,r%c\n"  1
@@ -592,6 +679,22 @@ reg:  CVUI4(reg)  "\textu.w\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==2?1:LBURG_MAX)
 reg:  CVUU4(reg)  "\textu.b\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==1?1:LBURG_MAX)
 reg:  CVUU4(reg)  "\textu.w\tr%0,r%c\n"  (a->syms[0]->u.c.v.i==2?1:LBURG_MAX)
 
+/* 8-byte source → 4-byte narrow conversions. Only reachable
+ * when the 8-byte subtree has collapsed via the mul-hi32 rule,
+ * so the reg already holds a 32-bit value — narrow is a no-op. */
+reg:  CVII4(reg)  "# narrow_i8_i4\n"  (a->syms[0]->u.c.v.i==8?1:LBURG_MAX)
+reg:  CVUI4(reg)  "# narrow_u8_i4\n"  (a->syms[0]->u.c.v.i==8?1:LBURG_MAX)
+reg:  CVUU4(reg)  "# narrow_u8_u4\n"  (a->syms[0]->u.c.v.i==8?1:LBURG_MAX)
+
+/* Same-size CV pass-through. lcc emits these when Ghidra's
+ * type annotations triggered a size-preserving conversion that
+ * the frontend didn't fold (e.g. int -> uint, int* -> char*,
+ * reinterpret casts). They should parse without a separate
+ * instruction since the register already holds the value. */
+reg:  CVII4(reg)  "# cv4_passthrough\n"  (a->syms[0]->u.c.v.i==4?1:LBURG_MAX)
+reg:  CVUI4(reg)  "# cv4_passthrough\n"  (a->syms[0]->u.c.v.i==4?1:LBURG_MAX)
+reg:  CVUU4(reg)  "# cv4_passthrough\n"  (a->syms[0]->u.c.v.i==4?1:LBURG_MAX)
+
 /* Narrowing conversions (int → short, int → char, etc). On SH-2 the
  * reg already holds the 32-bit value; narrowing is implicit when we
  * later store via mov.w/mov.b or when an arithmetic op consumes only
@@ -601,6 +704,8 @@ reg:  CVII1(reg)  "# truncate\n"  1
 reg:  CVII2(reg)  "# truncate\n"  1
 reg:  CVUU1(reg)  "# truncate\n"  1
 reg:  CVUU2(reg)  "# truncate\n"  1
+reg:  CVUI1(reg)  "# truncate\n"  1
+reg:  CVUI2(reg)  "# truncate\n"  1
 
 stmt: LABELV  "%a:\n"
 
@@ -1333,9 +1438,18 @@ static void emit2(Node p) {
                 /* Composite left shift — decompose into shll/shll2/
                  * shll8/shll16 sequences. */
                 int n;
+                Node rhs;
                 dst = getregnum(p);
                 src = getregnum(p->kids[0]);
-                n = (int)p->kids[1]->syms[0]->u.c.v.i;
+                /* p->kids[1] is normally a CNST, but CSE may have
+                 * rewritten it to INDIRI4(VREGP) that inherited a
+                 * conshi label from the original. Walk through
+                 * syms[RX]->u.t.cse to reach the real CNST node. */
+                rhs = p->kids[1];
+                if (!rhs->syms[0] && rhs->syms[RX]
+                    && rhs->syms[RX]->u.t.cse)
+                        rhs = rhs->syms[RX]->u.t.cse;
+                n = (int)rhs->syms[0]->u.c.v.i;
                 if (dst != src)
                         print("\tmov\tr%d,r%d\n", src, dst);
                 while (n >= 16) { print("\tshll16\tr%d\n", dst); n -= 16; }
@@ -1349,9 +1463,45 @@ static void emit2(Node p) {
                  * shlr8/shlr16; signed uses repeated shar (no
                  * multi-bit arithmetic right shift on SH-2). */
                 int n, is_signed;
+
+                /* 64-bit mul-high idiom: RSHU8(MULI8/MULU8(...), 32)
+                 * LCC wraps the mul in LOAD and/or CV nodes; the
+                 * lburg mulhi_s / mulhi_u nonterminals peel them
+                 * off, and here we walk down past the same wrappers
+                 * to reach the MULI8/MULU8 node itself. Emit
+                 * dmuls.l (signed) or dmulu.l (unsigned) + sts mach.
+                 * Any other 64-bit arithmetic use will fail with
+                 * "Bad terminal" — we intentionally do not claim
+                 * general long-long support. */
+                if (opsize(p->op) == 8) {
+                        Node mul = p->kids[0];
+                        int r1, r2, is_signed_mul;
+                        while (generic(mul->op) == LOAD
+                               || generic(mul->op) == CVI
+                               || generic(mul->op) == CVU)
+                                mul = mul->kids[0];
+                        is_signed_mul = (optype(mul->op) == I);
+                        /* inputs are CVII8(reg) / CVIU8(reg) pairs */
+                        r1 = getregnum(mul->kids[0]->kids[0]);
+                        r2 = getregnum(mul->kids[1]->kids[0]);
+                        dst = getregnum(p);
+                        sh_uses_macl = 1;
+                        print("\t%s\tr%d,r%d\n",
+                              is_signed_mul ? "dmuls.l" : "dmulu.l",
+                              r1, r2);
+                        print("\tsts\tmach,r%d\n", dst);
+                        break;
+                }
+
                 dst = getregnum(p);
                 src = getregnum(p->kids[0]);
-                n = (int)p->kids[1]->syms[0]->u.c.v.i;
+                {
+                        Node rhs = p->kids[1];
+                        if (!rhs->syms[0] && rhs->syms[RX]
+                            && rhs->syms[RX]->u.t.cse)
+                                rhs = rhs->syms[RX]->u.t.cse;
+                        n = (int)rhs->syms[0]->u.c.v.i;
+                }
                 is_signed = (generic(p->op) == RSH)
                             && (optype(p->op) == I);
                 if (dst != src)

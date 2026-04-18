@@ -287,6 +287,32 @@ Type assign(Type xty, Tree e) {
 					xty, yty);
 			return xty;
 		}
+		/* Target relaxation: any pointer-to-pointer assignment is
+		 * accepted with a warning at Aflag >= 1. Ghidra decompiler
+		 * output regularly emits int-pointer vs char-pointer vs
+		 * short-pointer confusion at function call boundaries and
+		 * through pool loads; on SH-2 all pointers share the same
+		 * 32-bit flat representation, so the bit pattern is
+		 * identical. Keep the diagnostic so the information is
+		 * not silently lost. */
+		if (Aflag >= 1)
+			warning("assignment from incompatible pointer type `%t' to `%t'\n",
+				yty, xty);
+		return xty;
+	}
+	/* Target relaxation (continued): allow pointer-to-integral
+	 * and integral-to-pointer assignment. Ghidra emits this via
+	 * its `undefined4` pseudo-type which gets typedef'd to
+	 * `unsigned long`; storing a pointer into undefined4 storage
+	 * is legal in the decompilation worldview but strict C
+	 * rejects it. Again: SH-2 pointers fit in 32 bits, so the
+	 * store is bit-preserving. */
+	if ((isptr(xty) && isint(yty))
+	||  (isint(xty) && isptr(yty))) {
+		if (Aflag >= 1)
+			warning("assignment between pointer and integer (`%t' and `%t')\n",
+				xty, yty);
+		return xty;
 	}
 	return NULL;
 }

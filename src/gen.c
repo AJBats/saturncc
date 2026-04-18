@@ -171,13 +171,33 @@ void parseflags(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "-b") == 0)	/* omit */
 			bflag = 1;			/* omit */
 }
+/* Diagnostic tree dumper — used by getrule() when no lburg rule
+ * matches, to give a readable DAG picture instead of just the
+ * node pointer. Enabled unconditionally since it only fires on
+ * the error path. */
+static void dump_tree(Node n, int d) {
+	int i;
+	if (!n) return;
+	for (i = 0; i < d; i++) fprint(stderr, "  ");
+	fprint(stderr, "%s op=%d", opname(n->op), n->op);
+	if (n->syms[0])
+		fprint(stderr, " sym0.c.v.i=%d",
+		    (int)n->syms[0]->u.c.v.i);
+	fprint(stderr, "\n");
+	if (d < 15) {
+		if (n->kids[0]) dump_tree(n->kids[0], d + 1);
+		if (n->kids[1]) dump_tree(n->kids[1], d + 1);
+	}
+}
 static int getrule(Node p, int nt) {
 	int rulenum;
 
 	assert(p);
 	rulenum = (*IR->x._rule)(p->x.state, nt);
 	if (!rulenum) {
-		fprint(stderr, "(%x->op=%s at %w is corrupt.)\n", p, opname(p->op), &src);
+		fprint(stderr, "(%x->op=%s at %w is corrupt.)\n",
+		    p, opname(p->op), &src);
+		dump_tree(p, 1);
 		assert(0);
 	}
 	return rulenum;
@@ -822,7 +842,22 @@ static void dumpregs(char *msg, char *a, char *b) {
 }
 
 int getregnum(Node p) {
-	assert(p && p->syms[RX] && p->syms[RX]->x.regnode);
+	assert(p && p->syms[RX]);
+	/* Handle CSE'd INDIR(VREGP) nodes whose regnode was never
+	 * materialized because reuse() decided the CSE'd original
+	 * was the cheaper form — but the parent emit still walked
+	 * p->kids[] expecting a directly-allocated reg. Fall through
+	 * to the CSE source, which does have a regnode. This came up
+	 * with Ghidra-decompiled input where large constants (pool
+	 * loads) are CSE'd across many uses; reuse() rejects the
+	 * swap because the CSE'd CNSTI4 has cost > 0 for reg, but
+	 * the original INDIR(VREGP) also never gets registered. */
+	if (!p->syms[RX]->x.regnode
+	    && p->syms[RX]->u.t.cse
+	    && p->syms[RX]->u.t.cse->syms[RX]
+	    && p->syms[RX]->u.t.cse->syms[RX]->x.regnode)
+		return p->syms[RX]->u.t.cse->syms[RX]->x.regnode->number;
+	assert(p->syms[RX]->x.regnode);
 	return p->syms[RX]->x.regnode->number;
 }
 

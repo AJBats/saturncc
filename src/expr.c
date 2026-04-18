@@ -21,6 +21,41 @@ static Tree unary(void);
 static Tree primary(void);
 static Type super(Type ty);
 
+/* ghidra_subfield_parse — recognize Ghidra's scalar-as-struct
+ * field notation `_N_M_`, where N is the byte offset into the
+ * scalar and M is the access width in bytes. Returns 1 and fills
+ * *poff, *pw when the name matches; returns 0 otherwise. Pass
+ * NULL pointers to just test for the pattern.
+ *
+ * Examples Ghidra emits on `undefined4` locals:
+ *   `_0_2_` — bytes [0:2] as ushort
+ *   `_2_2_` — bytes [2:4] as ushort
+ *   `_2_1_` — byte  [2]   as uchar
+ *   `_0_1_`, `_1_1_`, `_3_1_` — byte [N] as uchar
+ * Width must be 1, 2, or 4. Offset must be 0..7 (covers u4 and u8).
+ */
+static int ghidra_subfield_parse(const char *name, int *poff, int *pw) {
+	const char *s = name;
+	int off, w;
+	if (!s || *s != '_' || !(s[1] >= '0' && s[1] <= '9'))
+		return 0;
+	off = s[1] - '0';
+	s += 2;
+	if (*s != '_' || !(s[1] >= '0' && s[1] <= '9'))
+		return 0;
+	w = s[1] - '0';
+	s += 2;
+	if (*s != '_' || s[1] != '\0')
+		return 0;
+	if (off < 0 || off > 7)
+		return 0;
+	if (w != 1 && w != 2 && w != 4)
+		return 0;
+	if (poff) *poff = off;
+	if (pw)   *pw = w;
+	return 1;
+}
+
 static Type super(Type ty) {
 	switch (ty->op) {
 	case INT:
@@ -313,6 +348,37 @@ static Tree postfix(Tree p) {
 			    		q = rightkid(q);
 			    		if (isaddrop(q->op) && q->u.sym->temporary)
 			    			p = tree(RIGHT, p->type, p, NULL);
+			    	} else if (isint(p->type)
+			    		&& ghidra_subfield_parse(token, NULL, NULL)) {
+			    		/* Ghidra-dialect scalar-as-struct access:
+			    		 * `uStack_1c._2_2_` on a scalar reads bytes
+			    		 * 2..3 as an unsigned short. Synthesize
+			    		 * `*(T *)((char *)&p + N)` where N is the
+			    		 * byte offset and T is the 1/2/4-byte int
+			    		 * type matching width M. Ghidra emits this
+			    		 * for partial-word reads/writes on locals
+			    		 * typed as `undefined4`/`undefined8`;
+			    		 * strict C rejects it (scalar has no
+			    		 * members), but it's a legitimate idiom
+			    		 * in decompiler output. Works both as
+			    		 * lvalue and rvalue because we produce a
+			    		 * dereferenced pointer expression. */
+			    		int off = 0, w = 0;
+			    		Type subty = inttype;
+			    		ghidra_subfield_parse(token, &off, &w);
+			    		switch (w) {
+			    		case 1: subty = unsignedchar; break;
+			    		case 2: subty = unsignedshort; break;
+			    		case 4: subty = unsignedlong; break;
+			    		default:
+			    			error("ghidra subfield width %d not supported\n", w);
+			    		}
+			    		p = addrof(p);
+			    		p = cast(p, ptr(chartype));
+			    		p = simplify(ADD+P, ptr(chartype),
+			    			p, consttree(off, signedptr));
+			    		p = cast(p, ptr(subty));
+			    		p = rvalue(p);
 			    	} else
 			    		error("left operand of . has incompatible type `%t'\n",
 			    			p->type);
