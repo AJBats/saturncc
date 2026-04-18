@@ -5,8 +5,8 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 ## Status
 
 - Sanitized: 6 / 196
-- Remaining: 190
-- Skipped (⚠): 4 (hard-stop at 5)
+- Remaining: 189
+- Skipped (⚠): 5 — **HARD LINE STOP**
 
 ## Per-function grind workflow
 
@@ -54,7 +54,7 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 008. `FUN_06044834` — **byte-identical** (see `byte_match_baselines/`)
 - [x] 009. `FUN_06044848`
 - [ ] 010. `FUN_060449A0` ⚠ rcc lburg missing 64-bit mul-high rules (`(longlong)a*(longlong)b>>0x20`)
-- [ ] 011. `FUN_060449AC`
+- [ ] 011. `FUN_060449AC` ⚠ same rcc lburg gap as #010
 - [ ] 012. `FUN_060449B6`
 - [ ] 013. `FUN_06044A9A`
 - [ ] 014. `FUN_06044ADA`

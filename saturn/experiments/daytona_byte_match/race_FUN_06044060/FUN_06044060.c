@@ -687,7 +687,10 @@ void FUN_060449a0(int *param_1,int param_2)
 
 /* ════════════════════ [011/196] FUN_060449AC ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — same rcc lburg gap as #010 (Bad terminal 8566 on
+ * 64-bit signed multiply-high). Near-identical body; differs only
+ * in magic byte-table offsets (0x6044a7c vs 0x6044a8c). */
+
 #if 0
 /* FUN_060449AC  0x060449AC */
 
