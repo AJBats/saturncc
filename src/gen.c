@@ -195,10 +195,12 @@ static int getrule(Node p, int nt) {
 	assert(p);
 	rulenum = (*IR->x._rule)(p->x.state, nt);
 	if (!rulenum) {
-		fprint(stderr, "(%x->op=%s at %w is corrupt.)\n",
+		fprint(stderr, "(no lburg rule for node %x op=%s at %w, tree dump follows)\n",
 		    p, opname(p->op), &src);
 		dump_tree(p, 1);
-		assert(0);
+		error("unsupported DAG shape: no lburg rule matches %s (see tree dump above)\n",
+		    opname(p->op));
+		exit(EXIT_FAILURE);
 	}
 	return rulenum;
 }
