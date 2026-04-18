@@ -416,6 +416,39 @@ else
 fi
 rm -f "$rs_out"
 
+# 4z. CODEGEN: #pragma noregsave strips prologue/epilogue saves of
+# R8..R14 entirely. Same stress body as 4x/4y. With noregsave, the
+# allocator may still use those regs as scratch (allocator strip is
+# Phase C.3), but no `mov.l rN,@-r15` for r8..r14 must appear in
+# prologue and no matching `mov.l @r15+,rN` in epilogue.
+cat > /tmp/regtest.c <<'EOF'
+#pragma noregsave(stress)
+extern int ext(int);
+int stress(int a, int b, int c, int d) {
+    int x1 = ext(a); int x2 = ext(b); int x3 = ext(c);
+    int x4 = ext(d); int x5 = ext(a + b); int x6 = ext(c + d);
+    int x7 = ext(x1 + x2);
+    return x1 + x2 + x3 + x4 + x5 + x6 + x7;
+}
+EOF
+nrs_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$nrs_out" 2>/dev/null
+saw_save=0
+for n in 14 13 12 11 10 9 8; do
+    if grep -q "mov.l[[:space:]]*r$n,@-r15" "$nrs_out"; then
+        saw_save=1; break
+    fi
+    if grep -q "mov.l[[:space:]]*@r15+,r$n" "$nrs_out"; then
+        saw_save=1; break
+    fi
+done
+if [ "$saw_save" = "0" ]; then
+    pass "regtest: #pragma noregsave emits no R8..R14 prologue/epilogue saves"
+else
+    fail "regtest: #pragma noregsave still emitted an R8..R14 save"
+fi
+rm -f "$nrs_out"
+
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
 #     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)

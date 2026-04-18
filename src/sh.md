@@ -5856,6 +5856,20 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
                 usedmask[IREG] = sh_regsave_extend(usedmask[IREG]);
 
+        /* #pragma noregsave: SHC v5.0 §3.10 — function does not save
+         * or restore R8..R14 at prologue/epilogue. Caller is
+         * responsible for preserving any state in those regs across
+         * the call (typically because caller is tagged regsave, or
+         * noregalloc bridges the chain). Strip R8..R14 from usedmask
+         * so the save/restore machinery emits nothing for them.
+         * R14 may still be used in-function as FP, but its caller-
+         * side value is not preserved — the user is asserting that's
+         * acceptable. If need_fp forced r14 into usedmask above, we
+         * override that here: noregsave means we won't save r14 even
+         * to set up a frame pointer that borrows it. */
+        if (sh_func_has_attr(f->name, SH_ATTR_NOREGSAVE))
+                usedmask[IREG] &= ~(0x7FU << 8);  /* clear bits 8..14 */
+
         sizeisave = 4 * bitcount(usedmask[IREG]);
         if (ncalls)
                 sizeisave += 4;
@@ -6047,6 +6061,11 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                          * survives the post-peephole trim. */
                         if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
                                 keep = sh_regsave_extend(keep);
+                        /* noregsave re-strip: undo both the liveness
+                         * keep (body may reference r14 for FP setup)
+                         * and the `need_fp` force-set above. */
+                        if (sh_func_has_attr(f->name, SH_ATTR_NOREGSAVE))
+                                keep &= ~(0x7FU << 8);
                         if (keep != usedmask[IREG]) {
                                 usedmask[IREG] = keep;
                                 sizeisave = 4 * bitcount(usedmask[IREG]);
