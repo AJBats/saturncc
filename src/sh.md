@@ -541,6 +541,15 @@ reg:  CVII4(mulhi_u)  "# mul_lo32_u\n"  3
 reg:  CVUI4(mulhi_s)  "# mul_lo32_s\n"  3
 reg:  CVUI4(mulhi_u)  "# mul_lo32_u\n"  3
 
+/* LCC's prelabel rewrites narrowing CV to LOAD (gen.c case
+ * CVI/CVU/CVP).  After the rewrite, `(uint)((longlong)a *
+ * (longlong)b)` is LOADU4(MULI8(...)), not CVUI4(MULI8(...)).
+ * Cover that shape too — cost 3 matches the CV siblings. */
+reg:  LOADI4(mulhi_s)  "# mul_lo32_s\n"  3
+reg:  LOADI4(mulhi_u)  "# mul_lo32_u\n"  3
+reg:  LOADU4(mulhi_s)  "# mul_lo32_s\n"  3
+reg:  LOADU4(mulhi_u)  "# mul_lo32_u\n"  3
+
 /* 8-byte local-storage support — pattern-matched to Ghidra's
  * "longlong lVar = a*b; hi = lVar>>32; lo = (uint)lVar" idiom.
  * ASGNI8/U8 to a local slot emits dmuls.l + sts macl + sts mach
@@ -561,6 +570,27 @@ reg:  CVUI4(INDIRI8(ADDRLP4))        "# load8_local_lo\n"  2
 reg:  CVII4(INDIRI8(ADDRLP4))        "# load8_local_lo\n"  2
 reg:  CVUI4(INDIRU8(ADDRLP4))        "# load8_local_lo\n"  2
 reg:  CVII4(INDIRU8(ADDRLP4))        "# load8_local_lo\n"  2
+
+/* 8-byte VREG support for CSE'd widened 4-byte values.
+ * lcc hoists repeated `(longlong)x` subtrees out of mul
+ * expressions into an 8-byte VREG. We support only the
+ * narrow case: the VREG is written by CVII8/CVUI8/CVIU8/
+ * CVUU8 of a 4-byte reg, and read back via INDIRI8/U8
+ * inside a MULI8/MULU8 operand or CVxI4 low-half narrow.
+ * The allocator maps the VREG to a single 4-byte physical
+ * reg holding the source value — no register pair. */
+reg:   INDIRI8(VREGP)  "# read register\n"  0
+reg:   INDIRU8(VREGP)  "# read register\n"  0
+
+stmt:  ASGNI8(VREGP, ext8s)  "# write register\n"  0
+stmt:  ASGNI8(VREGP, ext8u)  "# write register\n"  0
+stmt:  ASGNU8(VREGP, ext8s)  "# write register\n"  0
+stmt:  ASGNU8(VREGP, ext8u)  "# write register\n"  0
+
+/* Allow INDIRI8(VREGP) to compose with mulhi_s/u when used
+ * as a MULI8 operand, and with CVxI4 narrow for the low half. */
+ext8s: INDIRI8(VREGP)  ""  0
+ext8u: INDIRU8(VREGP)  ""  0
 
 con1:  CNSTI4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
 con1:  CNSTU4  "%a"  (range(a, 1, 1) == 0 ? 0 : SH_GBR_REJECT)
@@ -1497,12 +1527,18 @@ static void emit2(Node p) {
                 }
                 print("\tsts\tmacl,r%d\n", dst);
                 break;
-        case CVI+I: case CVU+I: {
-                /* 64-bit multiply-LOW idiom: CVxI4(MULI8/MULU8(...)).
-                 * Ghidra emits `(uint)((longlong)a * (longlong)b)` when
-                 * it wants the low 32 bits of a widening multiply. On
-                 * SH-2 that's dmuls.l / dmulu.l + sts MACL. The
-                 * mul-HIGH sibling lives in case RSH+U (opsize 8).
+        case CVI+I: case CVU+I: case CVI+U: case CVU+U:
+        case LOAD+I: case LOAD+U: {
+                /* 64-bit multiply-LOW idiom: narrowing from an 8-byte
+                 * MULI8/MULU8 tree to a 4-byte result. Ghidra emits
+                 * `(uint)((longlong)a * (longlong)b)` / `(int)...` and
+                 * lcc lowers that to CVxI4/CVxU4(MULI8(...)); then the
+                 * prelabel CVI/CVU-narrowing rewrite in gen.c turns
+                 * those into LOAD_I4 / LOAD_U4 wrappers. Dispatch all
+                 * four pre-rewrite shapes and the two post-rewrite
+                 * shapes through this handler so the emit stays the
+                 * same: dmuls.l / dmulu.l + sts MACL. The mul-HIGH
+                 * sibling lives in case RSH+U (opsize 8).
                  *
                  * CVxI4(INDIRI8/U8(ADDRLP4)) — load low 4 bytes of an
                  * 8-byte local slot (stored earlier by the ASGNI8

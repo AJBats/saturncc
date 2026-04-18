@@ -6046,12 +6046,13 @@ void FUN_06045f46(char param_1,undefined1 *param_2,undefined4 *param_3,int param
 
 /* ════════════════════ [112/196] FUN_06045FC0 ════════════════════ */
 
-/* ⚠ SKIPPED — returns undefined8 and uses a longlong local to
- * stash a dmuls.l result before splitting it into hi/lo halves.
- * Compiles partially via the new mulstore8 rules but lcc also
- * emits ASGNI8 to VREGP for intermediate widening, which needs
- * full 8-byte register-pair handling in rcc (bigger scope than
- * the simple mul-store-to-ADDRLP4 idiom). Deferred. */
+/* ⚠ SKIPPED — lcc's DAG-CSE hoists the entire 8-byte MUL *result*
+ * (not just operands) into an 8-byte VREGP, producing trees like
+ * ASGNI8(VREGP, MULI8(CVII8(a), CVII8(b))). rcc currently can't
+ * store both halves of a dmuls.l result into a VREGP because there
+ * is no register-pair / frame-spill support for 8-byte virtual
+ * registers. Handling just the CSE-of-widened-operand case (added
+ * this session) isn't enough. Deferred pending backend work. */
 
 #if 0
 undefined8 FUN_06045fc0(int *param_1)
