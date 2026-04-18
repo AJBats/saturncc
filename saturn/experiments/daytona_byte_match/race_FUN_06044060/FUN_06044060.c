@@ -774,8 +774,6 @@ void FUN_06044a9a(void)
 
 /* ════════════════════ [014/196] FUN_06044ADA ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044ADA  0x06044ADA */
 
 
@@ -784,14 +782,12 @@ void FUN_06044ada(void)
 {
   undefined4 *unaff_r8;
   undefined4 unaff_r9;
-  
+
   FUN_06044834(DAT_06044b0c);
   FUN_06044b20(DAT_06044b08);
   *unaff_r8 = unaff_r9;
   return;
 }
-
-#endif
 
 /* ════════════════════ [015/196] FUN_06044B20 ════════════════════ */
 
