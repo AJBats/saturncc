@@ -5715,11 +5715,26 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         int need_r14_rename = 0;
         int r14_rename_to = -1;
         Symbol r, argregs[4];
+        unsigned saved_tmask = tmask[IREG];
+        unsigned saved_vmask = vmask[IREG];
 
         nshlit = 0;
         sh_all_returns_inlined = 0;
         sh_uses_macl = 0;
         sh_sp_locals_only = 0;
+
+        /* #pragma noregalloc: SHC v5.0 §3.10 — the allocator does not
+         * place anything in R8..R14 for this function. Bridge pragma:
+         * pairs with noregsave callers that pass regsave state through
+         * without disturbing it. Implementation: clear bits 8..14 of
+         * tmask and vmask for the duration of this function only, then
+         * restore before returning. INTVAR is R8..R14 so vmask becomes
+         * empty — parameter-only / pure-passthrough functions handle
+         * this fine; register-pressured functions spill to stack. */
+        if (sh_func_has_attr(f->name, SH_ATTR_NOREGALLOC)) {
+                tmask[IREG] &= ~(0x7FU << 8);
+                vmask[IREG] &= ~(0x7FU << 8);
+        }
 
         usedmask[0] = usedmask[1] = 0;
         freemask[0] = freemask[1] = ~(unsigned)0;
@@ -5856,18 +5871,18 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
                 usedmask[IREG] = sh_regsave_extend(usedmask[IREG]);
 
-        /* #pragma noregsave: SHC v5.0 §3.10 — function does not save
-         * or restore R8..R14 at prologue/epilogue. Caller is
-         * responsible for preserving any state in those regs across
-         * the call (typically because caller is tagged regsave, or
-         * noregalloc bridges the chain). Strip R8..R14 from usedmask
-         * so the save/restore machinery emits nothing for them.
-         * R14 may still be used in-function as FP, but its caller-
-         * side value is not preserved — the user is asserting that's
-         * acceptable. If need_fp forced r14 into usedmask above, we
-         * override that here: noregsave means we won't save r14 even
-         * to set up a frame pointer that borrows it. */
-        if (sh_func_has_attr(f->name, SH_ATTR_NOREGSAVE))
+        /* #pragma noregsave / noregalloc: SHC v5.0 §3.10 — neither
+         * saves R8..R14 at prologue/epilogue. noregsave says "trust
+         * me, caller handles preservation." noregalloc is the bridge
+         * variant that additionally excludes R8..R14 from allocation
+         * (enforced in tmask/vmask above at function entry). The
+         * save-set behavior is identical for both. Strip R8..R14 from
+         * usedmask so the save/restore machinery emits nothing for
+         * them. R14 may still appear as FP if need_fp forced it
+         * above; that's a user concern — tagging noregalloc on a
+         * function with stack locals breaks the bridge contract. */
+        if (sh_func_has_attr(f->name,
+                             SH_ATTR_NOREGSAVE | SH_ATTR_NOREGALLOC))
                 usedmask[IREG] &= ~(0x7FU << 8);  /* clear bits 8..14 */
 
         sizeisave = 4 * bitcount(usedmask[IREG]);
@@ -6061,10 +6076,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                          * survives the post-peephole trim. */
                         if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
                                 keep = sh_regsave_extend(keep);
-                        /* noregsave re-strip: undo both the liveness
-                         * keep (body may reference r14 for FP setup)
-                         * and the `need_fp` force-set above. */
-                        if (sh_func_has_attr(f->name, SH_ATTR_NOREGSAVE))
+                        /* noregsave / noregalloc re-strip: undo both
+                         * the liveness keep (body may reference r14
+                         * for FP setup) and the `need_fp` force-set
+                         * above. */
+                        if (sh_func_has_attr(f->name,
+                                             SH_ATTR_NOREGSAVE
+                                             | SH_ATTR_NOREGALLOC))
                                 keep &= ~(0x7FU << 8);
                         if (keep != usedmask[IREG]) {
                                 usedmask[IREG] = keep;
@@ -6274,6 +6292,9 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         shlit_flush();
         sh_gbr_param = 0;
         sh_weird_rule_1 = 0;
+        /* Restore allocator masks in case noregalloc narrowed them. */
+        tmask[IREG] = saved_tmask;
+        vmask[IREG] = saved_vmask;
 }
 
 static void defconst(int suffix, int size, Value v) {

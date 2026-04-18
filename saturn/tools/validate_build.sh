@@ -449,6 +449,32 @@ else
 fi
 rm -f "$nrs_out"
 
+# 4aa. CODEGEN: #pragma noregalloc keeps R8..R14 out of the allocator
+# AND strips prologue/epilogue saves. Per SHC v5.0 §3.10, noregalloc
+# functions are bridge shapes — they pass state through from a
+# regsave caller to a noregsave callee without disturbing R8..R14.
+# Test with a trivial pass-through body: no locals, no FP, nothing
+# that would force the backend to touch r14.
+cat > /tmp/regtest.c <<'EOF'
+#pragma noregalloc(bridge)
+extern int callee(int);
+int bridge(int a) { return callee(a); }
+EOF
+nra_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$nra_out" 2>/dev/null
+touched=0
+for n in 14 13 12 11 10 9 8; do
+    if grep -qE "[[:space:],]r$n([[:space:],)]|\$)" "$nra_out"; then
+        touched=1; break
+    fi
+done
+if [ "$touched" = "0" ]; then
+    pass "regtest: #pragma noregalloc keeps R8..R14 out of allocator + save set"
+else
+    fail "regtest: #pragma noregalloc still touched R8..R14"
+fi
+rm -f "$nra_out"
+
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
 #     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)
