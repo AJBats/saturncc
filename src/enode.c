@@ -265,6 +265,14 @@ Type assign(Type xty, Tree e) {
 	xty = unqual(xty);
 	if (isenum(xty))
 		xty = xty->type;
+	/* Target relaxation: accept assignment from a void-typed rhs
+	 * (e.g. the result of a `void`-returning Ghidra call) before
+	 * the size-zero early-exit below. Promotes to lhs type. */
+	if (yty == voidtype && (isarith(xty) || isptr(xty))) {
+		if (Aflag >= 1)
+			warning("assignment from void-returning call\n");
+		return xty;
+	}
 	if (xty->size == 0 || yty->size == 0)
 		return NULL;
 	if ( isarith(xty) && isarith(yty)

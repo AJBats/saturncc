@@ -624,6 +624,21 @@ Tree cast(Tree p, Type type) {
 			break;
 		case FLOAT:
 			break;
+		case VOID:
+			/* Target relaxation: cast from void to anything is
+			 * reached when a Ghidra body assigns the result of
+			 * a void-returning call into a typed variable. If
+			 * p is a CALL tree, rebuild it with op=CALL+<dst>
+			 * so it actually produces a value (the SH-2 return
+			 * register r0); otherwise fall back to retype. */
+			if (generic(p->op) == CALL) {
+				Type rty = promote(dst);
+				p = tree(mkop(CALL, rty), rty,
+				    p->kids[0], p->kids[1]);
+			} else {
+				p = retype(p, dst);
+			}
+			return p;
 		default: assert(0);
 		}
 		{

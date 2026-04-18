@@ -4,8 +4,8 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 29 / 196
-- Remaining: 167
+- Sanitized: 50 / 196
+- Remaining: 146
 - Skipped (⚠): 0 — the previous 5 skips were all resolved by
   rcc compiler fixes; Ghidra sources are pristine again.
 
@@ -74,27 +74,27 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 027. `FUN_0604507E`
 - [x] 028. `FUN_06045080`
 - [x] 029. `FUN_06045098`
-- [ ] 030. `FUN_060450F2`
-- [ ] 031. `FUN_060450F4`
-- [ ] 032. `FUN_0604510C`
-- [ ] 033. `FUN_06045198`
-- [ ] 034. `FUN_060451AA`
-- [ ] 035. `FUN_060451BC`
-- [ ] 036. `FUN_060451BE`
-- [ ] 037. `FUN_060451FA`
-- [ ] 038. `FUN_0604521A`
-- [ ] 039. `FUN_0604523A`
-- [ ] 040. `FUN_060452F0`
-- [ ] 041. `FUN_06045318`
-- [ ] 042. `FUN_06045340`
-- [ ] 043. `FUN_06045368`
-- [ ] 044. `FUN_06045378`
-- [ ] 045. `FUN_060453B8`
-- [ ] 046. `FUN_060453C8`
-- [ ] 047. `FUN_060453CC`
-- [ ] 048. `FUN_0604556C`
-- [ ] 049. `FUN_0604559C`
-- [ ] 050. `FUN_060455D0`
+- [x] 030. `FUN_060450F2`
+- [x] 031. `FUN_060450F4`
+- [x] 032. `FUN_0604510C`
+- [x] 033. `FUN_06045198`
+- [x] 034. `FUN_060451AA`
+- [x] 035. `FUN_060451BC`
+- [x] 036. `FUN_060451BE`
+- [x] 037. `FUN_060451FA`
+- [x] 038. `FUN_0604521A`
+- [x] 039. `FUN_0604523A`
+- [x] 040. `FUN_060452F0`
+- [x] 041. `FUN_06045318`
+- [x] 042. `FUN_06045340`
+- [x] 043. `FUN_06045368`
+- [x] 044. `FUN_06045378`
+- [x] 045. `FUN_060453B8`
+- [x] 046. `FUN_060453C8`
+- [x] 047. `FUN_060453CC`
+- [x] 048. `FUN_0604556C`
+- [x] 049. `FUN_0604559C`
+- [x] 050. `FUN_060455D0`
 - [ ] 051. `FUN_060455E2`
 - [ ] 052. `FUN_06045614`
 - [ ] 053. `FUN_06045620`
