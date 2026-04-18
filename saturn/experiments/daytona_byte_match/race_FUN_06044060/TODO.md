@@ -7,6 +7,38 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 - Sanitized: 1 / 196
 - Remaining: 195
 
+## Per-function grind workflow
+
+1. Pick the next unchecked function in the checklist below.
+2. Open `FUN_06044060.c`, locate the `#if 0 ... #endif` block under the
+   section banner for that function (search for the `[NNN/196]` tag).
+3. Remove the `#if 0` and `#endif` lines. The raw Ghidra body is now
+   active.
+4. Attempt to compile the TU:
+   ```bash
+   wsl bash -c 'cpp -P saturn/experiments/daytona_byte_match/race_FUN_06044060/FUN_06044060.c /tmp/tu.pp.c && build/rcc -target=sh/hitachi /tmp/tu.pp.c /tmp/tu.s'
+   ```
+5. Fix the errors in order. Common issues and their fixes:
+   - **`undefined reference to DAT_xxxxxxxx`** — add `extern int DAT_xxxxxxxx;` to `ghidra_shim.h`.
+   - **`undefined reference to PTR_FUN_xxxxxxxx`** — add `extern code PTR_FUN_xxxxxxxx;` to `ghidra_shim.h`.
+   - **`undefined reference to FUN_xxxxxxxx`** — if it's a same-TU call, add a forward declaration at the top of `FUN_06044060.c`. If cross-TU, add `extern int FUN_xxxxxxxx();` to the shim.
+   - **`(*(code *)foo)()` pattern errors** — cast issues from Ghidra's function-pointer idiom. Usually resolves once `code` is properly typedef'd in the shim and the symbol is declared.
+   - **Type mismatch between Ghidra's `(int)` vs `(void)` return** — align the declaration to what Ghidra emitted; match prod .s later.
+   - **Syntax errors from Ghidra's `(*(code *)&X)()`** — may need rewriting. Ghidra sometimes emits syntactically-valid-but-semantically-off C.
+6. Once the TU compiles cleanly, check the item off in this file and
+   commit (message pattern: `TU sanitize: FUN_<name> (<NNN>/196)`).
+7. Do NOT aim for byte-match at this stage — just compile. Byte-match
+   is the follow-on phase once all 196 are sanitized.
+
+**Scope discipline:** if a function's Ghidra decomp is deeply broken
+(e.g. obvious logic errors, missing hunks), mark the checkbox with a
+`⚠` note and move on. We can revisit during byte-match phase. The
+goal is breadth first — every function compile-clean — then depth.
+
+**When something surprising happens** (new rcc crash, new landmine,
+new pragma needed), add it to `saturn/workstreams/landmines.md` or
+open a new workstream note. Don't silently work around.
+
 ## Checklist
 
 Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU compiles cleanly.
