@@ -4,14 +4,15 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 116 / 196
-- Remaining: 76
-- Skipped (⚠): 4 — #112, #113, #114, #115. Ghidra has de-fused
-  SH-2's `mac.l` dot-product idiom into manual 32x32→64 arithmetic;
-  resulting ASGNI8(VREGP, MULI8) DAG shapes have no lburg rule.
-  rcc emits a clean "unsupported DAG shape" error (`0e503b2`
-  replaced the assertion crash). Byte-match path is Gap 18 —
-  deferred to byte-match pass. #106-111, #116-117 were
+- Sanitized: 134 / 196
+- Remaining: 56
+- Skipped (⚠): 6 — #112-115 and #124, #127. All hit Gap 18
+  (LCC CSE-hoists 64-bit values into ASGNI8(VREGP, ...) shapes
+  with no lburg rule; the #112-115 set is de-fused `mac.l`
+  dot-product, #124/#127 are single-mulhi variants of the same
+  class). rcc emits a clean "unsupported DAG shape" error
+  (`0e503b2` replaced the assertion crash). Byte-match path is
+  Gap 18 — deferred to byte-match pass. #106-111, #116-117 were
   false-positive cascade skips from a prior session — retested
   clean with no compiler changes.
 
@@ -171,26 +172,26 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 118. `FUN_0604669E`
 - [x] 119. `FUN_060466A0`
 - [x] 120. `FUN_0604670C`
-- [ ] 121. `FUN_0604674E`
-- [ ] 122. `FUN_060467B2`
-- [ ] 123. `FUN_060467B4`
-- [ ] 124. `FUN_0604680C`
-- [ ] 125. `FUN_060468AE`
-- [ ] 126. `FUN_060468B0`
-- [ ] 127. `FUN_06046908`
-- [ ] 128. `FUN_0604698C`
-- [ ] 129. `FUN_06046990`
-- [ ] 130. `FUN_06046A20`
-- [ ] 131. `FUN_06046A24`
-- [ ] 132. `FUN_06046A90`
-- [ ] 133. `FUN_06046AE8`
-- [ ] 134. `FUN_06046B3C`
-- [ ] 135. `FUN_06046B64`
-- [ ] 136. `FUN_06046B70`
-- [ ] 137. `FUN_06046B96`
-- [ ] 138. `FUN_06046BD4`
-- [ ] 139. `FUN_06046BF4`
-- [ ] 140. `FUN_06046C14`
+- [x] 121. `FUN_0604674E`
+- [x] 122. `FUN_060467B2`
+- [x] 123. `FUN_060467B4`
+- [ ] 124. `FUN_0604680C` ⚠ Gap 18 (64-bit VREG)
+- [x] 125. `FUN_060468AE`
+- [x] 126. `FUN_060468B0`
+- [ ] 127. `FUN_06046908` ⚠ Gap 18 (64-bit VREG)
+- [x] 128. `FUN_0604698C`
+- [x] 129. `FUN_06046990`
+- [x] 130. `FUN_06046A20`
+- [x] 131. `FUN_06046A24`
+- [x] 132. `FUN_06046A90`
+- [x] 133. `FUN_06046AE8`
+- [x] 134. `FUN_06046B3C`
+- [x] 135. `FUN_06046B64` — sig sanitized (undefined8 → void; Gap 15)
+- [x] 136. `FUN_06046B70` — sig sanitized (undefined8 → void; Gap 15)
+- [x] 137. `FUN_06046B96`
+- [x] 138. `FUN_06046BD4`
+- [x] 139. `FUN_06046BF4`
+- [x] 140. `FUN_06046C14`
 - [ ] 141. `FUN_06046CD0`
 - [ ] 142. `FUN_06046CF0`
 - [ ] 143. `FUN_06046D10`

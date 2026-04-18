@@ -7699,8 +7699,6 @@ uint FUN_0604670c(void)
 
 /* ════════════════════ [121/196] FUN_0604674E ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604674E  0x0604674E */
 
 
@@ -7712,7 +7710,7 @@ uint FUN_0604674e(void)
   int unaff_r11;
   int unaff_r12;
   int unaff_gbr;
-  
+
   FUN_06045adc();
   uVar1 = *(uint *)(unaff_r10 + 4) | *(uint *)(unaff_r11 + 4) | *(uint *)(unaff_r12 + 4);
   if ((uVar1 & 2) == 0) {
@@ -7730,12 +7728,8 @@ uint FUN_0604674e(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [122/196] FUN_060467B2 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060467B2  0x060467B2 */
 
 
@@ -7745,7 +7739,7 @@ void FUN_060467b2(undefined4 param_1,int param_2)
 
 {
   int iVar1;
-  
+
   iVar1 = DAT_060468a4;
   if (_DAT_ffffffe2 < 0) {
     iVar1 = DAT_060468a8;
@@ -7766,12 +7760,8 @@ void FUN_060467b2(undefined4 param_1,int param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [123/196] FUN_060467B4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060467B4  0x060467B4 */
 
 
@@ -7781,7 +7771,7 @@ void FUN_060467b4(undefined4 param_1,int param_2)
 
 {
   int iVar1;
-  
+
   iVar1 = DAT_060468a4;
   if (_DAT_ffffffe2 < 0) {
     iVar1 = DAT_060468a8;
@@ -7802,11 +7792,14 @@ void FUN_060467b4(undefined4 param_1,int param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [124/196] FUN_0604680C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — Gap 18 variant: LCC CSE-hoists the `lVar2 =
+ * (longlong)a*b` 64-bit local into an 8-byte VREGP, producing
+ * ASGNI8(VREGP, MULI8(CVII8,...)) with no lburg rule. Same
+ * class as #112-115; byte-match deferred. rcc emits a clean
+ * "unsupported DAG shape" error (0e503b2). */
+
 #if 0
 /* FUN_0604680C  0x0604680C */
 
@@ -7825,7 +7818,7 @@ int FUN_0604680c(undefined4 param_1,short *param_2,short param_3,uint param_4)
   short *psVar9;
   int *unaff_r14;
   int unaff_gbr;
-  
+
   iVar3 = (int)*param_2;
   param_2 = (short *)(*(int *)(param_2 + 2) + (int)param_2);
   puVar8 = (undefined2 *)unaff_r14[7];
@@ -7865,13 +7858,10 @@ int FUN_0604680c(undefined4 param_1,short *param_2,short param_3,uint param_4)
   *(int *)(puVar8 + 0x1a) = iVar5;
   return iVar3;
 }
-
 #endif
 
 /* ════════════════════ [125/196] FUN_060468AE ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060468AE  0x060468AE */
 
 
@@ -7881,7 +7871,7 @@ void FUN_060468ae(undefined4 param_1,int param_2)
 
 {
   int iVar1;
-  
+
   iVar1 = iRam06046984;
   if (_DAT_ffffffe2 < 0) {
     iVar1 = iRam06046988;
@@ -7902,12 +7892,8 @@ void FUN_060468ae(undefined4 param_1,int param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [126/196] FUN_060468B0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060468B0  0x060468B0 */
 
 
@@ -7917,7 +7903,7 @@ void FUN_060468b0(undefined4 param_1,int param_2)
 
 {
   int iVar1;
-  
+
   iVar1 = iRam06046984;
   if (_DAT_ffffffe2 < 0) {
     iVar1 = iRam06046988;
@@ -7938,11 +7924,13 @@ void FUN_060468b0(undefined4 param_1,int param_2)
   return;
 }
 
-#endif
-
 /* ════════════════════ [127/196] FUN_06046908 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — Gap 18 variant: longlong lVar2 re-written twice
+ * in a mul+narrow+remul pattern, CSE-hoisted to an 8-byte VREGP.
+ * Same class as #124; byte-match deferred. rcc emits clean
+ * "unsupported DAG shape" error (0e503b2). */
+
 #if 0
 /* FUN_06046908  0x06046908 */
 
@@ -8008,8 +7996,6 @@ int FUN_06046908(undefined4 param_1,short *param_2,int param_3,uint param_4)
 
 /* ════════════════════ [128/196] FUN_0604698C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604698C  0x0604698C */
 
 
@@ -8030,7 +8016,7 @@ undefined4 FUN_0604698c(void)
   uint uVar6;
   byte bVar7;
   int unaff_gbr;
-  
+
   bVar1 = (in_r0 & 0x40) == 0;
   uVar6 = (uint)bVar1;
   if (bVar1) {
@@ -8071,12 +8057,8 @@ undefined4 FUN_0604698c(void)
   return uVar2;
 }
 
-#endif
-
 /* ════════════════════ [129/196] FUN_06046990 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046990  0x06046990 */
 
 
@@ -8095,7 +8077,7 @@ undefined4 FUN_06046990(void)
   uint in_sr;
   byte bVar5;
   int unaff_gbr;
-  
+
   FUN_06046b70();
   FUN_06046bf4();
   bVar5 = (byte)in_sr;
@@ -8130,12 +8112,8 @@ undefined4 FUN_06046990(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [130/196] FUN_06046A20 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046A20  0x06046A20 */
 
 
@@ -8149,7 +8127,7 @@ undefined4 FUN_06046a20(void)
   uint uVar3;
   byte bVar4;
   int unaff_gbr;
-  
+
   bVar1 = (in_r0 & 0x40) == 0;
   uVar3 = (uint)bVar1;
   if (bVar1) {
@@ -8183,12 +8161,8 @@ undefined4 FUN_06046a20(void)
   return uVar2;
 }
 
-#endif
-
 /* ════════════════════ [131/196] FUN_06046A24 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046A24  0x06046A24 */
 
 
@@ -8200,7 +8174,7 @@ undefined4 FUN_06046a24(void)
   uint in_sr;
   byte bVar2;
   int unaff_gbr;
-  
+
   FUN_06046b64();
   FUN_06046bf4();
   bVar2 = (byte)in_sr;
@@ -8228,12 +8202,8 @@ undefined4 FUN_06046a24(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [132/196] FUN_06046A90 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046A90  0x06046A90 */
 
 
@@ -8245,7 +8215,7 @@ undefined4 FUN_06046a90(void)
   uint in_sr;
   byte bVar2;
   int unaff_gbr;
-  
+
   FUN_06046b70();
   FUN_06046bf4();
   bVar2 = (byte)in_sr;
@@ -8267,12 +8237,8 @@ undefined4 FUN_06046a90(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [133/196] FUN_06046AE8 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046AE8  0x06046AE8 */
 
 
@@ -8284,7 +8250,7 @@ undefined4 FUN_06046ae8(void)
   uint in_sr;
   byte bVar2;
   int unaff_gbr;
-  
+
   FUN_06046b64();
   FUN_06046bf4();
   bVar2 = (byte)in_sr;
@@ -8305,12 +8271,8 @@ undefined4 FUN_06046ae8(void)
   return uVar1;
 }
 
-#endif
-
 /* ════════════════════ [134/196] FUN_06046B3C ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046B3C  0x06046B3C */
 
 
@@ -8319,7 +8281,7 @@ int FUN_06046b3c(int param_1)
 {
   int iVar1;
   int in_r2;
-  
+
   iVar1 = (int)*(short *)(param_1 + 2);
   if (iVar1 < -in_r2) {
     return iVar1;
@@ -8327,16 +8289,17 @@ int FUN_06046b3c(int param_1)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [135/196] FUN_06046B64 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046B64  0x06046B64 */
 
-
-undefined8 FUN_06046b64(void)
+/* Signature sanitized: `undefined8` → `void` and `return
+ * CONCAT44(iVar2,iVar1);` → `return;`. Ghidra's CONCAT44 models
+ * a non-standard r0:r1 multi-register return (Gap 15 territory).
+ * Byte-match will need to reconstruct the actual convention; for
+ * compile-clean, dropping the return preserves the body's side
+ * effects. */
+void FUN_06046b64(void)
 
 {
   int iVar1;
@@ -8345,7 +8308,7 @@ undefined8 FUN_06046b64(void)
   int iVar3;
   short *unaff_r10;
   short *unaff_r11;
-  
+
   iVar2 = (int)(short)((uint)in_r1 >> 0x10);
   if (*unaff_r11 <= iVar2) {
     iVar2 = (int)*unaff_r11;
@@ -8359,21 +8322,18 @@ undefined8 FUN_06046b64(void)
   }
   iVar1 = (int)unaff_r10[1];
   if (iVar3 <= iVar1) {
-    return CONCAT44(iVar2,iVar1);
+    return;
   }
-  return CONCAT44(iVar2,iVar1);
+  return;
 }
-
-#endif
 
 /* ════════════════════ [136/196] FUN_06046B70 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046B70  0x06046B70 */
 
-
-undefined8 FUN_06046b70(void)
+/* Signature sanitized: `undefined8` → `void`, dropped CONCAT44 in
+ * returns (Gap 15 r0:r1 multi-register return). See #135 for notes. */
+void FUN_06046b70(void)
 
 {
   int iVar1;
@@ -8383,7 +8343,7 @@ undefined8 FUN_06046b70(void)
   short *unaff_r10;
   short *unaff_r11;
   short *unaff_r12;
-  
+
   iVar2 = (int)(short)((uint)in_r1 >> 0x10);
   if (*unaff_r12 <= iVar2) {
     iVar2 = (int)*unaff_r12;
@@ -8403,17 +8363,13 @@ undefined8 FUN_06046b70(void)
   }
   iVar1 = (int)unaff_r10[1];
   if (iVar3 <= iVar1) {
-    return CONCAT44(iVar2,iVar1);
+    return;
   }
-  return CONCAT44(iVar2,iVar1);
+  return;
 }
-
-#endif
 
 /* ════════════════════ [137/196] FUN_06046B96 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046B96  0x06046B96 */
 
 
@@ -8423,7 +8379,7 @@ int FUN_06046b96(int param_1)
   int iVar1;
   int unaff_r10;
   int unaff_r11;
-  
+
   if (param_1 <= *(short *)(unaff_r11 + 2)) {
     param_1 = (int)*(short *)(unaff_r11 + 2);
   }
@@ -8434,12 +8390,8 @@ int FUN_06046b96(int param_1)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [138/196] FUN_06046BD4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046BD4  0x06046BD4 */
 
 
@@ -8451,7 +8403,7 @@ int FUN_06046bd4(void)
   int in_r1;
   int in_r2;
   int in_r3;
-  
+
   iVar1 = (int)(short)((uint)in_r0 >> 0x10);
   if (((in_r1 < iVar1) && (iVar1 = -iVar1, iVar1 <= in_r2)) && (in_r3 < (short)in_r0)) {
     return iVar1;
@@ -8459,12 +8411,8 @@ int FUN_06046bd4(void)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [139/196] FUN_06046BF4 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046BF4  0x06046BF4 */
 
 
@@ -8475,7 +8423,7 @@ int FUN_06046bf4(int param_1)
   int iVar1;
   int in_r1;
   int in_r2;
-  
+
   iVar1 = (int)(short)((uint)in_r0 >> 0x10);
   if (((in_r2 < iVar1) && (iVar1 = -iVar1, iVar1 <= in_r1)) && (param_1 < (short)in_r0)) {
     return iVar1;
@@ -8483,12 +8431,8 @@ int FUN_06046bf4(int param_1)
   return iVar1;
 }
 
-#endif
-
 /* ════════════════════ [140/196] FUN_06046C14 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06046C14  0x06046C14 */
 
 
@@ -8499,15 +8443,13 @@ int FUN_06046c14(int param_1)
   int in_r1;
   int in_r2;
   int unaff_r14;
-  
+
   if (((in_r2 < in_r0) && (in_r0 = -in_r0, in_r0 < in_r1)) &&
      (in_r0 = *(int *)(unaff_r14 + 0x14), param_1 < in_r0)) {
     return -in_r0;
   }
   return in_r0;
 }
-
-#endif
 
 /* ════════════════════ [141/196] FUN_06046CD0 ════════════════════ */
 
