@@ -68,6 +68,12 @@ void FUN_060440e0(int param_1)
 
 /* ════════════════════ [003/196] FUN_06044138 ════════════════════ */
 
+/* ⚠ SKIPPED — rcc crashes with `getregnum` assertion in src/gen.c:825
+ * on this body. Shim DAT types for 060443b0–0604441c are added in
+ * ghidra_shim.h (so a re-attempt won't need to redo that work); the
+ * body is re-wrapped #if 0 pending investigation. See
+ * saturn/workstreams/rcc_getregnum_assert_fun_06044138.md. */
+
 /* TODO: sanitize — raw Ghidra decomp below. */
 #if 0
 /* FUN_06044138  0x06044138 */

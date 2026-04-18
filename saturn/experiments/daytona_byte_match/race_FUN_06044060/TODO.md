@@ -45,7 +45,7 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 
 - [x] 001. `FUN_06044060`
 - [x] 002. `FUN_060440E0`
-- [ ] 003. `FUN_06044138`
+- [ ] 003. `FUN_06044138` ⚠ rcc getregnum assert — see `saturn/workstreams/rcc_getregnum_assert_fun_06044138.md`
 - [ ] 004. `FUN_06044344`
 - [ ] 005. `FUN_06044588`
 - [ ] 006. `FUN_060446F4`
