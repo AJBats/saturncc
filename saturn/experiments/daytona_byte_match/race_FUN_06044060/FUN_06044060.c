@@ -41,17 +41,24 @@ extern int FUN_06045760();
 /* FUN_06044060  0x06044060 */
 
 
+/* Gap 0 rewrite: Ghidra modeled this function's own literal pool as
+ * runtime global pointers (pcRam060440c0..dc, PTR_FUN/SUB_060440c8..d4).
+ * Those symbols are just pool slots in this function; prod loads the
+ * pool slot directly and jsr's it. Rewrite to direct calls so our
+ * emit matches prod's single-indirect `mov.l LPn,r0; jsr @r0` pattern. */
+extern int FUN_06044F30();  /* not in this TU */
+
 void FUN_06044060(int param_1)
 
 {
-  (*pcRam060440c0)(param_1 + 0x30);
-  if (*pcRam060440c4 != '\0') {
-    (*(code *)PTR_FUN_060440c8)();
+  FUN_06044D80(param_1 + 0x30);
+  if (*(char *)0x06054925 != '\0') {
+    FUN_06044F30();
   }
-  (*(code *)PTR_SUB_060440cc)();
-  (*(code *)PTR_SUB_060440d0)();
-  (*(code *)PTR_SUB_060440d4)();
-  (*pcRam060440dc)();
+  FUN_06044E3C();
+  FUN_060450F2();
+  FUN_06045006();
+  FUN_060457DC(*(int *)0x060569B4);
   return;
 }
 

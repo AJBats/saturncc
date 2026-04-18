@@ -77,13 +77,20 @@ def classify_labels(lines):
             first = False
             continue
         kind = 'code'
-        for j in range(i + 1, min(i + 5, len(lines))):
-            nxt = lines[j].strip()
-            if not nxt or nxt.startswith('/*') or nxt.startswith('!'):
-                continue
-            if POOL_NEXT_RE.search(nxt):
-                kind = 'pool'
-            break
+        # Same-line suffix after the colon (e.g. `L1: .long ...` — our
+        # emitter inlines the pool directive; prod tends to put it on
+        # the next line). Check that first.
+        same_line_tail = line[m.end():].strip()
+        if POOL_NEXT_RE.search(same_line_tail):
+            kind = 'pool'
+        else:
+            for j in range(i + 1, min(i + 5, len(lines))):
+                nxt = lines[j].strip()
+                if not nxt or nxt.startswith('/*') or nxt.startswith('!'):
+                    continue
+                if POOL_NEXT_RE.search(nxt):
+                    kind = 'pool'
+                break
         order.append((name, kind))
     return order
 
@@ -116,6 +123,18 @@ def rewrite(text, label_map):
             label_map[old],
             text,
         )
+    # Unify Ghidra-assigned symbol prefixes referencing the same address.
+    # Prod raw .s mixes DAT_/FUN_/sub_/PTR_FUN_/PTR_SUB_/PTR_DAT_ based on
+    # what Ghidra inferred lived at each address; our emitter just uses
+    # the C identifier (typically FUN_ or the underscore-prefixed form).
+    # All of these resolve to the same address at link time, so collapse
+    # them to a canonical sym_<hex> so the diff only sees the address.
+    # Leading underscore (rcc's _FUN_xxx emit) is also absorbed.
+    text = re.sub(
+        r'(?<![.\w])_?(?:DAT|FUN|sub|PTR_FUN|PTR_SUB|PTR_DAT)_([0-9A-Fa-f]+)(?![.\w])',
+        lambda m: 'sym_' + m.group(1),
+        text,
+    )
     # sym_HEX → decimal
     text = re.sub(
         r'\bsym_([0-9A-Fa-f]+)\b',
