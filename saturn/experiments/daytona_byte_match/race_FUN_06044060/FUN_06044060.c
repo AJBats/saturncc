@@ -627,7 +627,15 @@ void FUN_06044848(int param_1)
 
 /* ════════════════════ [010/196] FUN_060449A0 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
+/* ⚠ SKIPPED — rcc backend lacks lburg rules for 64-bit signed
+ * multiply-high: `(short)((ulonglong)((longlong)a * (longlong)b) >> 0x20)`.
+ * Compiler fails with "compiler error in _label--Bad terminal 8566"
+ * (getrule finds no matching tree for MULI8/shift/narrow combo).
+ * Would need new rules in src/sh.md for dmuls.l + sts mach idiom.
+ * Out of scope for compile-clean phase. Call-site cast to char*
+ * and RAM externs added to ghidra_shim.h so a re-attempt doesn't
+ * redo that work. */
+
 #if 0
 /* FUN_060449A0  0x060449A0 */
 
@@ -647,7 +655,7 @@ void FUN_060449a0(int *param_1,int param_2)
   iVar3 = param_1[2];
   iVar5 = *param_1;
   (*pcRam06044a70)((int)unaff_r13[6]);
-  iVar2 = FUN_06044834(param_1);
+  iVar2 = FUN_06044834((char *)param_1);   /* cast: Ghidra typed param_1 as int*, callee takes char* */
   iVar2 = (iVar2 + unaff_r13[6]) - (int)sRam06044a68;
   sVar1 = (short)((ulonglong)((longlong)(int)unaff_r13[4] * (longlong)iVar3) >> 0x20);
   sVar4 = -sVar1;
@@ -699,7 +707,7 @@ void FUN_060449ac(int *param_1,int param_2)
   iVar3 = param_1[2];
   iVar5 = *param_1;
   (*pcRam06044a70)((int)unaff_r13[6]);
-  iVar2 = FUN_06044834(param_1);
+  iVar2 = FUN_06044834((char *)param_1);   /* cast: Ghidra typed param_1 as int*, callee takes char* */
   iVar2 = (iVar2 + unaff_r13[6]) - (int)sRam06044a68;
   sVar1 = (short)((ulonglong)((longlong)(int)unaff_r13[4] * (longlong)iVar3) >> 0x20);
   sVar4 = -sVar1;
@@ -753,7 +761,7 @@ void FUN_060449b6(int *param_1,int param_2)
   iVar4 = param_1[2];
   iVar6 = *param_1;
   (*pcRam06044a70)((int)unaff_r13[6]);
-  iVar2 = FUN_06044834(param_1);
+  iVar2 = FUN_06044834((char *)param_1);   /* cast: Ghidra typed param_1 as int*, callee takes char* */
   iVar2 = (iVar2 + unaff_r13[6]) - (int)sRam06044a68;
   sVar1 = (short)((ulonglong)((longlong)(int)unaff_r13[4] * (longlong)iVar4) >> 0x20);
   sVar5 = -sVar1;

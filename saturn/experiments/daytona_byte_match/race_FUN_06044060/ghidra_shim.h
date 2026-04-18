@@ -19,6 +19,8 @@ typedef unsigned short ushort;
 typedef unsigned int   uint;
 typedef unsigned long  ulong;
 typedef signed char    sbyte;
+typedef long long           longlong;
+typedef unsigned long long  ulonglong;
 
 /* "code" is Ghidra's function-type placeholder. Used as
  *   (*(code *)ptr)()
@@ -207,6 +209,12 @@ extern undefined4 uRam06044900;
 extern short sRam0604493e;
 extern int iRam06044940;
 extern int iRam06044944;
+extern short sRam06044a68;
+extern short sRam06044a6a;
+extern undefined4 uRam06044a6c;
+extern code *pcRam06044a70;
+extern char *pcRam06044a74;
+extern undefined4 uRam06044a78;
 
 /* cross-function callees (FUN_* identifiers used but not defined) */
 extern int FUN_0602A664();
