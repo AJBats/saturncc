@@ -694,8 +694,6 @@ void FUN_060449ac(int *param_1,int param_2)
 
 /* ════════════════════ [012/196] FUN_060449B6 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_060449B6  0x060449B6 */
 
 
@@ -743,8 +741,6 @@ void FUN_060449b6(int *param_1,int param_2)
   unaff_r9[0xd] = pcVar3[7] + sVar7;
   return;
 }
-
-#endif
 
 /* ════════════════════ [013/196] FUN_06044A9A ════════════════════ */
 
