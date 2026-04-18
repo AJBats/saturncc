@@ -4,8 +4,8 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 1 / 196
-- Remaining: 195
+- Sanitized: 2 / 196
+- Remaining: 194
 
 ## Per-function grind workflow
 
@@ -43,7 +43,7 @@ open a new workstream note. Don't silently work around.
 
 Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU compiles cleanly.
 
-- [ ] 001. `FUN_06044060`
+- [x] 001. `FUN_06044060`
 - [ ] 002. `FUN_060440E0`
 - [ ] 003. `FUN_06044138`
 - [ ] 004. `FUN_06044344`

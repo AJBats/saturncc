@@ -117,6 +117,7 @@ extern code PTR_FUN_06040fa4;
 extern code PTR_FUN_06040fc0;
 extern code PTR_FUN_06040fc4;
 extern code PTR_FUN_06040fd0;
+extern code PTR_FUN_060440c8;
 extern code PTR_SUB_06037ea4;
 extern code PTR_SUB_06037ed4;
 extern code PTR_SUB_06037ed8;
@@ -130,9 +131,15 @@ extern code PTR_SUB_06040fac;
 extern code PTR_SUB_06040fb0;
 extern code PTR_SUB_06040fb4;
 extern code PTR_SUB_06040fb8;
+extern code PTR_SUB_060440cc;
+extern code PTR_SUB_060440d0;
+extern code PTR_SUB_060440d4;
 extern char *pcRam0602a6cc;
 extern char *pcRam0602a6dc;
 extern char *puRam0602a6c8;
+extern code *pcRam060440c0;
+extern char *pcRam060440c4;
+extern code *pcRam060440dc;
 
 /* cross-function callees (FUN_* identifiers used but not defined) */
 extern int FUN_0602A664();
