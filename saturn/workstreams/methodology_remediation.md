@@ -22,10 +22,10 @@ This file is **tracked**. Source of truth for remediation state.
 | M3 | Landmine regression tests                  | medium   | **done** — 2 direct tests + rationale for untestable landmines |
 | S1 | `input.c` pragma mid-function guard        | small    | **done** (guard + 2 stage-4 tests, destructively verified) |
 | S2 | Dated handoffs                             | small    | **done** (moved to `history/`) |
-| — | Proof-of-thesis: FUN_06044834 byte-identical | —       | open              |
+| — | Proof-of-thesis: FUN_06044834 byte-identical | —       | **done** (`765db70`) |
 
-**10 done, 0 partial, 0 open.** See per-item Status lines below. The
-proof-of-thesis milestone (FUN_06044834 byte-identical) remains.
+**10 done, 0 partial, 0 open. Proof-of-thesis achieved.** See
+per-item Status lines below.
 
 ## Audit context
 
@@ -664,19 +664,59 @@ workstreams directory.
 
 ## Proof-of-thesis milestone
 
-Separate from the numbered issues: **the project has not demonstrated
-byte-identical match on a single function.** The natural candidate is
-FUN_06044834 — 10 prod instructions, documented blocker is Gap 5 (R0
-displacement mode on the first load).
+**Status: ACHIEVED** (`765db70`, 2026-04-18). FUN_06044834 now
+produces byte-identical output to prod after canonical normalization
+— tier-1 diff count is 0. First byte-match hit in project history.
 
-Tracking as its own milestone because it depends on several of the
-above: C1 to measure it, plus either a targeted Gap 5 peephole
-extension or a small front-end trick to force `mov.w @(disp,r4),r0`
-for the first load.
+The route to closure turned out to cross four separate layers, none
+individually sufficient:
 
-**Milestone:** `diff -u` on objdump of FUN_06044834 prod vs ours
-returns zero. Whatever route gets us there is the answer to
-"peephole-only forever vs. allocator work viable."
+1. **C source (Gap 0):** rewrote param type `int → char *`
+   (`30b5f00`). LCC's front-end wraps `int + int_disp` results in
+   `LOAD(LOAD(...))` when they're cast to pointer for INDIR, which
+   blocks the compound `INDIRI2(ADDI4(reg,immi8))` dispload rule.
+   `char * + int_disp` uses ADDP4 directly and the rule matches.
+   ABI-identical either way.
+
+2. **Custom pragma (Gap 2):** added `#pragma sh_weird_rule_1`
+   (`b67fe7e`). Across 3873 prod functions and 19,087 disp-mode
+   loads, only 3 cases chose indexed over a fitting disp — and 2 of
+   them are the adjacent .w loads in FUN_06044834. No generalizable
+   rule explains the choice; most likely a Sega engineer hint in the
+   original source we don't have. Rather than invent a heuristic
+   from one function, added an opt-in pragma that lets C sources
+   declare "use indexed here" explicitly. Narrow scope; per-function
+   flag cleared at function end.
+
+3. **Peephole extensions (Gap 9 + new passes, `765db70`):** three
+   changes in one commit.
+   - Extended `sh_elim_redundant_ext` to recognize .w/.b
+     displacement-mode and indexed-mode loads as sign-extending
+     sources (hardware fact).
+   - New `sh_fuse_mov_into_add` fuses `mov rA,rB; add rB,rC` into
+     `add rA,rC` when rB is dead.
+   - New `sh_elim_dead_labels` removes label-only lines whose label
+     has no references — LCC emits a function-exit label for every
+     function, dead in single-return leafs.
+
+4. **Allocator extensibility (H2 spike, `385eafb`):** the earlier
+   change that made parameter registers (r4–r7) reusable after
+   last DAG use. Shrunk pressure across the corpus generally; for
+   FUN_06044834 it wasn't directly required but was part of the
+   overall improvement trajectory.
+
+**Impact beyond FUN_06044834.** The peephole extensions from this
+commit generalized: 9 of 10 corpus functions improved. E28 dropped
+1074 → 1053; 44BCC 459 → 438; 0602A664 139 → 130. The fixes
+target common patterns, not function-specific quirks.
+
+**Lesson logged:** for anomalies that have N=1 support in the
+corpus (like Gap 2), resist the urge to invent generalizable rules.
+Accept that some prod output reflects human intent that can't be
+recovered from the binary. Provide an opt-in mechanism instead.
+This is Gap 0 philosophy (refactor the C) extended to compiler
+directives (annotate the C). See `#pragma sh_weird_rule_1` as the
+template for any future weirdness.
 
 ---
 
@@ -684,6 +724,28 @@ returns zero. Whatever route gets us there is the answer to
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `765db70` — **Proof-of-thesis milestone ACHIEVED.** FUN_06044834
+  byte-identical to prod (tier-1 diff = 0). Three peephole changes
+  in one commit: extended `sh_elim_redundant_ext` to recognize
+  .w/.b disp+indexed loads as sign-extending (Gap 9), added
+  `sh_fuse_mov_into_add` to eliminate mov-courier patterns, added
+  `sh_elim_dead_labels` to drop unreferenced function-exit labels.
+  9 of 10 corpus functions improved (E28 −9 lines, 44BCC −7,
+  0602A664 −9, others smaller). Zero regressions; broad corpus
+  168/168 still pass. The path to byte-match used 4 layers: char*
+  refactor (`30b5f00`), #pragma sh_weird_rule_1 (`b67fe7e`), H2
+  allocator spike (`385eafb`), and this peephole batch.
+- `b67fe7e` — `Gap 2` closed (for FUN_06044834). Corpus survey of
+  3873 prod functions (19,087 disp loads) showed only 3 anomalies
+  where indexed was chosen over fitting disp — 2 of them in
+  FUN_06044834, 1 in FUN_06033DC8. No generalizable SHC rule.
+  Added opt-in `#pragma sh_weird_rule_1` to let the C source
+  declare the intent explicitly (like Gap 0 but for compiler
+  directives). FUN_06044834: 16 → 10.
+- `30b5f00` — `Gap 0` (FUN_06044834). Param rewrite `int → char *`
+  to unblock dispload — LCC wraps `int + int_disp` results in LOAD
+  nodes on pointer cast, blocking `INDIRI2(ADDI4(reg,immi8))`.
+  FUN_06044834: 20 → 16.
 - `385eafb` — `H2` closed. Spike produced a working 3-line allocator
   change: extend `x.lastuse` tracking to REGISTER-sclass symbols,
   drop the `!= REGISTER` guard on `putreg` in `ralloc`, widen

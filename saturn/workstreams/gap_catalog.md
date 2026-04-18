@@ -73,12 +73,12 @@ are aspects of the same underlying problem".
 
   ┌─────────────────────────────────────────┐
   │ Gap 5: proactive R0 routing (indexed)   │
-  └──────────────────┬──────────────────────┘
-                     │   gates
-                     ▼
+  └─────────────────────────────────────────┘
+
   ┌─────────────────────────────────────────┐
-  │ Gap 2: SHC's indexed-for-fitting-       │
-  │        displacement heuristic           │
+  │ Gap 2: indexed-over-fitting-disp    ✓   │  RESOLVED via
+  │        (no generalizable rule;          │  #pragma sh_weird_rule_1
+  │         opt-in pragma)                  │  (b67fe7e)
   └─────────────────────────────────────────┘
 
   ┌─────────────────────────────────────────┐
@@ -161,22 +161,34 @@ this.
 
 ---
 
-### Gap 2. SHC's indexed-for-fitting-displacement heuristic &nbsp;&nbsp;**[layer: instruction-selector; depends on Gap 5]**
+### Gap 2. SHC's indexed-for-fitting-displacement heuristic &nbsp;&nbsp;**[layer: C source / pragma]**
 
-**Status:** open; gated by Gap 5.
+**Status:** resolved as "no generalizable rule exists; opt-in
+pragma" (`b67fe7e`). Not the resolution originally expected.
 
-Production sometimes uses `mov #N,r0; mov.X @(r0,rN),rM` (indexed,
-2 instructions) even when offset N fits the displacement range.
-FUN_06044834 offsets 26 and 30 both fit `.w` displacement (max 30)
-but production uses indexed.
+**Empirical finding.** Surveyed all `mov #K,r0; mov.X @(r0,rN),rM`
+patterns across 3873 prod functions in 10 modules — 19,087 total
+disp-mode loads. Only 3 cases where SHC chose indexed when disp
+would have fit: 2 in FUN_06044834 (offsets 26 and 30) and 1 in
+FUN_06033DC8 (K=1 for .b). 0.016% anomaly rate — clearly not a
+heuristic.
 
-Downstream of Gap 5 — we can't choose between indexed and
-displacement until we can reliably produce indexed instructions in
-the first place. Currently we emit 2 indexed instructions in E28;
-production uses 14.
+**Resolution.** Added `#pragma sh_weird_rule_1` (`b67fe7e`). Opt-in
+per function; when present, the phase-1 driver runs
+`sh_apply_weird_rule_1()` which converts every .w disp-to-r0 load
+AFTER the first into indexed form. Narrow, declarative, honest
+about the fact we're matching an engineer's intent rather than a
+compiler rule.
 
-**Fix:** once indexed routing (Gap 5) is working, reverse-engineer
-SHC's preference rule from the production corpus and encode it.
+**When to use.** Only in functions where prod evidence specifically
+shows this pattern. Resist the urge to widen. If new anomalies
+surface that don't fit the "first-disp-then-indexed" shape, file a
+new numbered weird rule rather than broadening this one.
+
+**Not the same as Gap 5.** Gap 5 is about producing indexed
+instructions at all for accumulator/loop patterns (still open).
+Gap 2 is specifically about choosing indexed when disp would fit,
+which is empirically unique to 2 functions.
 
 ---
 
@@ -339,14 +351,20 @@ already needed R0.
 
 ### Gap 9. Redundant extension edge cases &nbsp;&nbsp;**[layer: peephole]**
 
-**Status:** open, small.
+**Status:** partial — `765db70` extended `sh_elim_redundant_ext` to
+recognize .w/.b displacement-mode (`@(disp,rN)`) and indexed-mode
+(`@(r0,rN)`) loads as sign-extending sources. Previously only the
+indirect form (`@rN`), GBR-relative, and pool literal loads were
+tracked. This generalized to 8 corpus functions improving (FUN_06044834,
+FUN_00280710, FUN_06000AF8, FUN_06047748, FUN_0604025C, FUN_0602A664,
+FUN_06040EA0, FUN_06044BCC, FUN_06037E28).
 
-`sh_elim_redundant_ext` catches most cases but misses some. In
-FUN_06047748, `exts.w r1, r4` survived after the pass even though
-r1 came from a chain starting with `mov.w`. Needs audit.
-
-**Fix:** read through the pass's state transitions, reproduce the
-failure on a reduced test, add a regression test, fix the tracking.
+Remaining residual cases: the original audit note mentioned
+FUN_06047748's surviving `exts.w r1, r4` chain. That function still
+has 26 diffs vs prod — not all of them are exts.w, but any remaining
+redundant-ext leaks fall under this gap until the pass is audited
+end-to-end. Revisit if the diff stalls on redundant-ext patterns
+specifically.
 
 ---
 
