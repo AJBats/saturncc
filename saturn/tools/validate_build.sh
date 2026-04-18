@@ -475,6 +475,30 @@ else
 fi
 rm -f "$nra_out"
 
+# 4ab. CODEGEN: #pragma global_register(x=Rn) carves Rn from both
+# vmask and tmask TU-wide AND the speculative r14-rename respects
+# that exclusion. Compile a high-pressure function (would naturally
+# use most of r8..r14 as variable homes) and verify the pinned reg
+# r10 never appears in the output.
+cat > /tmp/regtest.c <<'EOF'
+#pragma global_register(ctx=R10)
+extern int ext(int);
+int heavy(int a, int b, int c, int d) {
+    int x1 = ext(a); int x2 = ext(b); int x3 = ext(c);
+    int x4 = ext(d); int x5 = ext(a + b); int x6 = ext(c + d);
+    int x7 = ext(x1 + x2);
+    return x1 + x2 + x3 + x4 + x5 + x6 + x7;
+}
+EOF
+gr_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$gr_out" 2>/dev/null
+if grep -qE "[[:space:],]r10([[:space:],)]|\$)" "$gr_out"; then
+    fail "regtest: #pragma global_register(x=R10) still emitted r10 references"
+else
+    pass "regtest: #pragma global_register excludes R10 from allocator + r14-rename"
+fi
+rm -f "$gr_out"
+
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
 #     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)

@@ -1318,6 +1318,30 @@ static void progbeg(int argc, char *argv[]) {
         vmask[IREG] = INTVAR;
         tmask[FREG] = 0;
         vmask[FREG] = 0;
+
+        /* #pragma global_register(var=Rn): SHC v5.0 §3.11 — pin a
+         * named global to one of R8..R14 TU-wide. flush_deferred_pragmas
+         * above has already populated sh_global_regs for pragmas that
+         * appeared before this point; any later pragma runs through
+         * the live sh_pragma hook. Either way we can carve the pinned
+         * registers out of both tmask and vmask here so the allocator
+         * never places anything else in them.
+         *
+         * NOTE: full binding semantics (reads/writes of the named var
+         * emitting direct register accesses) are a separate workstream
+         * item — this step only guarantees the reservation. Without
+         * binding, Phase E's TU auto-generation will still need to
+         * pair global_register with compiler-recognized register-home
+         * declarations on the C side. The exclusion is correct and
+         * useful on its own for preventing allocator stomps. */
+        {
+                struct sh_global_reg *g;
+                for (g = sh_global_regs; g; g = g->next) {
+                        unsigned bit = 1u << g->regnum;
+                        tmask[IREG] &= ~bit;
+                        vmask[IREG] &= ~bit;
+                }
+        }
 }
 
 static Symbol rmap(int opk) {
@@ -5834,7 +5858,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         if (need_fp && (usedmask[IREG] & (1u << 14))) {
                 int j;
                 for (j = 13; j >= 8; j--) {
-                        if (!(usedmask[IREG] & (1u << j))) {
+                        /* Candidate must be not-yet-used AND permitted
+                         * by vmask. #pragma global_register clears its
+                         * pinned bit from vmask; this rename pass must
+                         * respect that exclusion or we'd stomp a reg
+                         * the TU has reserved as a named global. */
+                        if (!(usedmask[IREG] & (1u << j))
+                            && (vmask[IREG] & (1u << j))) {
                                 r14_rename_to = j;
                                 break;
                         }
