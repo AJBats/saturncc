@@ -63,6 +63,23 @@ for cfile in "$EXPDIR"/FUN_*.c "$EXPDIR"/race_tu1/FUN_*.c; do
 done
 rm -f /tmp/validate_pp.c
 
+# Per-TU master files — each is a single .c that bundles many
+# decompiled functions. Kept separate because their #if 0 guards
+# mean they compile only a subset, and a broken guard would be
+# invisible to the per-function loop above.
+for tu in "$EXPDIR"/race_FUN_*/FUN_*.c; do
+    [ -f "$tu" ] || continue
+    tu_dir="$(dirname "$tu")"
+    tu_name="$(basename "$tu_dir")"
+    if cpp -P "$tu" /tmp/validate_tu_pp.c 2>/dev/null \
+       && "$RCC" -target=sh/hitachi /tmp/validate_tu_pp.c "${tu%.c}.s" 2>/dev/null; then
+        pass "compile TU $tu_name"
+    else
+        fail "compile TU $tu_name"
+    fi
+done
+rm -f /tmp/validate_tu_pp.c
+
 # ── 3. Stable outputs (diff against last commit) ─────────
 # Add new stable files here as functions reach their match ceiling.
 echo "[3/6] Checking .s stability vs HEAD..."
