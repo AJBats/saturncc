@@ -4,8 +4,8 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 5 / 196
-- Remaining: 191
+- Sanitized: 6 / 196
+- Remaining: 190
 - Skipped (⚠): 3 (hard-stop at 5)
 
 ## Per-function grind workflow
@@ -52,7 +52,7 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 006. `FUN_060446F4`
 - [x] 007. `FUN_06044788`
 - [x] 008. `FUN_06044834` — **byte-identical** (see `byte_match_baselines/`)
-- [ ] 009. `FUN_06044848`
+- [x] 009. `FUN_06044848`
 - [ ] 010. `FUN_060449A0`
 - [ ] 011. `FUN_060449AC`
 - [ ] 012. `FUN_060449B6`

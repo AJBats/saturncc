@@ -191,6 +191,22 @@ extern code *pcRam060440dc;
 extern code *pcRam06044128;
 extern code *pcRam0604412c;
 extern code *pcRam06044134;
+extern short sRam060448ce;
+extern undefined4 *puRam060448d0;
+extern char *pcRam060448d8;
+extern char *pcRam060448dc;
+extern char *pcRam060448e0;
+extern char *pcRam060448e4;
+extern int iRam060448e8;
+extern undefined4 uRam060448ec;
+extern char *pcRam060448f0;
+extern undefined4 uRam060448f4;
+extern char *pcRam060448f8;
+extern undefined4 uRam060448fc;
+extern undefined4 uRam06044900;
+extern short sRam0604493e;
+extern int iRam06044940;
+extern int iRam06044944;
 
 /* cross-function callees (FUN_* identifiers used but not defined) */
 extern int FUN_0602A664();

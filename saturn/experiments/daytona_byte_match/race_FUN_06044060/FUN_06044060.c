@@ -29,6 +29,8 @@
  * Ghidra inferred without prototype-mismatch errors. */
 int FUN_06044834();    /* [008/196], called by #006 */
 uint FUN_06044788();   /* [007/196], called by #006 */
+void FUN_060449ac();   /* [011/196], called by #009 */
+void FUN_060449a0();   /* [010/196], called by #009 */
 
 
 /* ════════════════════ [001/196] FUN_06044060 ════════════════════ */
@@ -585,8 +587,6 @@ int FUN_06044834(char *param_1) {
 
 /* ════════════════════ [009/196] FUN_06044848 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06044848  0x06044848 */
 
 
@@ -624,8 +624,6 @@ void FUN_06044848(int param_1)
   *puVar1 = uVar4;
   return;
 }
-
-#endif
 
 /* ════════════════════ [010/196] FUN_060449A0 ════════════════════ */
 
