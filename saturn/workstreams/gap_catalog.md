@@ -519,6 +519,66 @@ latent-broken until this forced lburg to re-parse.
 
 ---
 
+### Gap 18. `mac.l` dot-product codegen &nbsp;&nbsp;**[layer: C source + instruction-selector]**
+
+**Status:** deferred; scoped for the byte-match pass. Distinct from
+Gap 14 (which is about C-source expressivity for explicit MAC-unit
+intrinsics); this gap is about backend pattern-matching the
+accumulator idiom.
+
+SH-2's `mac.l @rA+, @rB+` instruction performs a 32×32→64
+multiply-accumulate with two post-increment memory loads in a
+single instruction. Production uses it extensively in physics /
+matrix code — 118 occurrences in `FUN_06044060.s` alone. Typical
+prod sequence:
+
+```asm
+dmuls.l r0, r6         ; acc = r0 * r6
+mac.l   @r4+, @r5+     ; acc += *r4++ * *r5++
+mac.l   @r4+, @r5+     ; acc += *r4++ * *r5++
+sts     mach, rX       ; hi 32
+sts     macl, rY       ; lo 32
+```
+
+Ghidra cannot represent `mac.l` in C, so it de-fuses each
+accumulation step into explicit 32×32→64 Karatsuba math plus manual
+carry propagation — roughly 50 lines of de-fused C per fused
+instruction. Four functions in the TU1 corpus hit this:
+FUN_06045FC0, FUN_060463E4, FUN_06046478, FUN_06046520 (the `⚠
+SKIPPED` entries at 112–115 in
+`race_FUN_06044060/TODO.md`). rcc currently emits a clean
+"unsupported DAG shape" error for these (`0e503b2`).
+
+**Why register-pair VREG support is the wrong fix.** Adding real
+8-byte VREGs to the allocator would let us *compile* Ghidra's
+de-fused form — emitting one `dmuls.l` per product plus explicit
+`add/addc` sequences for the carry arithmetic. That structurally
+cannot byte-match a prod sequence of `dmuls.l` + `mac.l` chains;
+it would bank ~200 lines of backend complexity with no byte-match
+dividend.
+
+**Fix approach:**
+1. C-source side: hand-rewrite the de-fused Ghidra body back to a
+   clean `acc += (int64_t)a * b` loop over the actual operand
+   arrays. Scope: probably 10+ race functions; labour-intensive
+   but mechanical. Semantic validation requires the byte-match
+   metric — circular until step 2 lands.
+2. Backend side: lburg rule for `ADDI8(INDIRI8(ADDRLP4),
+   MULI8(CVII8, CVII8))` + pointer-postinc operand shape →
+   emits `mac.l @rA+, @rB+`. Seed rule for the initial
+   `dmuls.l`. New pattern class: pointer post-increment as an
+   operand (not currently modelled in `src/sh.md`'s load family).
+3. Composition: rewrite the C to express the dot product as a
+   pointer-walk over two arrays; pattern emits `dmuls.l` +
+   `mac.l` chain. Saturation logic (the `SR.S` paths in the
+   skipped functions) lowers separately.
+
+Neither half is useful without the other, which is why the whole
+gap is deferred to the byte-match pass. Until then, the 4 skipped
+functions remain `#if 0`-wrapped with pointers back here.
+
+---
+
 ## TU reconstruction dependency
 
 Several gaps trace back to SHC's whole-TU knowledge that we don't

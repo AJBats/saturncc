@@ -6,11 +6,14 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 - Sanitized: 116 / 196
 - Remaining: 76
-- Skipped (⚠): 4 — #112, #113, #114, #115. Real Bucket 2
-  blockers: named `longlong lVar1` locals that get CSE'd to
-  ASGNI8(VREGP,...). Needs register-pair VREG support in the
-  backend. #106-111, #116-117 were false-positive cascade skips
-  from last session — retested clean with no compiler changes.
+- Skipped (⚠): 4 — #112, #113, #114, #115. Ghidra has de-fused
+  SH-2's `mac.l` dot-product idiom into manual 32x32→64 arithmetic;
+  resulting ASGNI8(VREGP, MULI8) DAG shapes have no lburg rule.
+  rcc emits a clean "unsupported DAG shape" error (`0e503b2`
+  replaced the assertion crash). Byte-match path is Gap 18 —
+  deferred to byte-match pass. #106-111, #116-117 were
+  false-positive cascade skips from a prior session — retested
+  clean with no compiler changes.
 
 ## Per-function grind workflow
 

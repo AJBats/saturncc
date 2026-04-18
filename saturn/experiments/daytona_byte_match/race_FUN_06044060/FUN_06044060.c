@@ -6046,13 +6046,14 @@ void FUN_06045f46(char param_1,undefined1 *param_2,undefined4 *param_3,int param
 
 /* ════════════════════ [112/196] FUN_06045FC0 ════════════════════ */
 
-/* ⚠ SKIPPED — lcc's DAG-CSE hoists the entire 8-byte MUL *result*
- * (not just operands) into an 8-byte VREGP, producing trees like
- * ASGNI8(VREGP, MULI8(CVII8(a), CVII8(b))). rcc currently can't
- * store both halves of a dmuls.l result into a VREGP because there
- * is no register-pair / frame-spill support for 8-byte virtual
- * registers. Handling just the CSE-of-widened-operand case (added
- * this session) isn't enough. Deferred pending backend work. */
+/* ⚠ SKIPPED — Ghidra has de-fused SH-2's mac.l dot-product idiom
+ * into manual 32x32→64 arithmetic (many (longlong)a*b expansions
+ * with shift/carry chains). LCC CSE-hoists the 64-bit values into
+ * VREGPs, producing ASGNI8(VREGP, MULI8(...)) shapes with no lburg
+ * rule. rcc emits a clean "unsupported DAG shape" error (0e503b2
+ * replaced the assertion crash). Byte-match path is Gap 18 (mac.l
+ * idiom recognizer + likely partial C rewrite) — deferred to
+ * byte-match pass. */
 
 #if 0
 undefined8 FUN_06045fc0(int *param_1)
@@ -6447,10 +6448,10 @@ undefined8 FUN_06045fc0(int *param_1)
 
 /* ════════════════════ [113/196] FUN_060463E4 ════════════════════ */
 
-/* ⚠ SKIPPED — heavy 64-bit CSE (20+ longlong casts).
- * lcc stores longlong operand into ASGNI8(VREGP, ...) then
- * re-reads via INDIRI8(VREGP); backend needs register-pair
- * support to allocate 8-byte VREGs. Deferred. */
+/* ⚠ SKIPPED — same shape as #112: Ghidra de-fused mac.l dot
+ * product into manual 64-bit arithmetic (20+ (longlong)a*b
+ * expansions). rcc emits clean "unsupported DAG shape" error
+ * on the ASGNI8(VREGP, ...) result. See Gap 18. */
 
 #if 0
 
@@ -6798,10 +6799,10 @@ void FUN_060463e4(void)
 
 /* ════════════════════ [114/196] FUN_06046478 ════════════════════ */
 
-/* ⚠ SKIPPED — heavy 64-bit CSE (20+ longlong casts).
- * lcc stores longlong operand into ASGNI8(VREGP, ...) then
- * re-reads via INDIRI8(VREGP); backend needs register-pair
- * support to allocate 8-byte VREGs. Deferred. */
+/* ⚠ SKIPPED — same shape as #112: Ghidra de-fused mac.l dot
+ * product into manual 64-bit arithmetic (20+ (longlong)a*b
+ * expansions). rcc emits clean "unsupported DAG shape" error
+ * on the ASGNI8(VREGP, ...) result. See Gap 18. */
 
 #if 0
 
@@ -7149,10 +7150,10 @@ void FUN_06046478(void)
 
 /* ════════════════════ [115/196] FUN_06046520 ════════════════════ */
 
-/* ⚠ SKIPPED — heavy 64-bit CSE (20+ longlong casts).
- * lcc stores longlong operand into ASGNI8(VREGP, ...) then
- * re-reads via INDIRI8(VREGP); backend needs register-pair
- * support to allocate 8-byte VREGs. Deferred. */
+/* ⚠ SKIPPED — same shape as #112: Ghidra de-fused mac.l dot
+ * product into manual 64-bit arithmetic (20+ (longlong)a*b
+ * expansions). rcc emits clean "unsupported DAG shape" error
+ * on the ASGNI8(VREGP, ...) result. See Gap 18. */
 
 #if 0
 
