@@ -9,29 +9,48 @@ backend backlog rather than chased per-function.
 
 ## The three backend gaps
 
-### 1. Save-all-callee-saved prologue / epilogue
+### 1. Save-all-range prologue — BLOCKED on global-register detection
 
-**Prod behavior:** SHC emits a **fixed** callee-saved register
-save set the moment the function uses *any* callee-saved reg.
-Prod's FUN_06044060 only uses r8, r9, r10 (to stash param_2,
-param_3, param_4 across the call chain) but saves r8-r14 — all
-seven callee-saved registers — in the prologue and restores them
-all in the epilogue.
+**Prod behavior (partial, confirmed):** For functions where
+callee-saved regs are LOCAL spills, SHC saves the contiguous range
+[lowest_dirty_callee_saved..r14]:
+- FUN_06044060: uses r8, r9, r10 → saves r8-r14
+- FUN_060446F4: uses r8 → saves r8-r14
+- FUN_06044BCC: uses r9+ (not r8) → saves r9-r14
 
-**LCC behavior:** precise usage analysis — saves only the regs it
-actually spills to. If it spills three things to r11, r12, r13,
-the prologue has three pushes, not seven.
+**Counter-evidence:** For functions where callee-saved regs are
+INHERITED GLOBALS, SHC saves **nothing** even though those regs
+are read and written:
+- FUN_0604727C: uses r10, r11 as pointers (reads, writes via
+  `add #0x8,r11`) — no prologue saves
+- FUN_060451BE: reads r8 (`mov.w @(16,r8),r0`) — no prologue saves
+- FUN_06044E28: no callee-saved usage at all in prod
 
-**Diff contribution:** 4 missing pushes + 4 missing pops = 8 lines
-minimum, plus downstream register-name mismatches on the saves it
-does emit.
+**Conclusion:** SHC distinguishes "local spill" from "global
+register." The Ghidra `unaff_r10` / `unaff_r11` / `unaff_r14` /
+`unaff_gbr` annotations across this TU mark the global-register
+case. SHC's actual rule is:
+> Save [lowest_dirty..r14], EXCEPT regs declared as global registers
+> (via `#pragma global_register(Rn)` or equivalent).
 
-**Fix surface:** `src/sh.md` prologue/epilogue emission. Candidates:
-- Unconditional "save all callee-saved" pass when *any* r8-r14 is
-  used (SHC-style, simplest)
-- A pragma (`#pragma sh_preserve_all`) scoped per-function
-- Reverse-engineer SHC's actual rule — it may be tied to whether
-  the function calls other functions (most Daytona functions do)
+**Attempted fix + revert:** implemented naive save-all-range
+(2026-04-18, in-flight only — not committed). Regressed 8 functions
+that use globally-pinned regs. Reverted.
+
+**Dependencies to unblock:**
+- Need a mechanism to declare callee-saved regs as "globally
+  pinned" (SHC had `#pragma global_register`; we'd replicate).
+- Need evidence of WHICH regs are globally pinned across the
+  Daytona race module — likely fewer than 7, possibly just r10,
+  r11, r14, gbr based on Ghidra's `unaff_*` counts.
+- Scan strategy: grep the TU source for `unaff_rN` occurrences
+  per N — regs consistently `unaff` across many functions are the
+  global-register candidates.
+
+**Fix surface:** `src/sh.md` — add `#pragma global_register(Rn)`
+parser (model on `gbr_param`), pin those bits in a new mask, then
+the save-all-range rule applies with that mask excluded. Plus the
+allocator needs to stop picking pinned regs for spills.
 
 ### 2. Register allocator priority (low-numbered first)
 
