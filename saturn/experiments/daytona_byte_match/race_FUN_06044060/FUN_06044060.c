@@ -222,9 +222,14 @@ int * FUN_06044138(void)
 
 /* ════════════════════ [004/196] FUN_06044344 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
-/* FUN_06044344  0x06044344 */
+/* ⚠ SKIPPED — Ghidra emits non-C syntax that can't compile without
+ * hand-rewriting:
+ *  - struct-style member access (`uStack_1c._2_2_`, `._0_2_`,
+ *    `._2_1_`) on a scalar `undefined4` local (bit-field split of
+ *    the 32-bit word that Ghidra didn't promote to a union).
+ *  - `CONCAT11(...)`, `CONCAT22(...)` — Ghidra helpers, not C.
+ * Needs hand-decompilation into shift/mask operations before
+ * sanitization can proceed. Out of scope for compile-clean phase. */
 
 
 int FUN_06044344(int param_1)
