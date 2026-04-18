@@ -17,7 +17,6 @@ L2:
 	tst	r4,r4
 	add	#1,r3
 	mov.b	r3,@r5
-L1:
 	lds.l	@r15+,pr
 	rts
 	mov	r4,r0

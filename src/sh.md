@@ -2164,8 +2164,14 @@ static void sh_elim_redundant_ext(void) {
                         continue;
                 }
 
-                /* mov.w load: dest is sign-extended from 16 bits. */
-                if (sscanf(s, "\tmov.w\t@%*[^,],r%d\n", &r1) == 1
+                /* mov.w load: dest is sign-extended from 16 bits.
+                 * Covers: @rN (indirect), @(disp,rN) displacement mode,
+                 * @(r0,rN) indexed mode, @(disp,gbr) GBR-relative, and
+                 * Lx literal-pool loads. All five forms sign-extend
+                 * the 16-bit value into the 32-bit destination. */
+                if (sscanf(s, "\tmov.w\t@r%*d,r%d\n", &r1) == 1
+                    || sscanf(s, "\tmov.w\t@(%*d,r%*d),r%d\n", &r1) == 1
+                    || sscanf(s, "\tmov.w\t@(r0,r%*d),r%d\n", &r1) == 1
                     || sscanf(s, "\tmov.w\t@(%*d,gbr),r%d\n", &r1) == 1
                     || sscanf(s, "\tmov.w\tL%*d,r%d\n", &r1) == 1) {
                         w_ext |= 1u << r1;
@@ -2174,7 +2180,9 @@ static void sh_elim_redundant_ext(void) {
                 }
 
                 /* mov.b load: dest is sign-extended from 8 bits. */
-                if (sscanf(s, "\tmov.b\t@%*[^,],r%d\n", &r1) == 1
+                if (sscanf(s, "\tmov.b\t@r%*d,r%d\n", &r1) == 1
+                    || sscanf(s, "\tmov.b\t@(%*d,r%*d),r%d\n", &r1) == 1
+                    || sscanf(s, "\tmov.b\t@(r0,r%*d),r%d\n", &r1) == 1
                     || sscanf(s, "\tmov.b\t@(%*d,gbr),r%d\n", &r1) == 1) {
                         b_ext |= 1u << r1;
                         w_ext &= ~(1u << r1);
@@ -2487,6 +2495,114 @@ static void sh_route_via_r0(void) {
 
         memcpy(sh_lines, new_lines, sizeof sh_lines);
         sh_nlines = nout;
+}
+
+/* Delete label-only lines whose label is never referenced. LCC
+ * emits a function-end label (e.g. L1:) before the epilogue so
+ * mid-function return statements can branch to a shared exit. For
+ * single-return functions that label is dead — nothing branches to
+ * it and prod's output has no equivalent.
+ *
+ * Scope: only label-only lines (sh_is_label_line true). Pool-entry
+ * lines like `L3: .long ...` are never considered for deletion,
+ * since they define both label and data.
+ *
+ * Reference detection is token-based: the label name must appear
+ * on another line not adjacent to an alphanumeric/underscore (so
+ * `L1` in `L10:` isn't confused for a reference). */
+static void sh_elim_dead_labels(void) {
+        int i, j;
+        for (i = 0; i < sh_nlines; i++) {
+                char label[32];
+                int llen, refcount;
+                const char *s = sh_lines[i];
+                const char *p;
+
+                if (s[0] == 0) continue;
+                if (!sh_is_label_line(s)) continue;
+
+                p = s;
+                while (*p == ' ' || *p == '\t') p++;
+                llen = 0;
+                while (p[llen] && p[llen] != ':' && llen < 30) {
+                        label[llen] = p[llen];
+                        llen++;
+                }
+                label[llen] = 0;
+                if (llen == 0) continue;
+
+                refcount = 0;
+                for (j = 0; j < sh_nlines && refcount == 0; j++) {
+                        const char *q = sh_lines[j];
+                        if (j == i) continue;
+                        if (q[0] == 0) continue;
+                        while ((q = strstr(q, label)) != NULL) {
+                                char next = q[llen];
+                                if (!((next >= 'a' && next <= 'z')
+                                      || (next >= 'A' && next <= 'Z')
+                                      || (next >= '0' && next <= '9')
+                                      || next == '_')) {
+                                        refcount = 1;
+                                        break;
+                                }
+                                q++;
+                        }
+                }
+
+                if (refcount == 0)
+                        sh_kill_line(i);
+        }
+}
+
+/* Fuse `mov rA,rB; add rB,rC` into `add rA,rC` when rB is dead
+ * after the add. Common shape after dispload + accumulator: the
+ * load lands in r0, gets copied to a temp rN, then `add rN,accum`.
+ * When rN is only the courier — not read again before being
+ * overwritten — the copy is pure waste and can be replaced by a
+ * direct `add rA,accum`.
+ *
+ * Liveness check: scan forward from the add; if rB is read before
+ * being written, not safe. Stop at labels and branches (can't see
+ * through control flow). */
+static void sh_fuse_mov_into_add(void) {
+        int i;
+        for (i = 0; i + 1 < sh_nlines; i++) {
+                int rA, rB, rB2, rC;
+                int j, k;
+                int dead;
+
+                if (sh_lines[i][0] == 0) continue;
+                if (sscanf(sh_lines[i], "\tmov\tr%d,r%d\n",
+                           &rA, &rB) != 2)
+                        continue;
+                if (rA == rB) continue;
+
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (sscanf(sh_lines[j], "\tadd\tr%d,r%d\n",
+                           &rB2, &rC) != 2)
+                        continue;
+                if (rB2 != rB) continue;
+
+                dead = 1;
+                for (k = j + 1; k < sh_nlines; k++) {
+                        if (sh_lines[k][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[k])) break;
+                        if (sh_is_branch_line(sh_lines[k])) break;
+                        if (sh_reads_reg(sh_lines[k], rB)) {
+                                dead = 0;
+                                break;
+                        }
+                        if (sh_writes_reg(sh_lines[k], rB))
+                                break;
+                }
+                if (!dead) continue;
+
+                snprintf(sh_lines[j], SH_MAX_LINELEN,
+                         "\tadd\tr%d,r%d\n", rA, rC);
+                sh_kill_line(i);
+        }
 }
 
 /* #pragma sh_weird_rule_1 implementation.
@@ -5292,6 +5408,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 if (sh_gbr_param)
                         sh_rewrite_gbr_param();
                 sh_elim_redundant_ext();
+                sh_fuse_mov_into_add();
                 sh_fold_mov_extw_to_movw();
                 sh_fold_base_displacement();
                 if (sh_weird_rule_1)
@@ -5300,6 +5417,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_fold_post_increment();
                 sh_fill_branch_delays();
                 sh_fill_cond_delays();
+                sh_elim_dead_labels();
 
                 /* r14-rename composition (methodology_remediation C2.c).
                  *

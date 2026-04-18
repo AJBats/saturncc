@@ -21,7 +21,6 @@ _FUN_0604025C:
 	mov.b	r2,@r1
 	mov.l	r4,@(20,r4)
 	mov	r4,r0
-L1:
 	lds.l	@r15+,pr
 	rts
 	add	#16,r0

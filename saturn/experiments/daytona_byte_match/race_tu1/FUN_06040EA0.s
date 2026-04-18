@@ -135,7 +135,6 @@ L2:
 	mov.l	L33,r1
 	jsr	@r1
 	mov	r0,r4
-L1:
 	ldc.l	@r15+,gbr
 	lds.l	@r15+,pr
 	mov.l	@r15+,r12

@@ -49,7 +49,6 @@ L7:
 	nop
 L11:
 	mov.w	@(6,r15),r0
-	exts.w	r0,r0
 	mov	r0,r1
 	mov.l	L18,r2
 	add	r2,r1
@@ -69,10 +68,8 @@ L11:
 L9:
 L5:
 	dt	r9
-L3:
 	bf	L2
 	mov	r11,r0
-L1:
 	add	#12,r15
 	lds.l	@r15+,pr
 	mov.l	@r15+,r8

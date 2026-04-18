@@ -98,7 +98,6 @@ L4:
 	mov.l	@(16,r15),r1
 	add	#24,r1
 	mov.l	r1,@(16,r15)
-L5:
 	mov.l	@(4,r15),r1
 	mov	#20,r2
 	cmp/ge	r2,r1
@@ -122,9 +121,7 @@ L7:
 	mov.l	@(4,r15),r2
 	add	r2,r1
 	mov.b	@(3,r15),r0
-	exts.b	r0,r0
-	mov	r0,r2
-	add	r2,r1
+	add	r0,r1
 	mov.l	r1,@(20,r15)
 	mov.l	@(20,r15),r1
 	mov.l	@r1,r1
@@ -145,7 +142,6 @@ L7:
 	mov	r0,r0
 	add	#12,r0
 	mov.b	r0,@(3,r15)
-L8:
 	add	#12,r8
 L10:
 	mov	r8,r1
@@ -200,7 +196,6 @@ L3:
 	mov.l	r1,@(4,r15)
 L11:
 	mov.b	@(3,r15),r0
-	exts.b	r0,r0
 	mov	r0,r1
 	mov	r1,r9
 	add	r10,r9
@@ -269,12 +264,10 @@ L11:
 	mov	r0,r0
 	add	#24,r0
 	mov.b	r0,@(3,r15)
-L12:
 	mov.l	@(12,r15),r1
 	mov	#4,r2
 	cmp/ge	r2,r1
 	bf	L11
-L1:
 	add	#24,r15
 	lds.l	@r15+,macl
 	mov.l	@r15+,r8

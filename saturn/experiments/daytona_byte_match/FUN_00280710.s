@@ -15,7 +15,6 @@ L4:
 	mov	#1,r0
 Lm4:
 	mov	r14,r15
-L1:
 	rts
 	mov.l	@r15+,r14
 	.align 2

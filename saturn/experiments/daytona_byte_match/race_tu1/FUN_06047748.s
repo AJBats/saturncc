@@ -18,13 +18,11 @@ L2:
 	mov.w	r1,@r5
 	mov.w	@(2,r5),r0
 	mov	r0,r1
-	exts.w	r1,r4
+	mov	r1,r4
 L5:
 	dt	r6
 	add	#-4,r5
-L3:
 	bf	L2
-L1:
 	rts
 	mov	r4,r0
 	.align 2

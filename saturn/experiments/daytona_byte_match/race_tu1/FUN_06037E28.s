@@ -126,7 +126,6 @@ Lswt0:
 	.short	L29 - Lswt0
 	bra	L8
 	nop
-L11:
 	mov.l	L49,r1
 	jsr	@r1
 	mov	r14,r4
@@ -225,7 +224,6 @@ L60:	.long	_sub_0603801C
 L61:	.long	_sub_06038020
 L63:	.long	_sub_06038024
 L64:	.long	_sub_06038028
-L12:
 	mov.l	L65,r1
 	jsr	@r1
 	mov	r14,r4
@@ -268,7 +266,6 @@ L54:	.short	32767
 L55:	.short	-65
 L65:	.long	_func_06038bc4
 L66:	.long	_sub_06038390
-L13:
 	mov.l	L67,r1
 	jsr	@r1
 	mov	r14,r4
@@ -373,7 +370,6 @@ L68:	.long	_sub_06038150
 L69:	.long	_sub_06038154
 L70:	.long	_sub_06038158
 L71:	.long	_sub_0603815C
-L14:
 	mov.l	L72,r1
 	jsr	@r1
 	mov	r14,r4
@@ -404,7 +400,6 @@ L17:
 	mov.l	L77,r1
 	jsr	@r1
 	mov	r14,r4
-L18:
 	mov	r14,r1
 	mov.w	L78,r2
 	add	r2,r1
@@ -559,7 +554,6 @@ L77:	.long	_sub_06038260
 L79:	.long	_sub_06038264
 L80:	.long	_sub_06038268
 L101:	.long	_FUN_060384c4
-L23:
 	mov.l	L83,r1
 	jsr	@r1
 	mov	r14,r4
@@ -585,7 +579,6 @@ L26:
 	mov.l	L84,r1
 	jsr	@r1
 	mov	r14,r4
-L27:
 	mov.l	L106,r1
 	jsr	@r1
 	mov	r14,r4
@@ -636,7 +629,6 @@ L27:
 L109:	.short	224
 	.align 2
 L96:	.long	_FUN_06038dd8
-L28:
 	mov.l	L106,r1
 	jsr	@r1
 	mov	r14,r4
@@ -675,7 +667,6 @@ L28:
 	.align 2
 L102:	.long	_func_06038a82
 L103:	.long	_func_060385ce
-L29:
 	mov	r14,r1
 	mov.w	L110,r2
 	add	r2,r1
