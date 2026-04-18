@@ -1208,8 +1208,6 @@ void FUN_06044e3c(uint *param_1,uint *param_2)
 
 /* ════════════════════ [024/196] FUN_06045006 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045006  0x06045006 */
 
 
@@ -1419,12 +1417,8 @@ uint FUN_06045006(int param_1)
   return uVar13;
 }
 
-#endif
-
 /* ════════════════════ [025/196] FUN_06045008 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045008  0x06045008 */
 
 
@@ -1633,12 +1627,8 @@ uint FUN_06045008(int param_1,int param_2)
   return uVar13;
 }
 
-#endif
-
 /* ════════════════════ [026/196] FUN_06045020 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045020  0x06045020 */
 
 
@@ -1835,12 +1825,8 @@ void FUN_06045020(int param_1,uint param_2,uint param_3)
   return;
 }
 
-#endif
-
 /* ════════════════════ [027/196] FUN_0604507E ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_0604507E  0x0604507E */
 
 
@@ -2050,12 +2036,8 @@ uint FUN_0604507e(uint *param_1)
   return uVar13;
 }
 
-#endif
-
 /* ════════════════════ [028/196] FUN_06045080 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045080  0x06045080 */
 
 
@@ -2264,12 +2246,8 @@ uint FUN_06045080(uint *param_1,int param_2)
   return uVar13;
 }
 
-#endif
-
 /* ════════════════════ [029/196] FUN_06045098 ════════════════════ */
 
-/* TODO: sanitize — raw Ghidra decomp below. */
-#if 0
 /* FUN_06045098  0x06045098 */
 
 
@@ -2465,8 +2443,6 @@ void FUN_06045098(uint *param_1,uint param_2,uint param_3)
   } while (iVar7 != 0);
   return;
 }
-
-#endif
 
 /* ════════════════════ [030/196] FUN_060450F2 ════════════════════ */
 
