@@ -4,13 +4,13 @@ Goal: all 196 functions compile cleanly as part of `FUN_06044060.c`. Sanitizatio
 
 ## Status
 
-- Sanitized: 109 / 196
+- Sanitized: 116 / 196
 - Remaining: 76
-- Skipped (⚠): 11 — all in the 106-117 range, all due to
-  64-bit multiply-result CSE (lcc stores longlong values into
-  ASGNI8(VREGP, ...) which needs register-pair support rcc does
-  not yet have). Revisiting requires a real 8-byte-register
-  allocator in the backend.
+- Skipped (⚠): 4 — #112, #113, #114, #115. Real Bucket 2
+  blockers: named `longlong lVar1` locals that get CSE'd to
+  ASGNI8(VREGP,...). Needs register-pair VREG support in the
+  backend. #106-111, #116-117 were false-positive cascade skips
+  from last session — retested clean with no compiler changes.
 
 ## Per-function grind workflow
 
@@ -153,18 +153,18 @@ Prod-order. Check off when the function's `#if 0` block is unwrapped AND the TU 
 - [x] 103. `FUN_06045DAA`
 - [x] 104. `FUN_06045DCC`
 - [x] 105. `FUN_06045E06`
-- [ ] 106. `FUN_06045E44` ⚠ 64-bit CSE (ASGNI8/VREGP)
-- [ ] 107. `FUN_06045EA8` ⚠ 64-bit CSE
-- [ ] 108. `FUN_06045EC8` ⚠ 64-bit CSE
-- [ ] 109. `FUN_06045EE8` ⚠ 64-bit CSE
+- [x] 106. `FUN_06045E44`
+- [x] 107. `FUN_06045EA8`
+- [x] 108. `FUN_06045EC8`
+- [x] 109. `FUN_06045EE8`
 - [x] 110. `FUN_06045F0C`
-- [ ] 111. `FUN_06045F46` ⚠ 64-bit CSE + bad-instr warnings
+- [x] 111. `FUN_06045F46`
 - [ ] 112. `FUN_06045FC0` ⚠ returns undefined8; 64-bit local
 - [ ] 113. `FUN_060463E4` ⚠ heavy 64-bit CSE
 - [ ] 114. `FUN_06046478` ⚠ heavy 64-bit CSE
 - [ ] 115. `FUN_06046520` ⚠ heavy 64-bit CSE
-- [ ] 116. `FUN_06046602` ⚠ calls 8-byte-returning function
-- [ ] 117. `FUN_0604660A` ⚠ calls 8-byte-returning function
+- [x] 116. `FUN_06046602`
+- [x] 117. `FUN_0604660A`
 - [x] 118. `FUN_0604669E`
 - [x] 119. `FUN_060466A0`
 - [x] 120. `FUN_0604670C`

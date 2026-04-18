@@ -5808,12 +5808,6 @@ void FUN_06045e06(uint param_1)
 
 /* ════════════════════ [106/196] FUN_06045E44 ════════════════════ */
 
-/* ⚠ SKIPPED — calls FUN_06045fc0 (which returns undefined8) and
- * lcc CSE-widens the int local that captures extraout_r1 to 8-byte,
- * triggering ASGNI8(VREGP, CVII8(...)) the backend can't handle
- * without register-pair support. Deferred. */
-
-#if 0
 void FUN_06045e44(void)
 
 {
@@ -5871,16 +5865,9 @@ void FUN_06045e44(void)
   *puVar2 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-#endif
 
 
 /* ════════════════════ [107/196] FUN_06045EA8 ════════════════════ */
-
-/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
- * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
- * regs the backend cannot yet allocate. Deferred with #111/#112. */
-
-#if 0
 
 /* FUN_06045EA8  0x06045EA8 */
 
@@ -5892,7 +5879,7 @@ void switchD_06045e5a__caseD_2(void)
   undefined2 *in_r7;
   int unaff_r14;
   int unaff_gbr;
-  
+
   FUN_06045fc0(*(undefined4 *)(unaff_r14 + 0x2c));
   in_r7[0xe] = DAT_06045f1a + extraout_r1;
   in_r7[3] = *(undefined2 *)(unaff_gbr + 0x82);
@@ -5900,23 +5887,10 @@ void switchD_06045e5a__caseD_2(void)
   in_r7[2] = *(ushort *)(unaff_gbr + 0x94) | DAT_06045f1c;
   return;
 }
-#endif
 
 /* ════════════════════ [108/196] FUN_06045EC8 ════════════════════ */
 
-/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
- * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
- * regs the backend cannot yet allocate. Deferred with #111/#112. */
-
-#if 0
-
 /* FUN_06045EC8  0x06045EC8 */
-
-/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
- * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
- * regs the backend cannot yet allocate. Deferred with #111/#112. */
-
-#if 0
 
 
 void switchD_06045e5a__caseD_4(void)
@@ -5926,22 +5900,15 @@ void switchD_06045e5a__caseD_4(void)
   ushort *in_r7;
   int unaff_r14;
   int unaff_gbr;
-  
+
   puVar1 = (uint *)(*(int *)(unaff_r14 + 0x28) + (int)*(short *)(unaff_gbr + 0x82));
   *(uint *)(in_r7 + 2) = *(uint *)(unaff_gbr + 0x94) | *puVar1;
   *(uint *)(in_r7 + 4) = puVar1[1];
   *in_r7 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-#endif
 
 /* ════════════════════ [109/196] FUN_06045EE8 ════════════════════ */
-
-/* ⚠ SKIPPED — switchD_xx__caseD_x helper that calls
- * FUN_06045fc0 (returns undefined8); lcc CSE-widens to 8-byte
- * regs the backend cannot yet allocate. Deferred with #111/#112. */
-
-#if 0
 
 /* FUN_06045EE8  0x06045EE8 */
 
@@ -5954,7 +5921,7 @@ void switchD_06045e5a__caseD_6(void)
   ushort *in_r7;
   int unaff_r14;
   int unaff_gbr;
-  
+
   FUN_06045fc0(*(undefined4 *)(unaff_r14 + 0x2c));
   in_r7[0xe] = DAT_06045f1a + extraout_r1;
   puVar1 = (uint *)(*(int *)(unaff_r14 + 0x28) + (int)*(short *)(unaff_gbr + 0x82));
@@ -5963,7 +5930,6 @@ void switchD_06045e5a__caseD_6(void)
   *in_r7 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-#endif
 
 /* ════════════════════ [110/196] FUN_06045F0C ════════════════════ */
 
@@ -5985,16 +5951,9 @@ void switchD_06045e5a__caseD_c(void)
   *in_r7 = DAT_06045f26 | (short)*(char *)(unaff_gbr + 0x80) & 0x30U;
   return;
 }
-#endif
 
 /* ════════════════════ [111/196] FUN_06045F46 ════════════════════ */
 
-/* ⚠ SKIPPED — decomp has both "bad instruction data" warnings
- * AND heavy 64-bit CSE (lcc emits ASGNI8(VREGP, CVII8(...)) to
- * hoist longlong values across uses). The latter needs full
- * register-pair support in rcc's backend. Deferred. */
-
-#if 0
 /* WARNING: Control flow encountered bad instruction data */
 /* WARNING: Instruction at (ram,0x06045f70) overlaps instruction at (ram,0x06045f6f)
     */
@@ -6083,7 +6042,6 @@ void FUN_06045f46(char param_1,undefined1 *param_2,undefined4 *param_3,int param
     halt_baddata();
   }
 }
-#endif
 
 
 /* ════════════════════ [112/196] FUN_06045FC0 ════════════════════ */
@@ -7563,8 +7521,6 @@ LAB_060465e2:
  * lcc CSEs the result to ASGNI8(VREGP, ...) which needs
  * register-pair support rcc does not yet have. Deferred. */
 
-#if 0
-
 /* FUN_06046602  0x06046602 */
 
 
@@ -7576,7 +7532,7 @@ void FUN_06046602(void)
   int extraout_r1;
   int iVar2;
   int unaff_r14;
-  
+
   if (*(int *)(in_r1 + 8) != 0) {
     iVar1 = (int)*in_r1;
     iVar2 = *(int *)(unaff_r14 + 0x1c);
@@ -7590,15 +7546,12 @@ void FUN_06046602(void)
   }
   return;
 }
-#endif
 
 /* ════════════════════ [117/196] FUN_0604660A ════════════════════ */
 
 /* ⚠ SKIPPED — calls an 8-byte-returning function;
  * lcc CSEs the result to ASGNI8(VREGP, ...) which needs
  * register-pair support rcc does not yet have. Deferred. */
-
-#if 0
 
 /* FUN_0604660A  0x0604660A */
 
@@ -7612,7 +7565,7 @@ int FUN_0604660a(void)
   int extraout_r1;
   int iVar3;
   int unaff_r14;
-  
+
   iVar2 = (int)*in_r1;
   iVar3 = *(int *)(unaff_r14 + 0x1c);
   do {
@@ -7625,7 +7578,6 @@ int FUN_0604660a(void)
   } while (iVar2 != 0);
   return (int)sVar1;
 }
-#endif
 
 /* ════════════════════ [118/196] FUN_0604669E ════════════════════ */
 
