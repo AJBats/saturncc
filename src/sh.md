@@ -4960,6 +4960,74 @@ static void sh_leaf_rename_callee_saved(int need_fp, int exit_label_num) {
         }
 }
 
+/* Post-RA delay-slot rename: complement of sh_leaf_rename_callee_saved.
+ * For single-callee-saved leaf functions with MULTIPLE bra-to-exit
+ * sites (which sh_inline_returns will turn into multiple inline rts),
+ * rename the dirty callee-saved reg to r14 specifically so each rts
+ * delay slot pops r14 for free.
+ *
+ * Mutually exclusive with leaf_rename above (which gates on
+ * nexits <= 1). Both passes inspect the same shape — single dirty
+ * callee-saved on a leaf — but pick different rename targets:
+ *
+ *   leaf_rename     (nexits <= 1):  dirty -> caller-saved scratch
+ *                                   (eliminates the prologue save)
+ *   delay_slot      (nexits  > 1):  dirty -> r14
+ *                                   (so each rts pop fills delay slot)
+ *
+ * Trade-off prod follows: with N rts sites, N wasted nops (from
+ * the eliminate-save approach) cost more than 1 saved push. SHC
+ * keeps the callee-saved and uses the delay slot.
+ *
+ * Under our default high-first allocator, the dirty reg is naturally
+ * r14 already → this pass is a no-op early-exit. Under a low-first
+ * allocator (gap2 plan, future Chunk 5) the dirty reg is the lowest
+ * picked (r8 under bare low-first) and this pass migrates it to r14
+ * for the delay-slot pattern.
+ *
+ * Skips on has_boolfp_r14 to avoid colliding with sh_rewrite_bool_fp,
+ * which writes r14 as FP scratch in its injection. Symmetric guard
+ * to leaf_rename's. */
+static void sh_rename_to_r14_for_delay_slot(int need_fp,
+                                            int exit_label_num) {
+        unsigned live = 0;
+        int j, src, nexits, ncallee_saved;
+
+        nexits = sh_count_exit_bras(exit_label_num);
+        if (nexits <= 1)
+                return;  /* leaf_rename's territory */
+        ncallee_saved = bitcount(usedmask[IREG] & INTVAR);
+        if (ncallee_saved != 1)
+                return;  /* multi-callee-saved: regsave handles range */
+        if (need_fp)
+                return;  /* r14 occupied as FP */
+        if (sh_body_has_bool_fp_r14_pattern())
+                return;  /* bool_fp will write r14 as scratch */
+
+        /* Find the single dirty callee-saved register. */
+        src = -1;
+        for (j = 8; j <= 14; j++) {
+                if (usedmask[IREG] & (1u << j)) { src = j; break; }
+        }
+        if (src < 0 || src == 14)
+                return;  /* nothing to rename, or already at r14 */
+
+        /* r14 must be unreferenced in the body — otherwise renaming
+         * src to r14 would alias two distinct values. Compute live
+         * the same way leaf_rename does. */
+        for (j = 0; j < sh_nlines; j++) {
+                if (sh_lines[j][0] == 0)
+                        continue;
+                live |= sh_regs_used(sh_lines[j]);
+        }
+        if (live & (1u << 14))
+                return;
+
+        sh_rename_reg(src, 14);
+        usedmask[IREG] &= ~(1u << src);
+        usedmask[IREG] |= 1u << 14;
+}
+
 /* Replace each `bra <exit_label>; <delay_insn>` in the body with an
  * inline copy of the function epilogue: `<delay_insn>; [FP teardown];
  * [pops]; rts; <last_pop_as_delay_slot>`. This matches Hitachi SHC's
@@ -6050,6 +6118,14 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 if (ncalls == 0)
                         sh_leaf_rename_callee_saved(need_fp,
                                                     f->u.f.label);
+                /* Complement of leaf_rename for the multi-rts shape:
+                 * see sh_rename_to_r14_for_delay_slot comment.
+                 * Renames TO r14 (callee-saved) so the rename is safe
+                 * across jsr calls — no ncalls gate required. No-op
+                 * under high-first allocator (dirty reg is already
+                 * r14). */
+                sh_rename_to_r14_for_delay_slot(need_fp,
+                                                f->u.f.label);
         }
 
         /* ──────────────────────────────────────────────────
