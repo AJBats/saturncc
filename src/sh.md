@@ -993,11 +993,20 @@ static int sh_func_has_attr(const char *name, int attrs) {
  * extended-but-unused bits that prod saves anyway). */
 static unsigned sh_regsave_extend(unsigned mask) {
         int j, lowest = -1;
+        struct sh_global_reg *g;
         for (j = 8; j <= 14; j++)
                 if (mask & (1u << j)) { lowest = j; break; }
         if (lowest >= 0)
                 for (j = lowest; j <= 14; j++)
                         mask |= 1u << j;
+        /* Save-default inversion: globally-pinned registers (via
+         * #pragma global_register) must NOT be saved/restored — they're
+         * TU-wide homes that cross function boundaries by design.
+         * Carve them back out of the extended mask so the prologue
+         * doesn't stomp the contract. */
+        for (g = sh_global_regs; g; g = g->next)
+                if (g->regnum >= 8 && g->regnum <= 14)
+                        mask &= ~(1u << g->regnum);
         return mask;
 }
 
@@ -6052,19 +6061,29 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         if (need_fp)
                 usedmask[IREG] |= 1u << 14;
 
-        /* #pragma regsave: SHC v5.0 §3.10 — save the contiguous range
-         * [lowest_dirty..r14] at prologue, even if intermediate regs
-         * were never touched. This is the rule our corpus shows prod
-         * following for every tagged function. Inserted AFTER the
-         * speculative r14 rename so we don't force r14 into usedmask
-         * before the rename decision is made — the rename only fires
-         * when the allocator picked r14 as a var home, and regsave
-         * shouldn't change that signal. Re-applied after the post-
-         * peephole rebuild (see sizeisave rebuild block below) because
-         * that rebuild AND's with body-liveness and would otherwise
-         * strip the extended-but-never-referenced regs back out. */
-        if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
-                usedmask[IREG] = sh_regsave_extend(usedmask[IREG]);
+        /* Save-default inversion (Gap 1C, 2026-04-19): extend the save
+         * range to SHC's [lowest_dirty..r14] contiguous rule by default.
+         * Corpus study (2,308 prod functions) showed this single rule
+         * covers ~70% of functions (FULL_RANGE + clean NO_SAVES +
+         * LEAF). Leaves with no callee-saved writes pass through
+         * untouched because sh_regsave_extend() is a no-op on empty
+         * masks. Functions that need a different behavior opt out via
+         * #pragma noregsave / noregalloc below.
+         *
+         * Inserted AFTER the speculative r14 rename so we don't force
+         * r14 into usedmask before the rename decision is made — the
+         * rename only fires when the allocator picked r14 as a var
+         * home, and the extension shouldn't change that signal.
+         * Re-applied after the post-peephole rebuild (see sizeisave
+         * rebuild block below) because that rebuild AND's with body-
+         * liveness and would otherwise strip the extended-but-never-
+         * referenced regs back out.
+         *
+         * #pragma regsave is now redundant (default behavior) but still
+         * accepted as a no-op so older tagged TU source compiles
+         * unchanged. See saturn/workstreams/save_strategy_and_asm_intrinsic.md
+         * for the full strategy. */
+        usedmask[IREG] = sh_regsave_extend(usedmask[IREG]);
 
         /* #pragma noregsave / noregalloc: SHC v5.0 §3.10 — neither
          * saves R8..R14 at prologue/epilogue. noregsave says "trust
@@ -6272,13 +6291,14 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                         unsigned keep = usedmask[IREG] & live;
                         if (need_fp)
                                 keep |= 1u << 14;
-                        /* regsave re-extension: the body-liveness AND
-                         * above would drop r8..r14 bits that regsave
-                         * deliberately included but the body never
-                         * references. Re-extend so the save-range rule
-                         * survives the post-peephole trim. */
-                        if (sh_func_has_attr(f->name, SH_ATTR_REGSAVE))
-                                keep = sh_regsave_extend(keep);
+                        /* Re-extension after post-peephole liveness trim:
+                         * the body-liveness AND above would drop r8..r14
+                         * bits that the default-on save rule included but
+                         * the body never references. Re-extend so the
+                         * [lowest_dirty..r14] shape survives the trim.
+                         * Paired with the default-on site above (see the
+                         * save-default inversion comment there). */
+                        keep = sh_regsave_extend(keep);
                         /* noregsave / noregalloc re-strip: undo both
                          * the liveness keep (body may reference r14
                          * for FP setup) and the `need_fp` force-set

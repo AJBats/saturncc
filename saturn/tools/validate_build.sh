@@ -391,9 +391,12 @@ else
 fi
 rm -f "$rs_out"
 
-# 4y. CODEGEN: WITHOUT #pragma regsave, the allocator is free to skip
-# unused callee-saved regs. Same function body as 4x minus the
-# pragma must NOT push every reg in r8..r14.
+# 4y. CODEGEN: default save strategy is SHC's [lowest_written..r14]
+# contiguous range (save-default inversion, see
+# saturn/workstreams/save_strategy_and_asm_intrinsic.md). Same stress
+# body as 4x but WITHOUT #pragma regsave — must still push the full
+# contiguous range because the body dirties enough callee-saved regs
+# to drive `lowest` down to r8.
 cat > /tmp/regtest.c <<'EOF'
 extern int ext(int);
 int stress(int a, int b, int c, int d) {
@@ -409,10 +412,10 @@ full_range=1
 for n in 14 13 12 11 10 9 8; do
     grep -q "mov.l[[:space:]]*r$n,@-r15" "$rs_out" || full_range=0
 done
-if [ "$full_range" = "0" ]; then
-    pass "regtest: without #pragma regsave, prologue skips unused callee-saved"
+if [ "$full_range" = "1" ]; then
+    pass "regtest: default save is [lowest_written..r14] full range"
 else
-    fail "regtest: without #pragma regsave, prologue wrongly pushes full r8..r14"
+    fail "regtest: default save missing full r8..r14 range"
 fi
 rm -f "$rs_out"
 
