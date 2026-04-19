@@ -3574,6 +3574,61 @@ static void sh_coalesce_move_chains(void) {
         }
 }
 
+/* Returns 1 if the body contains at least one bool_fp pattern
+ * (any destination register, not specifically r14). Used by
+ * sh_rewrite_bool_fp's r14-force-add gate. Mirrors the pattern
+ * check in sh_rewrite_bool_fp's main loop, just non-destructively. */
+static int sh_body_has_any_bool_fp_pattern(void) {
+        int i, j, k, m, n;
+        int rB, rP, rQ;
+        for (i = 0; i < sh_nlines; i++) {
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "bf/s")
+                    && !sh_has_prefix(sh_lines[i], "bt/s"))
+                        continue;
+                /* Find delay slot line. */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                /* Extract destination register from delay slot mov. */
+                {
+                        const char *r = NULL, *s = sh_lines[j];
+                        while (*s) {
+                                if (*s == 'r' && s[1] >= '0'
+                                    && s[1] <= '9')
+                                        r = s;
+                                s++;
+                        }
+                        if (!r) continue;
+                        r++;
+                        rB = *r - '0';
+                        if (r[1] >= '0' && r[1] <= '9')
+                                rB = rB * 10 + (r[1] - '0');
+                }
+                /* Find overwrite line. */
+                for (k = j + 1; k < sh_nlines; k++) {
+                        if (sh_lines[k][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[k])) continue;
+                        break;
+                }
+                if (k >= sh_nlines) continue;
+                if (!sh_writes_reg(sh_lines[k], rB)) continue;
+                /* Find label. */
+                for (m = k + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) continue;
+                if (!sh_is_label_line(sh_lines[m])) continue;
+                /* Find mov rN, r0. */
+                for (n = m + 1; n < sh_nlines; n++)
+                        if (sh_lines[n][0] != 0) break;
+                if (n >= sh_nlines) continue;
+                if (!sh_parse_regmov(sh_lines[n], &rP, &rQ)) continue;
+                if (rP != rB || rQ != 0) continue;
+                return 1;
+        }
+        return 0;
+}
+
 /* Rewrite the boolean bf/s pattern to match Hitachi SHC's always-FP
  * idiom. Detects:
  *   bf/s L; mov #X,rN; mov #Y,rN; L: mov rN,r0; [exit]: rts; pop
@@ -3592,11 +3647,19 @@ static void sh_rewrite_bool_fp(int need_fp) {
         int nout = 0;
 
         if (need_fp) return;
-        /* Injects `mov r15,r14` / `mov r14,r15` which clobber r14.
-         * Requires the prologue to save r14. If leaf-rename dropped
-         * r14 from usedmask, skip — the injection would corrupt the
-         * caller's r14. */
-        if (!(usedmask[IREG] & (1u << 14))) return;
+        /* Injects `mov r15,r14` / `mov r14,r15` which clobber r14,
+         * so the prologue must save r14. Historically we bailed when
+         * r14 wasn't in usedmask. That worked under high-first
+         * allocation (r14 was usually a var) but breaks under
+         * low-first (r14 rarely a var → injection skipped → prod
+         * idiom not produced). Fix: if the body genuinely has the
+         * bool_fp pattern, force-add r14 to usedmask so the prologue
+         * saves it. The injection then proceeds safely. If no pattern
+         * matches, skip the force-add (no waste). */
+        if (!(usedmask[IREG] & (1u << 14))) {
+                if (!sh_body_has_any_bool_fp_pattern()) return;
+                usedmask[IREG] |= 1u << 14;
+        }
 
         for (i = 0; i < sh_nlines; i++) {
                 if (nout >= SH_MAX_LINES - 10) {
