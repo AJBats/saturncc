@@ -258,6 +258,12 @@
 #pragma sh_alloc_lowfirst(FUN_06047014)
 #pragma sh_alloc_lowfirst(FUN_060479a0)
 
+/* noregalloc on noregsave-tagged functions where the additional
+ * R8..R14 allocator strip closes diff lines (A/B-tested via
+ * find_extra_pragma_wins.py). Both lose -2 each. */
+#pragma noregalloc(FUN_06044d64)
+#pragma noregalloc(FUN_06044da8)
+
 /* ──────────────────────────────────────────────────────────────
  * Shared declarations (DATs, globals, intra-TU prototypes).
  * Populated as functions are sanitized and common references
