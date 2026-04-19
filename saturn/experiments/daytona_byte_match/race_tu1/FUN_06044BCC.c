@@ -31,6 +31,11 @@
 #define DAT_06044D5C (0x002FC344)         /* .L_pool_06044D5C */
 #define DAT_06044D60 (0x002FD3D8)         /* .L_pool_06044D60 */
 
+/* Destructive test (gap2 census) showed this function improves -2
+ * with low-first allocation. Prod uses the contiguous regsave save
+ * range r9..r14 (skipping r8); low-first matches that. */
+#pragma sh_alloc_lowfirst(FUN_06044BCC)
+
 void FUN_06044BCC(void) {
     short sVar1;
     char *pcVar2;

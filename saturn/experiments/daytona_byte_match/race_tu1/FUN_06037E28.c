@@ -5,6 +5,11 @@
  * Ghidra C:  D:/Projects/DaytonaCCEReverse/ghidra_reference/race/FUN_06037E28.c
  */
 
+/* Tag attempts (regsave, sh_alloc_lowfirst, both): all regress
+ * 1039 -> 1101. Body-shape divergence not fixable with tags
+ * alone. Untagged for now. Likely needs Gap #3 (inline literal
+ * construction) and possibly entry_alias work. */
+
 extern void setup_func(void);
 extern void sub_06037ED4(int);
 extern void sub_06037EA4(void);

@@ -17,21 +17,21 @@ _FUN_0602A664:
 	mov.l	L16,r1
 	jsr	@r1
 	nop
-	mov.l	L17,r14
-	mov	r14,r1
-	mov.l	@(4,r1),r13
-	mov.l	@(8,r1),r12
+	mov.l	L17,r8
+	mov	r8,r1
+	mov.l	@(4,r1),r9
+	mov.l	@(8,r1),r10
 	mov.l	@(12,r1),r11
-	mov.l	@(16,r1),r10
-	mov.l	@(20,r1),r9
+	mov.l	@(16,r1),r12
+	mov.l	@(20,r1),r13
 L2:
-	mov.l	@r12+,r8
-	mov	r8,r1
+	mov.l	@r10+,r14
+	mov	r14,r1
 	add	r11,r1
-	mov.l	@r1,r8
-	mov	r8,r1
-	add	r10,r1
-	tst	r8,r8
+	mov.l	@r1,r14
+	mov	r14,r1
+	add	r12,r1
+	tst	r14,r14
 	bt/s	L5
 	mov.l	r1,@(8,r15)
 L7:
@@ -67,7 +67,7 @@ L11:
 	nop
 L9:
 L5:
-	dt	r9
+	dt	r13
 	bf	L2
 	mov	r11,r0
 	add	#12,r15
