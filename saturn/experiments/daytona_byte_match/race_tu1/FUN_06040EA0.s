@@ -3,6 +3,7 @@
 	.align 2
 _FUN_06040EA0:
 	mov.l	r14,@-r15
+	mov.l	r13,@-r15
 	mov.l	r12,@-r15
 	sts.l	pr,@-r15
 	stc.l	gbr,@-r15
@@ -138,6 +139,7 @@ L2:
 	ldc.l	@r15+,gbr
 	lds.l	@r15+,pr
 	mov.l	@r15+,r12
+	mov.l	@r15+,r13
 	rts
 	mov.l	@r15+,r14
 	.align 2
