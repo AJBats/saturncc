@@ -936,6 +936,14 @@ static int sh_disp_cost(Node a, int sz) {
 #define SH_ATTR_REGSAVE    0x01
 #define SH_ATTR_NOREGSAVE  0x02
 #define SH_ATTR_NOREGALLOC 0x04
+/* SH-specific (not in SHC manual): per-function flip of the
+ * INTVAR allocation order (r8..r14 instead of r14..r8). Used to
+ * match prod functions where SHC happened to allocate low-first.
+ * Per-function gated because the allocator's order interacts with
+ * peephole passes (sh_rewrite_bool_fp, leaf_rename); flipping it
+ * for the wrong function regresses output. The pragma transcribes
+ * the per-function answer-key from prod evidence. */
+#define SH_ATTR_LOWFIRST   0x08
 
 struct sh_func_attr {
         char *name;
@@ -1165,6 +1173,8 @@ static void sh_pragma(char *name) {
                 sh_parse_func_list("noregalloc", SH_ATTR_NOREGALLOC);
         } else if (strcmp(name, "global_register") == 0) {
                 sh_parse_global_register();
+        } else if (strcmp(name, "sh_alloc_lowfirst") == 0) {
+                sh_parse_func_list("sh_alloc_lowfirst", SH_ATTR_LOWFIRST);
         }
 }
 
@@ -5872,11 +5882,35 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         Symbol r, argregs[4];
         unsigned saved_tmask = tmask[IREG];
         unsigned saved_vmask = vmask[IREG];
+        Symbol saved_intvar_prio[7];
 
         nshlit = 0;
         sh_all_returns_inlined = 0;
         sh_uses_macl = 0;
         sh_sp_locals_only = 0;
+
+        /* Save the INTVAR slots of the wildcard priority array so we
+         * can restore at function exit. iregw stores ireg_prio by
+         * pointer (mkwildcard doesn't copy), so mutations below are
+         * visible to askreg. Slots 22..28 are the INTVAR range. */
+        for (i = 0; i < 7; i++)
+                saved_intvar_prio[i] = ireg_prio[22 + i];
+
+        /* #pragma sh_alloc_lowfirst: per-function flip of the INTVAR
+         * allocation order. SHC's r8-first allocation is matched by
+         * making slot 28 (highest priority) hold r8 and slot 22 hold
+         * r14. Empirically tagged per-function — see the pragma block
+         * in the TU source. Default (untagged) is r14-first. Restored
+         * before function() returns. */
+        if (sh_func_has_attr(f->name, SH_ATTR_LOWFIRST)) {
+                ireg_prio[28] = ireg[8];
+                ireg_prio[27] = ireg[9];
+                ireg_prio[26] = ireg[10];
+                ireg_prio[25] = ireg[11];
+                ireg_prio[24] = ireg[12];
+                ireg_prio[23] = ireg[13];
+                ireg_prio[22] = ireg[14];
+        }
 
         /* #pragma noregalloc: SHC v5.0 §3.10 — the allocator does not
          * place anything in R8..R14 for this function. Bridge pragma:
@@ -6464,6 +6498,10 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         /* Restore allocator masks in case noregalloc narrowed them. */
         tmask[IREG] = saved_tmask;
         vmask[IREG] = saved_vmask;
+        /* Restore wildcard priority slots in case sh_alloc_lowfirst
+         * swapped them. */
+        for (i = 0; i < 7; i++)
+                ireg_prio[22 + i] = saved_intvar_prio[i];
 }
 
 static void defconst(int suffix, int size, Value v) {

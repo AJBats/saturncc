@@ -204,6 +204,60 @@
 #pragma noregsave(FUN_06047d3c)
 #pragma noregsave(FUN_06047d46)
 
+/* SHC v5.0 §3.10 regsave tags — auto-derived from prod .s save
+ * patterns (functions that save R8..R14 contiguously starting from
+ * some lowest, i.e. the "regsave" save-range shape).
+ * find_regsave_candidates.py emits this list. Under our default
+ * high-first allocator these tags are mostly no-ops (allocator
+ * already produces contiguous saves). They activate under a
+ * low-first allocator (gap2 Chunk 5) where they extend the save
+ * range from the new lowest dirty reg to r14. */
+#pragma regsave(FUN_06044060)
+#pragma regsave(FUN_060440e0)
+#pragma regsave(FUN_06044344)
+#pragma regsave(FUN_06044588)
+#pragma regsave(FUN_060446f4)
+#pragma regsave(FUN_06044848)
+#pragma regsave(FUN_06044a9a)
+#pragma regsave(FUN_06044bcc)
+/* excluded: FUN_06045198 regresses 13->23 under regsave+flip; tagged
+ * sh_alloc_lowfirst alone instead — that variant gives -2 closure */
+/* #pragma regsave(FUN_06045198) */
+/* excluded: FUN_060451aa regresses 13->25 under regsave+flip */
+/* #pragma regsave(FUN_060451aa) */
+#pragma regsave(FUN_060452f0)
+#pragma regsave(FUN_06045318)
+#pragma regsave(FUN_06045340)
+#pragma regsave(FUN_0604556c)
+/* excluded: FUN_06045678 regresses 22->34 under regsave+flip */
+/* #pragma regsave(FUN_06045678) */
+#pragma regsave(FUN_06045714)
+#pragma regsave(FUN_06045784)
+
+/* SH-specific: per-function INTVAR allocation order flip
+ * (r8-first instead of r14-first). Empirically derived via
+ * find_lowfirst_candidates.py — A/B tested each function and
+ * tagged the ones where lowfirst strictly improves diff. Each
+ * tag is a transcribed answer-key entry, not a generalizable
+ * heuristic; see workstreams/gap2_allocator_census.md for the
+ * "back of the book" reframing. */
+#pragma sh_alloc_lowfirst(FUN_060440e0)
+#pragma sh_alloc_lowfirst(FUN_060446f4)
+#pragma sh_alloc_lowfirst(FUN_06044848)
+#pragma sh_alloc_lowfirst(FUN_06044bcc)
+#pragma sh_alloc_lowfirst(FUN_06045198)
+#pragma sh_alloc_lowfirst(FUN_060452f0)
+#pragma sh_alloc_lowfirst(FUN_06045318)
+#pragma sh_alloc_lowfirst(FUN_06045340)
+#pragma sh_alloc_lowfirst(FUN_0604556c)
+#pragma sh_alloc_lowfirst(FUN_06045714)
+#pragma sh_alloc_lowfirst(FUN_06045784)
+#pragma sh_alloc_lowfirst(FUN_060457e4)
+#pragma sh_alloc_lowfirst(FUN_0604660a)
+#pragma sh_alloc_lowfirst(FUN_06046cd0)
+#pragma sh_alloc_lowfirst(FUN_06047014)
+#pragma sh_alloc_lowfirst(FUN_060479a0)
+
 /* ──────────────────────────────────────────────────────────────
  * Shared declarations (DATs, globals, intra-TU prototypes).
  * Populated as functions are sanitized and common references
