@@ -152,6 +152,64 @@ def rewrite(text, label_map):
     return text
 
 
+def strip_pool_padding(lines):
+    """Drop `.byte 0[,0...]` lines that sit between the end of the
+    function body and the first pool entry.
+
+    Prod emits these as explicit alignment padding before the literal
+    pool; our compiler emits `.align 2` (stripped earlier). Both
+    produce identical object bytes when assembled. Canonicalise by
+    dropping the explicit zero-byte padding wherever it immediately
+    precedes a pool label. No effect on `.byte` directives in other
+    contexts.
+    """
+    zero_byte = re.compile(r'^\t\.byte\s+(?:0(?:\s*,\s*)?)+$')
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if (zero_byte.match(line) and i + 1 < len(lines)
+                and lines[i + 1].startswith('LP')):
+            i += 1
+            continue
+        out.append(line)
+        i += 1
+    return out
+
+
+def merge_label_then_pool(lines):
+    """Fold a lone label line followed by a pool directive into a single
+    `LABEL:\\t.directive\\toperands` line.
+
+    Prod's SHC output frequently places a pool label on its own line and
+    the data-directive on the next (indented) line; our compiler inlines
+    them. The two forms assemble to identical bytes, so canonicalise by
+    merging to the single-line form whenever the pattern appears. Keeps
+    real label/instruction pairs (e.g. `L3:` followed by `\\tmov ...`)
+    untouched because they're not pool directives.
+    """
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # Lone-label: exactly `<name>:`, no embedded whitespace before it.
+        if (line.endswith(':') and '\t' not in line
+                and ' ' not in line and i + 1 < len(lines)):
+            nxt = lines[i + 1]
+            # Must be an indented pool directive.
+            if nxt.startswith('\t.') and any(
+                nxt.startswith(f'\t.{d}\t') or nxt.startswith(f'\t.{d} ')
+                or nxt == f'\t.{d}'
+                for d in ('long', 'short', 'word', 'byte')
+            ):
+                out.append(f"{line}{nxt}")
+                i += 2
+                continue
+        out.append(line)
+        i += 1
+    return out
+
+
 def normalize(lines, func_name):
     order = classify_labels(lines)
     label_map = build_label_map(order, func_name)
@@ -202,7 +260,7 @@ def normalize(lines, func_name):
                 out.append(f'\t{mnem}')
         else:
             out.append(f'\t{stripped}')
-    return out
+    return merge_label_then_pool(strip_pool_padding(out))
 
 
 def main():
