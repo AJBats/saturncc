@@ -159,6 +159,29 @@ rejected — it diverges from prod's specific register choices when
 prod keeps callee-saved. A future allocator-layer fix would address
 this.
 
+#### Phase 1C — save-default inversion (new plan, 2026-04-19)
+
+**Status:** strategy documented, implementation pending.
+
+Corpus study (2,308 prod functions via
+`saturn/tools/classify_save_matrix.py`) confirms SHC uses one dominant
+rule: *save `[lowest_written..r14]` contiguously, highest-first*. That
+rule covers ~70% of the corpus (FULL_RANGE + clean NO_SAVES + LEAF).
+Our compiler currently defaults to per-register liveness which matches
+almost none of these.
+
+**The plan:** invert the default. Make `[lowest_written..r14]` the
+compiler's standard save strategy — the existing `#pragma regsave(FN)`
+logic already implements this, we just flip from opt-in to default-on.
+Residual 30% splits into IPA exceptions (existing `#pragma noregsave`)
+and per-site oddities (new `__asm("...")` intrinsic, for things like
+r0-shim calls and inline `mov #1; shll16` constant construction).
+
+**See:** `saturn/workstreams/save_strategy_and_asm_intrinsic.md` for
+the full write-up, corpus data, philosophical framing, and phased
+roll-out. That doc supersedes `byte_match_001_blockers.md` as the
+forward plan.
+
 ---
 
 ### Gap 2. SHC's indexed-for-fitting-displacement heuristic &nbsp;&nbsp;**[layer: C source / pragma]**
