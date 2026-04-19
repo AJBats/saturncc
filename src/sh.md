@@ -98,7 +98,7 @@ static int sh_sp_locals_only;  /* locals exist but FP is not used (SP-relative) 
 static int sh_all_returns_inlined;
 static int sh_uses_macl;
 static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
-static int sh_weird_rule_1;  /* #pragma sh_weird_rule_1: see sh_apply_weird_rule_1 */
+static int sh_word_indexed_after_first;  /* #pragma sh_word_indexed_after_first: see sh_apply_word_indexed_after_first */
 
 /* Switch jump table: recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
@@ -1139,7 +1139,7 @@ static void sh_parse_global_register(void) {
 /* #pragma handler wired up through the input.c hook. Recognizes:
  *   - `#pragma gbr_base (name)` — Hitachi GBR base symbol
  *   - `#pragma gbr_param` — Saturn-specific GBR prologue
- *   - `#pragma sh_weird_rule_1` — see sh_apply_weird_rule_1
+ *   - `#pragma sh_word_indexed_after_first` — see sh_apply_word_indexed_after_first
  *   - `#pragma regsave (f1, f2, ...)` — SHC v5.0 §3.10: save/restore
  *     R8..R14 at prologue/epilogue and around calls
  *   - `#pragma noregsave (f1, f2, ...)` — SHC v5.0 §3.10: skip
@@ -1163,8 +1163,8 @@ static void sh_pragma(char *name) {
                         gbr_base_cname = string(token);
         } else if (strcmp(name, "gbr_param") == 0) {
                 sh_gbr_param = 1;
-        } else if (strcmp(name, "sh_weird_rule_1") == 0) {
-                sh_weird_rule_1 = 1;
+        } else if (strcmp(name, "sh_word_indexed_after_first") == 0) {
+                sh_word_indexed_after_first = 1;
         } else if (strcmp(name, "regsave") == 0) {
                 sh_parse_func_list("regsave", SH_ATTR_REGSAVE);
         } else if (strcmp(name, "noregsave") == 0) {
@@ -3160,7 +3160,7 @@ static void sh_fuse_mov_into_add(void) {
         }
 }
 
-/* #pragma sh_weird_rule_1 implementation.
+/* #pragma sh_word_indexed_after_first implementation.
  *
  * Across the full Daytona CCE prod corpus (3873 functions, 19,087
  * disp-mode loads), there are exactly 3 cases where SHC chose
@@ -3189,12 +3189,12 @@ static void sh_fuse_mov_into_add(void) {
  * Rule: after the first .w displacement load targeting r0, convert
  * every subsequent .w disp-load to indexed form
  * (mov #K,r0; mov.w @(r0,rN),r0). Applies only to the function
- * decorated with `#pragma sh_weird_rule_1`. Cleared at function
+ * decorated with `#pragma sh_word_indexed_after_first`. Cleared at function
  * end, so no TU-wide leakage.
  *
  * If new prod anomalies surface that don't fit this pattern, they
  * get their own numbered weird rule — don't widen this one. */
-static void sh_apply_weird_rule_1(void) {
+static void sh_apply_word_indexed_after_first(void) {
         static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
         int i, nout = 0, first_seen = 0;
 
@@ -6136,7 +6136,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                  *                              mov.X @(disp,Rn); disp range
                  *                              check depends on pool
                  *                              shrinks above being in.
-                 *   sh_apply_weird_rule_1    — opt-in via #pragma; converts
+                 *   sh_apply_word_indexed_after_first    — opt-in via #pragma; converts
                  *                              all but the first .w disp-to-r0
                  *                              load into indexed form. Only
                  *                              fires in functions where prod
@@ -6171,8 +6171,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_fuse_mov_into_add();
                 sh_fold_mov_extw_to_movw();
                 sh_fold_base_displacement();
-                if (sh_weird_rule_1)
-                        sh_apply_weird_rule_1();
+                if (sh_word_indexed_after_first)
+                        sh_apply_word_indexed_after_first();
                 sh_route_via_r0();
                 sh_fold_post_increment();
                 sh_fill_branch_delays();
@@ -6494,7 +6494,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
         shlit_flush();
         sh_gbr_param = 0;
-        sh_weird_rule_1 = 0;
+        sh_word_indexed_after_first = 0;
         /* Restore allocator masks in case noregalloc narrowed them. */
         tmask[IREG] = saved_tmask;
         vmask[IREG] = saved_vmask;

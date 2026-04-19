@@ -77,7 +77,7 @@ are aspects of the same underlying problem".
 
   ┌─────────────────────────────────────────┐
   │ Gap 2: indexed-over-fitting-disp    ✓   │  RESOLVED via
-  │        (no generalizable rule;          │  #pragma sh_weird_rule_1
+  │        (no generalizable rule;          │  #pragma sh_word_indexed_after_first
   │         opt-in pragma)                  │  (b67fe7e)
   └─────────────────────────────────────────┘
 
@@ -173,9 +173,9 @@ would have fit: 2 in FUN_06044834 (offsets 26 and 30) and 1 in
 FUN_06033DC8 (K=1 for .b). 0.016% anomaly rate — clearly not a
 heuristic.
 
-**Resolution.** Added `#pragma sh_weird_rule_1` (`b67fe7e`). Opt-in
+**Resolution.** Added `#pragma sh_word_indexed_after_first` (`b67fe7e`). Opt-in
 per function; when present, the phase-1 driver runs
-`sh_apply_weird_rule_1()` which converts every .w disp-to-r0 load
+`sh_apply_word_indexed_after_first()` which converts every .w disp-to-r0 load
 AFTER the first into indexed form. Narrow, declarative, honest
 about the fact we're matching an engineer's intent rather than a
 compiler rule.
