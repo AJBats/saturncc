@@ -29,6 +29,9 @@
 #define DAT_0602A6D8 (*((int **)0x06051738))
 #define DAT_0602A6DC ((void (*)(void))0x06045958)
 
+/* Empirical: low-first allocator -2 lines closer to prod. */
+#pragma sh_alloc_lowfirst(FUN_0602A664)
+
 int FUN_0602A664(void) {
     int base;
     int callback_param;

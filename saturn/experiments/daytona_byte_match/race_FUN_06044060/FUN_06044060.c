@@ -258,6 +258,12 @@
 #pragma sh_alloc_lowfirst(FUN_06047014)
 #pragma sh_alloc_lowfirst(FUN_060479a0)
 
+/* noregalloc on noregsave-tagged functions where the additional
+ * R8..R14 allocator strip closes diff lines (A/B-tested via
+ * find_extra_pragma_wins.py). Both lose -2 each. */
+#pragma noregalloc(FUN_06044d64)
+#pragma noregalloc(FUN_06044da8)
+
 /* ──────────────────────────────────────────────────────────────
  * Shared declarations (DATs, globals, intra-TU prototypes).
  * Populated as functions are sanitized and common references
@@ -287,12 +293,12 @@ extern int FUN_06045760();
  * pool slot directly and jsr's it. Rewrite to direct calls so our
  * emit matches prod's single-indirect `mov.l LPn,r0; jsr @r0` pattern.
  *
- * Remaining 70-line diff is all backend-level — documented in
- * saturn/workstreams/byte_match_001_blockers.md:
- *   - save-all-callee-saved prologue (SHC convention)
- *   - register allocator priority (prod uses r8-r10, LCC picks r11+)
- *   - FUN_06044F30 arg setup via shll16+neg vs pool loads
- *   - shim-entry calls to FUN_060450F2 / FUN_06045006 (entry_alias) */
+ * Nightshift note: 4-param signature attempt regressed 70->84 (off-by-
+ * one reg homing + extra p1 preservation overhead). Reverted to
+ * 1-param. Path forward requires entry_alias for shim calls plus an
+ * answer-key match on per-call register conventions — out of scope
+ * for this nightshift session. Gap #3 (inline literal construction)
+ * is the next tractable peephole. */
 extern int FUN_06044F30();  /* not in this TU */
 
 void FUN_06044060(int param_1)
