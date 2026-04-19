@@ -929,11 +929,10 @@ static int sh_disp_cost(Node a, int sz) {
 }
 
 /* Per-function register-save attribute storage. Populated by
- * #pragma regsave / noregsave / noregalloc during parse; consumed
- * by prologue/epilogue emission and the allocator in a later phase.
+ * #pragma noregsave / noregalloc / sh_alloc_lowfirst during parse;
+ * consumed by prologue/epilogue emission and the allocator.
  * PERM-arena allocated so entries persist for the whole TU. Names
  * are interned via stringn() so pointer equality is lookup-safe. */
-#define SH_ATTR_REGSAVE    0x01
 #define SH_ATTR_NOREGSAVE  0x02
 #define SH_ATTR_NOREGALLOC 0x04
 /* SH-specific (not in SHC manual): per-function flip of the
@@ -986,11 +985,13 @@ static int sh_func_has_attr(const char *name, int attrs) {
         return 0;
 }
 
-/* #pragma regsave bit-extension: find lowest set bit in [r8..r14] of
- * `mask`; if any, set every bit in [lowest..14]. Idempotent, so it's
- * safe to call both before the body-liveness rebuild and again after
- * (the rebuild AND's with live-set and would otherwise strip the
- * extended-but-unused bits that prod saves anyway). */
+/* Save-range extension: find lowest set bit in [r8..r14] of `mask`;
+ * if any, set every bit in [lowest..14]. Implements SHC's rule of
+ * saving the contiguous range from lowest dirtied callee-saved up
+ * through r14. Idempotent, so it's safe to call both before the
+ * body-liveness rebuild and again after (the rebuild AND's with
+ * live-set and would otherwise strip the extended-but-unused bits
+ * that prod saves anyway). */
 static unsigned sh_regsave_extend(unsigned mask) {
         int j, lowest = -1;
         struct sh_global_reg *g;
@@ -1149,14 +1150,15 @@ static void sh_parse_global_register(void) {
  *   - `#pragma gbr_base (name)` — Hitachi GBR base symbol
  *   - `#pragma gbr_param` — Saturn-specific GBR prologue
  *   - `#pragma sh_word_indexed_after_first` — see sh_apply_word_indexed_after_first
- *   - `#pragma regsave (f1, f2, ...)` — SHC v5.0 §3.10: save/restore
- *     R8..R14 at prologue/epilogue and around calls
  *   - `#pragma noregsave (f1, f2, ...)` — SHC v5.0 §3.10: skip
  *     prologue/epilogue save of R8..R14
  *   - `#pragma noregalloc (f1, f2, ...)` — SHC v5.0 §3.10: allocator
  *     does not touch R8..R14 (bridge pragma)
  *   - `#pragma global_register (var=Rn, ...)` — SHC v5.0 §3.11:
  *     TU-wide binding of a global variable to one of R8..R14
+ *   - `#pragma sh_alloc_lowfirst (f1, ...)` — SH-specific low-first
+ *     INTVAR allocation order
+ *
  * Unknown pragmas are silently ignored (same behavior as unmodified
  * LCC). */
 static void sh_pragma(char *name) {
@@ -1174,8 +1176,6 @@ static void sh_pragma(char *name) {
                 sh_gbr_param = 1;
         } else if (strcmp(name, "sh_word_indexed_after_first") == 0) {
                 sh_word_indexed_after_first = 1;
-        } else if (strcmp(name, "regsave") == 0) {
-                sh_parse_func_list("regsave", SH_ATTR_REGSAVE);
         } else if (strcmp(name, "noregsave") == 0) {
                 sh_parse_func_list("noregsave", SH_ATTR_NOREGSAVE);
         } else if (strcmp(name, "noregalloc") == 0) {
@@ -5080,7 +5080,7 @@ static void sh_rename_to_r14_for_delay_slot(int need_fp,
                 return;  /* leaf_rename's territory */
         ncallee_saved = bitcount(usedmask[IREG] & INTVAR);
         if (ncallee_saved != 1)
-                return;  /* multi-callee-saved: regsave handles range */
+                return;  /* multi-callee-saved: save-range extension handles it */
         if (need_fp)
                 return;  /* r14 occupied as FP */
         if (sh_body_has_bool_fp_r14_pattern())
@@ -5923,9 +5923,10 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
         /* #pragma noregalloc: SHC v5.0 §3.10 — the allocator does not
          * place anything in R8..R14 for this function. Bridge pragma:
-         * pairs with noregsave callers that pass regsave state through
-         * without disturbing it. Implementation: clear bits 8..14 of
-         * tmask and vmask for the duration of this function only, then
+         * pairs with noregsave callers that pass callee-saved state
+         * through without disturbing it. Implementation: clear bits
+         * 8..14 of tmask and vmask for the duration of this function
+         * only, then
          * restore before returning. INTVAR is R8..R14 so vmask becomes
          * empty — parameter-only / pure-passthrough functions handle
          * this fine; register-pressured functions spill to stack. */
@@ -6061,13 +6062,13 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         if (need_fp)
                 usedmask[IREG] |= 1u << 14;
 
-        /* Save-default inversion (Gap 1C, 2026-04-19): extend the save
-         * range to SHC's [lowest_dirty..r14] contiguous rule by default.
-         * Corpus study (2,308 prod functions) showed this single rule
-         * covers ~70% of functions (FULL_RANGE + clean NO_SAVES +
-         * LEAF). Leaves with no callee-saved writes pass through
-         * untouched because sh_regsave_extend() is a no-op on empty
-         * masks. Functions that need a different behavior opt out via
+        /* Save-default: extend the save range to SHC's
+         * [lowest_dirty..r14] contiguous rule. Corpus study
+         * (2,308 prod functions) showed this single rule covers ~70%
+         * of functions (FULL_RANGE + clean NO_SAVES + LEAF).
+         * Leaves with no callee-saved writes pass through untouched
+         * because sh_regsave_extend() is a no-op on empty masks.
+         * Functions that need a different behavior opt out via
          * #pragma noregsave / noregalloc below.
          *
          * Inserted AFTER the speculative r14 rename so we don't force
@@ -6077,12 +6078,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
          * Re-applied after the post-peephole rebuild (see sizeisave
          * rebuild block below) because that rebuild AND's with body-
          * liveness and would otherwise strip the extended-but-never-
-         * referenced regs back out.
-         *
-         * #pragma regsave is now redundant (default behavior) but still
-         * accepted as a no-op so older tagged TU source compiles
-         * unchanged. See saturn/workstreams/save_strategy_and_asm_intrinsic.md
-         * for the full strategy. */
+         * referenced regs back out. */
         usedmask[IREG] = sh_regsave_extend(usedmask[IREG]);
 
         /* #pragma noregsave / noregalloc: SHC v5.0 §3.10 — neither
@@ -6293,11 +6289,9 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                                 keep |= 1u << 14;
                         /* Re-extension after post-peephole liveness trim:
                          * the body-liveness AND above would drop r8..r14
-                         * bits that the default-on save rule included but
+                         * bits that the save-default rule included but
                          * the body never references. Re-extend so the
-                         * [lowest_dirty..r14] shape survives the trim.
-                         * Paired with the default-on site above (see the
-                         * save-default inversion comment there). */
+                         * [lowest_dirty..r14] shape survives the trim. */
                         keep = sh_regsave_extend(keep);
                         /* noregsave / noregalloc re-strip: undo both
                          * the liveness keep (body may reference r14

@@ -235,6 +235,34 @@ than hidden in a pragma directive at file top.
   get flagged as "accept as-is" — inline asm the whole function body
   if needed, or skip from byte-match scope.
 
+## Known per-function edge cases (race_FUN_06044060 TU)
+
+Documented here rather than in the C source (which should show only
+the final-state code). Empirically observed pre- and post-flip:
+
+- **FUN_06044060 (#001)** — 4-param signature lost by Ghidra; requires
+  the Phase 2/3 `__asm` toolkit to fully close. Currently 70 diff.
+- **FUN_060457e4** — IPA undersave in prod (body writes r7/r8 but
+  prologue saves nothing). Under the new default: +1 line residual.
+  `#pragma noregsave` makes it worse (120 → 124) — paradoxical, not
+  a straightforward fix. Left untagged, accepted residual.
+- **FUN_060457ac** — `#pragma noregsave` regresses 102 → 109. Prod
+  body appears to use some R8..R14 regs that are saved naturally by
+  the default; the pragma-stripped variant collides with our codegen.
+- **FUN_0604660a** — `#pragma noregsave` regresses 94 → 96. Similar
+  to 060457ac.
+- **FUN_06045198** — SPARSE bucket (prod saves r8 only, not the full
+  range). Under the new default, needs `#pragma noregsave` to avoid
+  the full-range over-save. Currently tagged; sits at 11 diff.
+- **FUN_060451aa**, **FUN_06045678** — historically regressed under
+  the old "regsave + sh_alloc_lowfirst" combination. Unknown state
+  under the new default; both still sit at their pre-flip baselines
+  as "OK" but worth re-checking when Phase 4 sweeps per-function
+  IPA tagging.
+
+These are not blockers — they're the kind of per-function annotation
+noise that Phase 4 will address by case.
+
 ## References
 
 - `saturn/tools/classify_save_corpus.py` — simple bucket classifier

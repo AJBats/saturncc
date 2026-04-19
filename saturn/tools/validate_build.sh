@@ -299,37 +299,20 @@ fi
 # flush which historically dropped pragma args. Also covers argument
 # parsing errors on malformed input.
 
-# 4t. POSITIVE: four pragmas at top-of-file (deferred-flush path).
+# 4t. POSITIVE: three pragmas at top-of-file (deferred-flush path).
 cat > /tmp/regtest.c <<'EOF'
-#pragma regsave(a, b)
 #pragma noregsave(c)
 #pragma noregalloc(d)
 #pragma global_register(ctx=R10, scratch=R14)
-int a(int x) { return x; }
-int b(int x) { return x; }
 int c(int x) { return x; }
 int d(int x) { return x; }
 EOF
 pragma_err="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$pragma_err"
 if [ ! -s "$pragma_err" ]; then
-    pass "regtest: top-of-file regsave/noregsave/noregalloc/global_register accepted"
+    pass "regtest: top-of-file noregsave/noregalloc/global_register accepted"
 else
     fail "regtest: top-of-file pragmas rejected — $(head -1 "$pragma_err")"
-fi
-rm -f "$pragma_err"
-
-# 4u. NEGATIVE: regsave missing '('.
-cat > /tmp/regtest.c <<'EOF'
-#pragma regsave
-int a(int x) { return x; }
-EOF
-pragma_err="$(mktemp)"
-"$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$pragma_err"
-if grep -q "#pragma regsave expects '('" "$pragma_err"; then
-    pass "regtest: #pragma regsave missing '(' rejected with expected message"
-else
-    fail "regtest: #pragma regsave missing '(' not rejected as expected"
 fi
 rm -f "$pragma_err"
 
@@ -361,42 +344,12 @@ else
 fi
 rm -f "$pragma_err"
 
-# 4x. CODEGEN: #pragma regsave extends prologue to [lowest_dirty..r14].
-# Under high register pressure where the allocator naturally uses
-# r8, r9, r11 (skipping r10 because it's not needed), regsave must
-# extend the save set to the full r8..r14 contiguous range. Verified
-# by counting the `mov.l rN,@-r15` pushes for r8..r14 in prologue.
-cat > /tmp/regtest.c <<'EOF'
-#pragma regsave(stress)
-extern int ext(int);
-int stress(int a, int b, int c, int d) {
-    int x1 = ext(a); int x2 = ext(b); int x3 = ext(c);
-    int x4 = ext(d); int x5 = ext(a + b); int x6 = ext(c + d);
-    int x7 = ext(x1 + x2);
-    return x1 + x2 + x3 + x4 + x5 + x6 + x7;
-}
-EOF
-rs_out="$(mktemp)"
-"$RCC" -target=sh/hitachi /tmp/regtest.c "$rs_out" 2>/dev/null
-pushed=""
-for n in 14 13 12 11 10 9 8; do
-    if grep -q "mov.l[[:space:]]*r$n,@-r15" "$rs_out"; then
-        pushed="$pushed r$n"
-    fi
-done
-if [ "$pushed" = " r14 r13 r12 r11 r10 r9 r8" ]; then
-    pass "regtest: #pragma regsave extends prologue to r8..r14 contiguous"
-else
-    fail "regtest: #pragma regsave prologue missing r8..r14 (got:$pushed)"
-fi
-rm -f "$rs_out"
-
 # 4y. CODEGEN: default save strategy is SHC's [lowest_written..r14]
 # contiguous range (save-default inversion, see
-# saturn/workstreams/save_strategy_and_asm_intrinsic.md). Same stress
-# body as 4x but WITHOUT #pragma regsave — must still push the full
-# contiguous range because the body dirties enough callee-saved regs
-# to drive `lowest` down to r8.
+# saturn/workstreams/save_strategy_and_asm_intrinsic.md). Under high
+# register pressure, the body dirties enough callee-saved regs to
+# drive `lowest` down to r8 — must push the full r8..r14 contiguous
+# range. Verified by counting `mov.l rN,@-r15` pushes in the prologue.
 cat > /tmp/regtest.c <<'EOF'
 extern int ext(int);
 int stress(int a, int b, int c, int d) {
@@ -454,8 +407,9 @@ rm -f "$nrs_out"
 
 # 4aa. CODEGEN: #pragma noregalloc keeps R8..R14 out of the allocator
 # AND strips prologue/epilogue saves. Per SHC v5.0 §3.10, noregalloc
-# functions are bridge shapes — they pass state through from a
-# regsave caller to a noregsave callee without disturbing R8..R14.
+# functions are bridge shapes — they pass callee-saved state through
+# from a standard-save caller to a noregsave callee without disturbing
+# R8..R14.
 # Test with a trivial pass-through body: no locals, no FP, nothing
 # that would force the backend to touch r14.
 cat > /tmp/regtest.c <<'EOF'
