@@ -82,9 +82,17 @@ void FUN_06044060(int p1, int p2, int p3, int p4)
     __asm("mov r6, r7");
     FUN_06044F30();
   }
-  FUN_06044E3C(0, p2);
-  FUN_060450F2(p4);
-  FUN_06045006(p3);
+  /* FUN_06044E3C: prod passes p2 as r5 (not r4). Skip C-level args and
+   * set r5 via __asm so the delay-slot filler picks it up. */
+  __asm("mov r9, r5");
+  FUN_06044E3C();
+  /* FUN_060450F2 / FUN_06045006: r0-shim calling convention — arg in
+   * r0 instead of r4. Use __asm for the mov-to-r0; the compiler emits
+   * the call; delay-slot filler pulls our __asm into the delay slot. */
+  __asm("mov r11, r0");
+  FUN_060450F2();
+  __asm("mov r10, r0");
+  FUN_06045006();
   FUN_060457DC(p1 + 0x30, *(int *)0x060569B4);
   return;
 }

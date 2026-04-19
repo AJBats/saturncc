@@ -27,16 +27,15 @@ _FUN_06044060:
 	jsr	@r3
 	mov r6, r7
 L2:
-	mov	#0,r4
 	mov.l	L7,r3
 	jsr	@r3
-	mov	r9,r5
+	mov r9, r5
 	mov.l	L8,r3
 	jsr	@r3
-	mov	r11,r4
+	mov r11, r0
 	mov.l	L9,r3
 	jsr	@r3
-	mov	r10,r4
+	mov r10, r0
 	mov	r8,r4
 	add	#48,r4
 	mov.l	L10,r5
