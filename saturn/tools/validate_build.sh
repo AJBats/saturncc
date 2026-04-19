@@ -65,23 +65,23 @@ done
 rm -f /tmp/validate_pp.c
 
 # Per-TU master files — each is a single .c that bundles many
-# decompiled functions. Kept separate because their #if 0 guards
-# mean they compile only a subset, and a broken guard would be
-# invisible to the per-function loop above.
+# decompiled functions. Write .s in place so the checked-in snapshot
+# always reflects the current compiler's output for quick eyeballing.
+# Git status will show a diff whenever C or compiler changes alter
+# the output; that's the signal.
 for tu in "$EXPDIR"/race_FUN_*/FUN_*.c; do
     [ -f "$tu" ] || continue
     tu_dir="$(dirname "$tu")"
     tu_name="$(basename "$tu_dir")"
-    # Write .s to /tmp rather than alongside the .c — TU .s is an
-    # ever-changing output, not a stable reference artifact.
+    tu_sfile="${tu%.c}.s"
     if cpp -P "$tu" /tmp/validate_tu_pp.c 2>/dev/null \
-       && "$RCC" -target=sh/hitachi /tmp/validate_tu_pp.c /tmp/validate_tu.s 2>/dev/null; then
+       && "$RCC" -target=sh/hitachi /tmp/validate_tu_pp.c "$tu_sfile" 2>/dev/null; then
         pass "compile TU $tu_name"
     else
         fail "compile TU $tu_name"
     fi
 done
-rm -f /tmp/validate_tu_pp.c /tmp/validate_tu.s
+rm -f /tmp/validate_tu_pp.c
 
 # ── 3. Stable outputs (diff against last commit) ─────────
 # Add new stable files here as functions reach their match ceiling.
@@ -455,6 +455,34 @@ else
     pass "regtest: #pragma global_register excludes R10 from allocator + r14-rename"
 fi
 rm -f "$gr_out"
+
+# 4ac. CODEGEN: __asm("...") intrinsic emits the literal string
+# verbatim with no string-literal storage (.rodata), no pool entries
+# for a string-ptr or __asm extern, no jsr/arg-setup, and no
+# callee-saved promotion forced by a phantom call. The backend
+# prepends a single tab; asm_intrinsic() strips user-provided leading
+# whitespace so no double-tabs regardless of source style.
+# See src/expr.c asm_intrinsic() and src/dag.c listnodes() ASMB case.
+cat > /tmp/regtest.c <<'EOF'
+int hello(int x) {
+    __asm("nop");
+    return x + 1;
+}
+EOF
+asm_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
+ok=1
+grep -q $'^\tnop$' "$asm_out" || ok=0           # single tab + asm text
+grep -q "\.rodata" "$asm_out" && ok=0           # no .rodata pollution
+grep -q "___asm" "$asm_out" && ok=0             # no extern __asm symbol
+grep -q "jsr" "$asm_out" && ok=0                # no jsr at all (pure leaf)
+grep -q "@-r15" "$asm_out" && ok=0              # no callee-saved push
+if [ "$ok" = "1" ]; then
+    pass "regtest: __asm(\"...\") emits raw text with no pool/rodata/call"
+else
+    fail "regtest: __asm intrinsic polluted the output — inspect $asm_out"
+fi
+rm -f "$asm_out"
 
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as

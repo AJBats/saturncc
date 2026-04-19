@@ -119,6 +119,9 @@ static Tree root1(Tree p) {
 		return root1(p->kids[0]);
 	case ARG: case ASGN: case CALL: case JUMP: case LABEL:
 		break;
+	case ASMB:
+		/* __asm("...") is an effect-having statement — keep it. */
+		break;
 	default: assert(0);
 	}
 	return p;

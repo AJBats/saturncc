@@ -60,17 +60,32 @@ extern int FUN_06045760();
  * is the next tractable peephole. */
 extern int FUN_06044F30();  /* not in this TU */
 
-void FUN_06044060(int param_1)
+/* 4-param signature — Ghidra decompiled this as 1-param but prod's
+ * prologue stashes r5/r6/r7 into r8/r9/r10, proving there are four
+ * incoming args. Accepting a baseline regression to get the
+ * structurally correct shape; remaining deltas are pinpoint fixes
+ * (inline 0x10000 construction, r0-shim call convention) that
+ * Phase 2 __asm will address. */
+#pragma sh_alloc_lowfirst(FUN_06044060)
+void FUN_06044060(int p1, int p2, int p3, int p4)
 
 {
-  FUN_06044D80(param_1 + 0x30);
+  FUN_06044D80(p1 + 0x30);
   if (*(char *)0x06054925 != '\0') {
+    /* Prod constructs -0x10000/0x10000/0x10000 inline via
+     * mov #1, shll16, neg — no pool loads. __asm emits this
+     * verbatim; the FUN_06044F30() call below then sees r5/r6/r7
+     * already set and makes the jsr. */
+    __asm("mov #1, r6");
+    __asm("shll16 r6");
+    __asm("neg r6, r5");
+    __asm("mov r6, r7");
     FUN_06044F30();
   }
-  FUN_06044E3C();
-  FUN_060450F2();
-  FUN_06045006();
-  FUN_060457DC(*(int *)0x060569B4);
+  FUN_06044E3C(0, p2);
+  FUN_060450F2(p4);
+  FUN_06045006(p3);
+  FUN_060457DC(p1 + 0x30, *(int *)0x060569B4);
   return;
 }
 

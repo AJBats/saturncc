@@ -772,7 +772,7 @@ reg:  CVUU2(reg)  "# truncate\n"  1
 reg:  CVUI1(reg)  "# truncate\n"  1
 reg:  CVUI2(reg)  "# truncate\n"  1
 
-stmt: LABELV  "%a:\n"
+stmt: LABELV  "#\n"
 
 jtarget: ADDRGP4  "%a"
 stmt: JUMPV(jtarget)  "\tbra\t%0\n\tnop\n"  2
@@ -1461,6 +1461,23 @@ static void emit2(Node p) {
         Symbol s;
         char *base;
         switch (specific(p->op)) {
+        case LABEL+V: {
+                /* Two flavors of LABEL+V reach us: normal labels
+                 * (u.l.label >= 1, from genlabel()) emit as `Lnn:`,
+                 * and the __asm("...") intrinsic's pseudo-label
+                 * (u.l.label == 0, from expr.c's asm_intrinsic())
+                 * emits the symbol's name with a single leading
+                 * tab. asm_intrinsic() strips user-provided leading
+                 * whitespace so the user writes just the instruction
+                 * text — `__asm("mov #1, r6")` — without the
+                 * character-escape noise of `"\tmov\t#1,r6"`. */
+                Symbol ls = p->syms[0];
+                if (ls->u.l.label == 0)
+                        print("\t%s\n", ls->name);
+                else
+                        print("%s:\n", ls->x.name);
+                break;
+                }
         case CNST+I: case CNST+U: {
                 int val = (int)p->syms[0]->u.c.v.i;
                 dst = getregnum(p);
