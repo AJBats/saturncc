@@ -11,57 +11,54 @@ _FUN_0602A664:
 	mov.l	r8,@-r15
 	sts.l	pr,@-r15
 	add	#-12,r15
-	mov.l	L15,r1
-	mov	#17,r2
-	mov.b	r2,@r1
-	mov.l	L16,r1
-	jsr	@r1
+	mov.l	L15,r0
+	mov	#17,r1
+	mov.b	r1,@r0
+	mov.l	L16,r0
+	jsr	@r0
 	nop
 	mov.l	L17,r8
-	mov	r8,r1
-	mov.l	@(4,r1),r9
-	mov.l	@(8,r1),r10
-	mov.l	@(12,r1),r11
-	mov.l	@(16,r1),r12
-	mov.l	@(20,r1),r13
+	mov	r8,r0
+	mov.l	@(4,r0),r9
+	mov.l	@(8,r0),r10
+	mov.l	@(12,r0),r11
+	mov.l	@(16,r0),r12
+	mov.l	@(20,r0),r13
 L2:
 	mov.l	@r10+,r14
-	mov	r14,r1
-	add	r11,r1
-	mov.l	@r1,r14
-	mov	r14,r1
-	add	r12,r1
+	mov	r14,r0
+	mov.l	@(r0,r11),r14
+	mov	r14,r0
+	add	r12,r0
 	tst	r14,r14
 	bt/s	L5
-	mov.l	r1,@(8,r15)
+	mov.l	r0,@(8,r15)
 L7:
-	mov.l	@(8,r15),r1
-	mov.w	@r1+,r2
-	mov	r2,r0
-	mov.w	r0,@(6,r15)
-	mov.l	r1,@(8,r15)
-	mov.w	@(6,r15),r0
-	mov	r0,r1
+	mov.l	@(8,r15),r0
+	mov.w	@r0,r1
 	mov	r1,r0
+	mov.w	r0,@(6,r15)
+	add	#2,r0
+	mov.l	r0,@(8,r15)
+	mov.w	@(6,r15),r0
 	cmp/eq	#-1,r0
 	bf	L11
 	bra	L9
 	nop
 L11:
 	mov.w	@(6,r15),r0
-	mov	r0,r1
-	mov.l	L18,r2
-	add	r2,r1
-	mov.l	r1,@(0,r15)
-	mov.l	@(0,r15),r1
-	mov.b	@r1,r1
-	tst	r1,r1
+	mov.l	L18,r1
+	add	r1,r0
+	mov.l	r0,@(0,r15)
+	mov.l	@(0,r15),r0
+	mov.b	@r0,r0
+	tst	r0,r0
 	bf	L7
-	mov.l	@(0,r15),r1
-	mov	#1,r2
-	mov.b	r2,@r1
-	mov.l	L19,r1
-	jsr	@r1
+	mov.l	@(0,r15),r0
+	mov	#1,r1
+	mov.b	r1,@r0
+	mov.l	L19,r0
+	jsr	@r0
 	nop
 	bra	L7
 	nop

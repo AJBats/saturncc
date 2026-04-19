@@ -659,9 +659,30 @@ static void ralloc(Node p) {
 					Symbol r = p->x.kids[i]->syms[RX];
 					assert(p->x.kids[i]->x.registered);
 					assert(r && r->x.regnode);
-					assert(sym->x.wildcard || sym != r);
+					/* Copy-elimination case: if this kid already
+					 * holds the specific register the parent's
+					 * target is bound to, do NOT mask it off —
+					 * getreg() needs to be able to return that
+					 * register. The '?' emit template will skip
+					 * the mov because src == dst. Relaxed from
+					 * the original upstream assertion
+					 * `sym->x.wildcard || sym != r` to permit
+					 * specific-register targets that happen to
+					 * coincide with wildcard-allocated kid regs
+					 * (observed when r0 is a wildcard candidate). */
+					if (!sym->x.wildcard && sym == r)
+						continue;
 					mask[r->x.regnode->set] &= ~r->x.regnode->mask;
 				}
+			/* Backend hook for architecture-specific allocation
+			 * preferences. Called AFTER the copy-elim mask-off
+			 * loop above so the backend can refine the remaining
+			 * availability mask based on lifetime considerations.
+			 * SH-2 uses this to deprioritise r0 when the value
+			 * would live across an r0-clobbering operation. */
+			if (IR->x.prealloc_mask)
+				mask[IREG] = (*IR->x.prealloc_mask)(
+					sym, p, mask[IREG]);
 			r = getreg(set, mask, p);
 			if (sym->temporary) {
 				Node q;

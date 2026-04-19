@@ -46,7 +46,19 @@
  * mention in the captured body to the highest-numbered free callee-
  * saved reg. See function() for the detection and rename dance.
  */
-#define INTTMP  0x0000000e  /* R1..R3                          */
+#define INTTMP  0x0000000f  /* R0..R3 — SHC uses r0 as a general    */
+                            /* scratch despite its dual role as the */
+                            /* return-value register. r0 has        */
+                            /* privileged addressing (@(R0,Rn),     */
+                            /* tst #imm,r0) so keeping scratch in   */
+                            /* it preserves optimisation potential. */
+                            /* Return-value binding still handled   */
+                            /* explicitly via setreg at CALL/RET.   */
+                            /* The gen.c ralloc copy-elim path was  */
+                            /* relaxed to handle the case where a   */
+                            /* wildcard-allocated kid lands in a    */
+                            /* register that matches a specific     */
+                            /* setreg target. */
 #define INTVAR  0x00007f00  /* R8..R14 (R14 may be reclaimed as FP) */
 #define INTRET  0x00000001  /* R0                              */
 
@@ -62,6 +74,7 @@ static void doarg(Node);
 static void emit2(Node);
 static void export(Symbol);
 static void clobber(Node);
+static unsigned sh_prealloc_mask(Symbol, Node, unsigned);
 static void function(Symbol, Symbol[], Symbol[], int);
 static void global(Symbol);
 static void import(Symbol);
@@ -1309,24 +1322,26 @@ static void progbeg(int argc, char *argv[]) {
         ireg[15]->x.name = "15";
         /* Build a priority-ordered wildcard array so askreg's 31→0
          * scan picks registers in the order Hitachi SHC uses:
-         *   INTTMP ascending: r1, r2, r3  (slots 31-29)
-         *   INTVAR descending: r14..r8    (slots 28-22)
-         * Other regs (r0 return, r4-r7 args, r15 SP) are placed
-         * at lower indices — they're rarely allocated through the
-         * wildcard but must be present for spill/reload paths. */
+         *   INTTMP: r0, r1, r2, r3      (slots 31-28)
+         *   INTVAR descending: r14..r8  (slots 27-21)
+         * r0 first matches SHC's scratch preference (privileged
+         * addressing modes make r0 valuable). Other regs (r4-r7
+         * args, r15 SP) are placed at lower indices — they're
+         * rarely allocated through the wildcard but must be present
+         * for spill/reload paths. */
         for (i = 0; i < 32; i++)
                 ireg_prio[i] = NULL;
-        ireg_prio[31] = ireg[1];
-        ireg_prio[30] = ireg[2];
-        ireg_prio[29] = ireg[3];
-        ireg_prio[28] = ireg[14];
-        ireg_prio[27] = ireg[13];
-        ireg_prio[26] = ireg[12];
-        ireg_prio[25] = ireg[11];
-        ireg_prio[24] = ireg[10];
-        ireg_prio[23] = ireg[9];
-        ireg_prio[22] = ireg[8];
-        ireg_prio[21] = ireg[0];
+        ireg_prio[31] = ireg[0];
+        ireg_prio[30] = ireg[1];
+        ireg_prio[29] = ireg[2];
+        ireg_prio[28] = ireg[3];
+        ireg_prio[27] = ireg[14];
+        ireg_prio[26] = ireg[13];
+        ireg_prio[25] = ireg[12];
+        ireg_prio[24] = ireg[11];
+        ireg_prio[23] = ireg[10];
+        ireg_prio[22] = ireg[9];
+        ireg_prio[21] = ireg[8];
         ireg_prio[20] = ireg[4];
         ireg_prio[19] = ireg[5];
         ireg_prio[18] = ireg[6];
@@ -1452,6 +1467,73 @@ static void clobber(Node p) {
                 spill(INTTMP | INTRET, IREG, p);
                 break;
         }
+}
+
+/* sh_prealloc_mask: SHC's r0-preference heuristic.
+ *
+ * SHC uses r0 as a general scratch register because of r0's
+ * privileged addressing modes (@(R0,Rn) indexed, tst #imm,r0,
+ * gbr-relative byte loads). But values that must persist across
+ * r0-clobbering operations can't live in r0 — the next indexed
+ * load or CALL would corrupt them. SHC's allocator handles this
+ * via lifetime awareness; we reproduce the effect here by masking
+ * r0 out of the availability set when the symbol's lifetime crosses
+ * an r0-clobbering node.
+ *
+ * Hazardous intermediate nodes:
+ *   - generic(op) == CALL: writes r0 with the return value
+ *   - syms[RX] targets r0 via setreg/rtarget: explicit r0 binding
+ *
+ * Walking the linear chain from p->x.next to sym->x.lastuse lets us
+ * see the value's entire forward lifetime. Short-lived values
+ * (lastuse == p) bypass the walk entirely — r0 stays available,
+ * matching SHC's pattern of using r0 for immediately-consumed loads. */
+static unsigned sh_prealloc_mask(Symbol sym, Node p, unsigned m) {
+        Node n, last = NULL;
+        int i;
+        if (!sym || !p)
+                return m;
+        /* Find p's lastuse by walking the linear forest forward, looking
+         * for the last node that references p in its kids. We can't rely
+         * on sym->x.lastuse because the symbol here is typically a
+         * wildcard (not a real temporary), and wildcards don't track
+         * lastuse. Kid-pointer scan is O(n) per allocation but accurate. */
+        for (n = p->x.next; n; n = n->x.next)
+                for (i = 0; i < NELEMS(n->x.kids) && n->x.kids[i]; i++)
+                        if (n->x.kids[i] == p) {
+                                last = n;
+                                break;
+                        }
+        if (!last)
+                return m;  /* no future use — value is dead after p, r0 safe */
+        /* r0 is hazardous if any intermediate node (strictly between p
+         * and last) writes r0. Three cases catch the common patterns:
+         *
+         *  (a) CALL: writes r0 with return value.
+         *  (b) Specific r0 target bound via setreg/rtarget.
+         *  (c) 1/2-byte INDIR loads — SH-2 has no mov.b/mov.w disp form
+         *      that targets anything but r0, so our emit hardcodes r0
+         *      as the load's landing register and may copy out to the
+         *      allocator-assigned dst afterwards. From a lifetime
+         *      analysis POV these ops WRITE r0 regardless of dst.
+         *
+         * Matches SHC's "mov.w @(...), r0; mov r0, r1" idiom — if the
+         * load's value must persist across later r0-writing ops, it
+         * goes to r1+. r0 only for immediately-consumed loads. */
+        for (n = p->x.next; n && n != last; n = n->x.next) {
+                if (generic(n->op) == CALL)
+                        return m & ~0x1u;
+                if (n->syms[RX] && n->syms[RX]->x.regnode
+                    && n->syms[RX]->x.regnode->number == 0
+                    && n->syms[RX]->x.regnode->set == IREG)
+                        return m & ~0x1u;
+                if (generic(n->op) == INDIR) {
+                        int sz = opsize(n->op);
+                        if (sz == 1 || sz == 2)
+                                return m & ~0x1u;
+                }
+        }
+        return m;
 }
 
 static void emit2(Node p) {
@@ -5918,24 +6000,25 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         /* Save the INTVAR slots of the wildcard priority array so we
          * can restore at function exit. iregw stores ireg_prio by
          * pointer (mkwildcard doesn't copy), so mutations below are
-         * visible to askreg. Slots 22..28 are the INTVAR range. */
+         * visible to askreg. Slots 21..27 are the INTVAR range
+         * (shifted down by one after r0 joined INTTMP at slot 31). */
         for (i = 0; i < 7; i++)
-                saved_intvar_prio[i] = ireg_prio[22 + i];
+                saved_intvar_prio[i] = ireg_prio[21 + i];
 
         /* #pragma sh_alloc_lowfirst: per-function flip of the INTVAR
          * allocation order. SHC's r8-first allocation is matched by
-         * making slot 28 (highest priority) hold r8 and slot 22 hold
-         * r14. Empirically tagged per-function — see the pragma block
-         * in the TU source. Default (untagged) is r14-first. Restored
-         * before function() returns. */
+         * making slot 27 (highest INTVAR priority) hold r8 and slot
+         * 21 hold r14. Empirically tagged per-function — see the
+         * per-function pragmas in the TU sources. Default is
+         * r14-first. Restored before function() returns. */
         if (sh_func_has_attr(f->name, SH_ATTR_LOWFIRST)) {
-                ireg_prio[28] = ireg[8];
-                ireg_prio[27] = ireg[9];
-                ireg_prio[26] = ireg[10];
-                ireg_prio[25] = ireg[11];
-                ireg_prio[24] = ireg[12];
-                ireg_prio[23] = ireg[13];
-                ireg_prio[22] = ireg[14];
+                ireg_prio[27] = ireg[8];
+                ireg_prio[26] = ireg[9];
+                ireg_prio[25] = ireg[10];
+                ireg_prio[24] = ireg[11];
+                ireg_prio[23] = ireg[12];
+                ireg_prio[22] = ireg[13];
+                ireg_prio[21] = ireg[14];
         }
 
         /* #pragma noregalloc: SHC v5.0 §3.10 — the allocator does not
@@ -6532,7 +6615,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         /* Restore wildcard priority slots in case sh_alloc_lowfirst
          * swapped them. */
         for (i = 0; i < 7; i++)
-                ireg_prio[22 + i] = saved_intvar_prio[i];
+                ireg_prio[21 + i] = saved_intvar_prio[i];
 }
 
 static void defconst(int suffix, int size, Value v) {
@@ -6715,5 +6798,6 @@ Interface shIR = {
                 doarg,
                 target,
                 clobber,
+                sh_prealloc_mask,
         }
 };

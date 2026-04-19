@@ -20,6 +20,15 @@ typedef struct {
 	void (*doarg)(Node);
 	void (*target)(Node);
 	void (*clobber)(Node);
+	/* prealloc_mask: optional target hook called just before ralloc
+	 * picks a register. Receives the symbol being allocated, the
+	 * node where allocation happens, and the current availability
+	 * mask; returns a possibly-narrowed mask. Backends use this to
+	 * encode architecture-specific allocator heuristics that depend
+	 * on the symbol's lifetime (e.g. avoid r0 on SH-2 when the
+	 * value would live across an r0-clobbering operation). Leave
+	 * NULL if the target has no such preferences. */
+	unsigned (*prealloc_mask)(Symbol, Node, unsigned);
 } Xinterface;
 extern int     askregvar(Symbol, Symbol);
 extern void    blkcopy(int, int, int, int, int, int[]);
