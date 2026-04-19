@@ -110,11 +110,57 @@ def main():
             print(f"  baseline {i}/{len(fns)}", file=sys.stderr)
     print("# Baselines done", file=sys.stderr)
 
-    # Test noregalloc on each noregsave-tagged function
+    regsave_tagged = tagged_with("regsave")
+    print(f"# {len(regsave_tagged)} regsave-tagged", file=sys.stderr)
+
+    # Test regsave on untagged functions
+    untagged = [fn for fn in fns if fn not in noregsave_tagged
+                and fn not in regsave_tagged and baseline.get(fn, 0) > 0]
+    print(f"# Testing regsave on {len(untagged)} untagged functions",
+          file=sys.stderr)
     wins = []
+    for i, fn in enumerate(untagged):
+        backup = add_pragma(fn, "regsave")
+        try:
+            tagged = diff_for(fn)
+        finally:
+            restore(backup)
+        if tagged < 0:
+            continue
+        delta = tagged - baseline[fn]
+        if delta < 0:
+            print(f"  {fn}: regsave WIN  {baseline[fn]} -> {tagged} ({delta})",
+                  file=sys.stderr)
+            wins.append((fn, baseline[fn], tagged, "regsave"))
+        if (i + 1) % 30 == 0:
+            print(f"  regsave tested {i+1}/{len(untagged)} ({len(wins)} wins)",
+                  file=sys.stderr)
+
+    # Test sh_alloc_lowfirst on untagged functions
+    print(f"# Testing sh_alloc_lowfirst on {len(untagged)} untagged functions",
+          file=sys.stderr)
+    for i, fn in enumerate(untagged):
+        backup = add_pragma(fn, "sh_alloc_lowfirst")
+        try:
+            tagged = diff_for(fn)
+        finally:
+            restore(backup)
+        if tagged < 0:
+            continue
+        delta = tagged - baseline[fn]
+        if delta < 0:
+            print(f"  {fn}: sh_alloc_lowfirst WIN  {baseline[fn]} -> {tagged} ({delta})",
+                  file=sys.stderr)
+            wins.append((fn, baseline[fn], tagged, "sh_alloc_lowfirst"))
+        if (i + 1) % 30 == 0:
+            print(f"  lowfirst tested {i+1}/{len(untagged)} ({len(wins)} wins)",
+                  file=sys.stderr)
+
+    # Original: noregalloc on tagged
+    tagged_set = noregsave_tagged | regsave_tagged
     candidates = [fn for fn in fns
-                  if fn in noregsave_tagged and baseline.get(fn, 0) > 0]
-    print(f"# Testing noregalloc on {len(candidates)} noregsave functions",
+                  if fn in tagged_set and baseline.get(fn, 0) > 0]
+    print(f"# Testing noregalloc on {len(candidates)} tagged functions",
           file=sys.stderr)
     for i, fn in enumerate(candidates):
         backup = add_pragma(fn, "noregalloc")
@@ -128,17 +174,17 @@ def main():
         if delta < 0:
             print(f"  {fn}: noregalloc WIN  {baseline[fn]} -> {tagged} ({delta})",
                   file=sys.stderr)
-            wins.append((fn, baseline[fn], tagged))
+            wins.append((fn, baseline[fn], tagged, "noregalloc"))
         if (i + 1) % 30 == 0:
             print(f"  noregalloc tested {i+1}/{len(candidates)} ({len(wins)} wins)",
                   file=sys.stderr)
 
-    print(f"# noregalloc wins: {len(wins)}", file=sys.stderr)
+    print(f"# Total wins: {len(wins)}", file=sys.stderr)
     if wins:
-        total = sum(b - a for _, b, a in wins)
+        total = sum(b - a for _, b, a, _ in wins)
         print(f"# Aggregate: -{total} lines", file=sys.stderr)
-    for fn, _, _ in wins:
-        print(fn)
+    for fn, b, a, p in wins:
+        print(f"{p}\t{fn}\t{b}->{a}")
 
 
 if __name__ == "__main__":

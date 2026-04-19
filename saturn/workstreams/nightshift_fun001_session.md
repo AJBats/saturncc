@@ -8,9 +8,11 @@ the original byte-match target #001 (`FUN_06044060`, baseline 70 diff).
 
 - **`30bf7ec`** — 4-param signature attempt, reverted with diagnostic.
 - **`a4335b1`** — standalone lowfirst tags: FUN_06044BCC -2, FUN_0602A664 -2.
+- **`0b6a59a`** — first session-summary commit (this doc, originally).
+- **`7937624`** — TU noregalloc-on-noregsave: FUN_06044d64 -2, FUN_06044da8 -2.
 
-**Net branch progress: -4 diff lines across two standalone functions.**
-FUN_06044060 itself unchanged at 70 baseline.
+**Net branch progress: -8 diff lines across four functions** (two
+standalone, two TU). FUN_06044060 itself unchanged at 70 baseline.
 
 ## Attempts and findings
 
@@ -97,6 +99,31 @@ flush points. A future attempt would need to either:
 For nightshift, this is "exhausted the cheap version of the
 generalizable fix." A serious Gap #3 attempt is its own
 multi-session workstream.
+
+### 4. noregalloc on top of noregsave (extra A/B sweep)
+
+**Hypothesis:** Some noregsave-tagged functions might benefit from
+ALSO being tagged noregalloc — the additional R8..R14 allocator
+strip could simplify body shape further.
+
+**Implementation:** new `find_extra_pragma_wins.py` tool. A/B-tests
+adding noregalloc to each of the 159 noregsave-tagged TU functions.
+
+**Result:** 2 wins, applied in `7937624`:
+- FUN_06044d64: 10 → 8 (-2)
+- FUN_06044da8: 10 → 8 (-2)
+
+The other 157 noregsave-tagged functions showed no improvement.
+Also extended the sweep to test:
+- regsave on untagged functions: 0 wins (10 candidates tested)
+- lowfirst on untagged functions: 0 wins (10 candidates tested)
+- noregalloc on regsave-tagged functions: 0 wins (14 candidates)
+
+The pragma-combination lever is essentially exhausted at this
+point. Future wins on this TU will likely require either:
+- Gap #3 (proper, with pool reorder support)
+- entry_alias mechanism for shim r0 calls
+- TU reconstruction for the param-passing conventions
 
 ## State for resume
 
