@@ -18,6 +18,11 @@
 
 #include "ghidra_shim.h"
 
+/* Empirical probe: noregsave on a function whose prod output saves
+ * nothing in R8..R14. If our compiler is currently saving some of
+ * them, noregsave strips those saves and may close diff lines. */
+#pragma noregsave(FUN_0604727c)
+
 /* ──────────────────────────────────────────────────────────────
  * Shared declarations (DATs, globals, intra-TU prototypes).
  * Populated as functions are sanitized and common references
