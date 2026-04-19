@@ -113,6 +113,14 @@ Node listnodes(Tree tp, int tlab, int flab) {
 	else
 		op = tp->op + sizeop(tp->type->size);
 	switch (generic(tp->op)) {
+	case ASMB:  /* __asm("...") intrinsic: emit as a pseudo-LABEL+V
+		     * carrying the raw asm text on its symbol's name. The
+		     * symbol has u.l.label == 0 as a sentinel (real labels
+		     * start at 1). Backend emit detects the sentinel and
+		     * prints the name as raw instruction text. See
+		     * expr.c's asm_intrinsic() for the parser side. */
+		    list(newnode(LABEL+V, NULL, NULL, tp->u.sym));
+		    break;
 	case AND:   { if (depth++ == 0) reset();
 		      if (flab) {
 		      	listnodes(tp->kids[0], 0, flab);

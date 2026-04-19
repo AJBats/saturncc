@@ -402,10 +402,68 @@ static Tree postfix(Tree p) {
 			return p;
 		}
 }
+/* Parse `__asm("literal-string")`. Entry: t == ID, token == "__asm".
+ * We bypass the regular identifier/call pipeline entirely — no Symbol
+ * for __asm is created, no string symbol (.rodata) is emitted, no
+ * CALL/ARG nodes are built. The result is a Tree with op ASMB+V
+ * whose u.sym carries the raw asm text in its ->name. See
+ * dag.c's listnodes() ASMB case for the downstream handling. */
+static Tree asm_intrinsic(void) {
+	char *text;
+	Symbol s;
+	Tree p;
+
+	t = gettok();  /* consume __asm identifier */
+	if (t != '(') {
+		error("__asm expects '(' after name\n");
+		return cnsttree(inttype, 0L);
+	}
+	t = gettok();  /* consume ( */
+	if (t != SCON || !ischar(tsym->type->type)) {
+		error("__asm expects a character string literal argument\n");
+		return cnsttree(inttype, 0L);
+	}
+	/* The lexer has placed the raw bytes (null-terminated) in
+	 * tsym->u.c.v.p. Strip any leading whitespace (so the user can
+	 * write `__asm("mov #1, r6")` without needing to prefix a `\t`
+	 * — the backend always adds a single tab). Clone via stringn so
+	 * the Symbol we build below owns its own copy in the permanent
+	 * string table. */
+	{
+		char *raw = tsym->u.c.v.p;
+		int len = tsym->type->size - 1;
+		while (len > 0 && (*raw == ' ' || *raw == '\t')) {
+			raw++;
+			len--;
+		}
+		text = stringn(raw, len);
+	}
+	t = gettok();  /* consume the string literal */
+	if (t != ')') {
+		error("__asm expects ')' after string\n");
+		return cnsttree(inttype, 0L);
+	}
+	t = gettok();  /* consume ) -- leave t at the token after */
+	NEW0(s, FUNC);
+	s->name = text;
+	s->u.l.label = 0;  /* sentinel: real labels from genlabel() start at 1 */
+	s->scope = LABELS;
+	s->generated = 1;
+	p = tree(ASMB + V, voidtype, NULL, NULL);
+	p->u.sym = s;
+	return p;
+}
+
 static Tree primary(void) {
 	Tree p;
 
 	assert(t != '(');
+	/* __asm intrinsic: recognise the name at the identifier site,
+	 * parse the whole construct, and return the special tree. Must
+	 * run BEFORE the normal ID-handling path so we never install a
+	 * symbol for __asm or see its argument as a regular expression. */
+	if (t == ID && strcmp(token, "__asm") == 0)
+		return asm_intrinsic();
 	switch (t) {
 	case ICON:
 	case FCON: p = tree(mkop(CNST,tsym->type), tsym->type, NULL, NULL);

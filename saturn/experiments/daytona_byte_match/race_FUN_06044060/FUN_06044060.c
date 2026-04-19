@@ -72,7 +72,15 @@ void FUN_06044060(int p1, int p2, int p3, int p4)
 {
   FUN_06044D80(p1 + 0x30);
   if (*(char *)0x06054925 != '\0') {
-    FUN_06044F30(-0x10000, 0x10000, 0x10000);
+    /* Prod constructs -0x10000/0x10000/0x10000 inline via
+     * mov #1, shll16, neg — no pool loads. __asm emits this
+     * verbatim; the FUN_06044F30() call below then sees r5/r6/r7
+     * already set and makes the jsr. */
+    __asm("mov #1, r6");
+    __asm("shll16 r6");
+    __asm("neg r6, r5");
+    __asm("mov r6, r7");
+    FUN_06044F30();
   }
   FUN_06044E3C(0, p2);
   FUN_060450F2(p4);

@@ -324,7 +324,14 @@ enum {
 	OR=40<<4,
 	COND=41<<4,
 	RIGHT=42<<4,
-	FIELD=43<<4
+	FIELD=43<<4,
+	/* ASMB: parser-only opcode for the __asm("...") intrinsic.
+	 * Carries the raw asm text on its tree's u.sym->name. Decomposed
+	 * in dag.c's listnodes() into a LABEL+V node so the backend can
+	 * emit the text verbatim at the correct position in the function
+	 * body. Never reaches the backend as ASMB — same parser-only
+	 * pattern as AND/OR/COND above. */
+	ASMB=44<<4
 };
 struct type {
 	int op;
