@@ -98,7 +98,7 @@ static int sh_sp_locals_only;  /* locals exist but FP is not used (SP-relative) 
 static int sh_all_returns_inlined;
 static int sh_uses_macl;
 static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
-static int sh_weird_rule_1;  /* #pragma sh_weird_rule_1: see sh_apply_weird_rule_1 */
+static int sh_word_indexed_after_first;  /* #pragma sh_word_indexed_after_first: see sh_apply_word_indexed_after_first */
 
 /* Switch jump table: recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
@@ -936,6 +936,14 @@ static int sh_disp_cost(Node a, int sz) {
 #define SH_ATTR_REGSAVE    0x01
 #define SH_ATTR_NOREGSAVE  0x02
 #define SH_ATTR_NOREGALLOC 0x04
+/* SH-specific (not in SHC manual): per-function flip of the
+ * INTVAR allocation order (r8..r14 instead of r14..r8). Used to
+ * match prod functions where SHC happened to allocate low-first.
+ * Per-function gated because the allocator's order interacts with
+ * peephole passes (sh_rewrite_bool_fp, leaf_rename); flipping it
+ * for the wrong function regresses output. The pragma transcribes
+ * the per-function answer-key from prod evidence. */
+#define SH_ATTR_LOWFIRST   0x08
 
 struct sh_func_attr {
         char *name;
@@ -1131,7 +1139,7 @@ static void sh_parse_global_register(void) {
 /* #pragma handler wired up through the input.c hook. Recognizes:
  *   - `#pragma gbr_base (name)` — Hitachi GBR base symbol
  *   - `#pragma gbr_param` — Saturn-specific GBR prologue
- *   - `#pragma sh_weird_rule_1` — see sh_apply_weird_rule_1
+ *   - `#pragma sh_word_indexed_after_first` — see sh_apply_word_indexed_after_first
  *   - `#pragma regsave (f1, f2, ...)` — SHC v5.0 §3.10: save/restore
  *     R8..R14 at prologue/epilogue and around calls
  *   - `#pragma noregsave (f1, f2, ...)` — SHC v5.0 §3.10: skip
@@ -1155,8 +1163,8 @@ static void sh_pragma(char *name) {
                         gbr_base_cname = string(token);
         } else if (strcmp(name, "gbr_param") == 0) {
                 sh_gbr_param = 1;
-        } else if (strcmp(name, "sh_weird_rule_1") == 0) {
-                sh_weird_rule_1 = 1;
+        } else if (strcmp(name, "sh_word_indexed_after_first") == 0) {
+                sh_word_indexed_after_first = 1;
         } else if (strcmp(name, "regsave") == 0) {
                 sh_parse_func_list("regsave", SH_ATTR_REGSAVE);
         } else if (strcmp(name, "noregsave") == 0) {
@@ -1165,6 +1173,8 @@ static void sh_pragma(char *name) {
                 sh_parse_func_list("noregalloc", SH_ATTR_NOREGALLOC);
         } else if (strcmp(name, "global_register") == 0) {
                 sh_parse_global_register();
+        } else if (strcmp(name, "sh_alloc_lowfirst") == 0) {
+                sh_parse_func_list("sh_alloc_lowfirst", SH_ATTR_LOWFIRST);
         }
 }
 
@@ -3150,7 +3160,7 @@ static void sh_fuse_mov_into_add(void) {
         }
 }
 
-/* #pragma sh_weird_rule_1 implementation.
+/* #pragma sh_word_indexed_after_first implementation.
  *
  * Across the full Daytona CCE prod corpus (3873 functions, 19,087
  * disp-mode loads), there are exactly 3 cases where SHC chose
@@ -3179,12 +3189,12 @@ static void sh_fuse_mov_into_add(void) {
  * Rule: after the first .w displacement load targeting r0, convert
  * every subsequent .w disp-load to indexed form
  * (mov #K,r0; mov.w @(r0,rN),r0). Applies only to the function
- * decorated with `#pragma sh_weird_rule_1`. Cleared at function
+ * decorated with `#pragma sh_word_indexed_after_first`. Cleared at function
  * end, so no TU-wide leakage.
  *
  * If new prod anomalies surface that don't fit this pattern, they
  * get their own numbered weird rule — don't widen this one. */
-static void sh_apply_weird_rule_1(void) {
+static void sh_apply_word_indexed_after_first(void) {
         static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
         int i, nout = 0, first_seen = 0;
 
@@ -3574,6 +3584,61 @@ static void sh_coalesce_move_chains(void) {
         }
 }
 
+/* Returns 1 if the body contains at least one bool_fp pattern
+ * (any destination register, not specifically r14). Used by
+ * sh_rewrite_bool_fp's r14-force-add gate. Mirrors the pattern
+ * check in sh_rewrite_bool_fp's main loop, just non-destructively. */
+static int sh_body_has_any_bool_fp_pattern(void) {
+        int i, j, k, m, n;
+        int rB, rP, rQ;
+        for (i = 0; i < sh_nlines; i++) {
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_has_prefix(sh_lines[i], "bf/s")
+                    && !sh_has_prefix(sh_lines[i], "bt/s"))
+                        continue;
+                /* Find delay slot line. */
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                /* Extract destination register from delay slot mov. */
+                {
+                        const char *r = NULL, *s = sh_lines[j];
+                        while (*s) {
+                                if (*s == 'r' && s[1] >= '0'
+                                    && s[1] <= '9')
+                                        r = s;
+                                s++;
+                        }
+                        if (!r) continue;
+                        r++;
+                        rB = *r - '0';
+                        if (r[1] >= '0' && r[1] <= '9')
+                                rB = rB * 10 + (r[1] - '0');
+                }
+                /* Find overwrite line. */
+                for (k = j + 1; k < sh_nlines; k++) {
+                        if (sh_lines[k][0] == 0) continue;
+                        if (sh_is_label_line(sh_lines[k])) continue;
+                        break;
+                }
+                if (k >= sh_nlines) continue;
+                if (!sh_writes_reg(sh_lines[k], rB)) continue;
+                /* Find label. */
+                for (m = k + 1; m < sh_nlines; m++)
+                        if (sh_lines[m][0] != 0) break;
+                if (m >= sh_nlines) continue;
+                if (!sh_is_label_line(sh_lines[m])) continue;
+                /* Find mov rN, r0. */
+                for (n = m + 1; n < sh_nlines; n++)
+                        if (sh_lines[n][0] != 0) break;
+                if (n >= sh_nlines) continue;
+                if (!sh_parse_regmov(sh_lines[n], &rP, &rQ)) continue;
+                if (rP != rB || rQ != 0) continue;
+                return 1;
+        }
+        return 0;
+}
+
 /* Rewrite the boolean bf/s pattern to match Hitachi SHC's always-FP
  * idiom. Detects:
  *   bf/s L; mov #X,rN; mov #Y,rN; L: mov rN,r0; [exit]: rts; pop
@@ -3592,11 +3657,19 @@ static void sh_rewrite_bool_fp(int need_fp) {
         int nout = 0;
 
         if (need_fp) return;
-        /* Injects `mov r15,r14` / `mov r14,r15` which clobber r14.
-         * Requires the prologue to save r14. If leaf-rename dropped
-         * r14 from usedmask, skip — the injection would corrupt the
-         * caller's r14. */
-        if (!(usedmask[IREG] & (1u << 14))) return;
+        /* Injects `mov r15,r14` / `mov r14,r15` which clobber r14,
+         * so the prologue must save r14. Historically we bailed when
+         * r14 wasn't in usedmask. That worked under high-first
+         * allocation (r14 was usually a var) but breaks under
+         * low-first (r14 rarely a var → injection skipped → prod
+         * idiom not produced). Fix: if the body genuinely has the
+         * bool_fp pattern, force-add r14 to usedmask so the prologue
+         * saves it. The injection then proceeds safely. If no pattern
+         * matches, skip the force-add (no waste). */
+        if (!(usedmask[IREG] & (1u << 14))) {
+                if (!sh_body_has_any_bool_fp_pattern()) return;
+                usedmask[IREG] |= 1u << 14;
+        }
 
         for (i = 0; i < sh_nlines; i++) {
                 if (nout >= SH_MAX_LINES - 10) {
@@ -4960,6 +5033,74 @@ static void sh_leaf_rename_callee_saved(int need_fp, int exit_label_num) {
         }
 }
 
+/* Post-RA delay-slot rename: complement of sh_leaf_rename_callee_saved.
+ * For single-callee-saved leaf functions with MULTIPLE bra-to-exit
+ * sites (which sh_inline_returns will turn into multiple inline rts),
+ * rename the dirty callee-saved reg to r14 specifically so each rts
+ * delay slot pops r14 for free.
+ *
+ * Mutually exclusive with leaf_rename above (which gates on
+ * nexits <= 1). Both passes inspect the same shape — single dirty
+ * callee-saved on a leaf — but pick different rename targets:
+ *
+ *   leaf_rename     (nexits <= 1):  dirty -> caller-saved scratch
+ *                                   (eliminates the prologue save)
+ *   delay_slot      (nexits  > 1):  dirty -> r14
+ *                                   (so each rts pop fills delay slot)
+ *
+ * Trade-off prod follows: with N rts sites, N wasted nops (from
+ * the eliminate-save approach) cost more than 1 saved push. SHC
+ * keeps the callee-saved and uses the delay slot.
+ *
+ * Under our default high-first allocator, the dirty reg is naturally
+ * r14 already → this pass is a no-op early-exit. Under a low-first
+ * allocator (gap2 plan, future Chunk 5) the dirty reg is the lowest
+ * picked (r8 under bare low-first) and this pass migrates it to r14
+ * for the delay-slot pattern.
+ *
+ * Skips on has_boolfp_r14 to avoid colliding with sh_rewrite_bool_fp,
+ * which writes r14 as FP scratch in its injection. Symmetric guard
+ * to leaf_rename's. */
+static void sh_rename_to_r14_for_delay_slot(int need_fp,
+                                            int exit_label_num) {
+        unsigned live = 0;
+        int j, src, nexits, ncallee_saved;
+
+        nexits = sh_count_exit_bras(exit_label_num);
+        if (nexits <= 1)
+                return;  /* leaf_rename's territory */
+        ncallee_saved = bitcount(usedmask[IREG] & INTVAR);
+        if (ncallee_saved != 1)
+                return;  /* multi-callee-saved: regsave handles range */
+        if (need_fp)
+                return;  /* r14 occupied as FP */
+        if (sh_body_has_bool_fp_r14_pattern())
+                return;  /* bool_fp will write r14 as scratch */
+
+        /* Find the single dirty callee-saved register. */
+        src = -1;
+        for (j = 8; j <= 14; j++) {
+                if (usedmask[IREG] & (1u << j)) { src = j; break; }
+        }
+        if (src < 0 || src == 14)
+                return;  /* nothing to rename, or already at r14 */
+
+        /* r14 must be unreferenced in the body — otherwise renaming
+         * src to r14 would alias two distinct values. Compute live
+         * the same way leaf_rename does. */
+        for (j = 0; j < sh_nlines; j++) {
+                if (sh_lines[j][0] == 0)
+                        continue;
+                live |= sh_regs_used(sh_lines[j]);
+        }
+        if (live & (1u << 14))
+                return;
+
+        sh_rename_reg(src, 14);
+        usedmask[IREG] &= ~(1u << src);
+        usedmask[IREG] |= 1u << 14;
+}
+
 /* Replace each `bra <exit_label>; <delay_insn>` in the body with an
  * inline copy of the function epilogue: `<delay_insn>; [FP teardown];
  * [pops]; rts; <last_pop_as_delay_slot>`. This matches Hitachi SHC's
@@ -5741,11 +5882,35 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         Symbol r, argregs[4];
         unsigned saved_tmask = tmask[IREG];
         unsigned saved_vmask = vmask[IREG];
+        Symbol saved_intvar_prio[7];
 
         nshlit = 0;
         sh_all_returns_inlined = 0;
         sh_uses_macl = 0;
         sh_sp_locals_only = 0;
+
+        /* Save the INTVAR slots of the wildcard priority array so we
+         * can restore at function exit. iregw stores ireg_prio by
+         * pointer (mkwildcard doesn't copy), so mutations below are
+         * visible to askreg. Slots 22..28 are the INTVAR range. */
+        for (i = 0; i < 7; i++)
+                saved_intvar_prio[i] = ireg_prio[22 + i];
+
+        /* #pragma sh_alloc_lowfirst: per-function flip of the INTVAR
+         * allocation order. SHC's r8-first allocation is matched by
+         * making slot 28 (highest priority) hold r8 and slot 22 hold
+         * r14. Empirically tagged per-function — see the pragma block
+         * in the TU source. Default (untagged) is r14-first. Restored
+         * before function() returns. */
+        if (sh_func_has_attr(f->name, SH_ATTR_LOWFIRST)) {
+                ireg_prio[28] = ireg[8];
+                ireg_prio[27] = ireg[9];
+                ireg_prio[26] = ireg[10];
+                ireg_prio[25] = ireg[11];
+                ireg_prio[24] = ireg[12];
+                ireg_prio[23] = ireg[13];
+                ireg_prio[22] = ireg[14];
+        }
 
         /* #pragma noregalloc: SHC v5.0 §3.10 — the allocator does not
          * place anything in R8..R14 for this function. Bridge pragma:
@@ -5971,7 +6136,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                  *                              mov.X @(disp,Rn); disp range
                  *                              check depends on pool
                  *                              shrinks above being in.
-                 *   sh_apply_weird_rule_1    — opt-in via #pragma; converts
+                 *   sh_apply_word_indexed_after_first    — opt-in via #pragma; converts
                  *                              all but the first .w disp-to-r0
                  *                              load into indexed form. Only
                  *                              fires in functions where prod
@@ -6006,8 +6171,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 sh_fuse_mov_into_add();
                 sh_fold_mov_extw_to_movw();
                 sh_fold_base_displacement();
-                if (sh_weird_rule_1)
-                        sh_apply_weird_rule_1();
+                if (sh_word_indexed_after_first)
+                        sh_apply_word_indexed_after_first();
                 sh_route_via_r0();
                 sh_fold_post_increment();
                 sh_fill_branch_delays();
@@ -6050,6 +6215,14 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
                 if (ncalls == 0)
                         sh_leaf_rename_callee_saved(need_fp,
                                                     f->u.f.label);
+                /* Complement of leaf_rename for the multi-rts shape:
+                 * see sh_rename_to_r14_for_delay_slot comment.
+                 * Renames TO r14 (callee-saved) so the rename is safe
+                 * across jsr calls — no ncalls gate required. No-op
+                 * under high-first allocator (dirty reg is already
+                 * r14). */
+                sh_rename_to_r14_for_delay_slot(need_fp,
+                                                f->u.f.label);
         }
 
         /* ──────────────────────────────────────────────────
@@ -6321,10 +6494,14 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         }
         shlit_flush();
         sh_gbr_param = 0;
-        sh_weird_rule_1 = 0;
+        sh_word_indexed_after_first = 0;
         /* Restore allocator masks in case noregalloc narrowed them. */
         tmask[IREG] = saved_tmask;
         vmask[IREG] = saved_vmask;
+        /* Restore wildcard priority slots in case sh_alloc_lowfirst
+         * swapped them. */
+        for (i = 0; i < 7; i++)
+                ireg_prio[22 + i] = saved_intvar_prio[i];
 }
 
 static void defconst(int suffix, int size, Value v) {

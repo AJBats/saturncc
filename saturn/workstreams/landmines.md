@@ -228,7 +228,7 @@ the sed can't match them.
 
 ### `cfunc` must be cleared before `expect('}')` in function tail
 
-**Trigger:** a file-scope `#pragma` (e.g. `sh_weird_rule_1`) placed
+**Trigger:** a file-scope `#pragma` (e.g. `sh_word_indexed_after_first`) placed
 immediately after a function's closing `}`, with no intervening
 top-level declaration.
 

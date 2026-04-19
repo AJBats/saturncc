@@ -678,7 +678,7 @@ individually sufficient:
    `char * + int_disp` uses ADDP4 directly and the rule matches.
    ABI-identical either way.
 
-2. **Custom pragma (Gap 2):** added `#pragma sh_weird_rule_1`
+2. **Custom pragma (Gap 2):** added `#pragma sh_word_indexed_after_first`
    (`b67fe7e`). Across 3873 prod functions and 19,087 disp-mode
    loads, only 3 cases chose indexed over a fitting disp — and 2 of
    them are the adjacent .w loads in FUN_06044834. No generalizable
@@ -715,7 +715,7 @@ corpus (like Gap 2), resist the urge to invent generalizable rules.
 Accept that some prod output reflects human intent that can't be
 recovered from the binary. Provide an opt-in mechanism instead.
 This is Gap 0 philosophy (refactor the C) extended to compiler
-directives (annotate the C). See `#pragma sh_weird_rule_1` as the
+directives (annotate the C). See `#pragma sh_word_indexed_after_first` as the
 template for any future weirdness.
 
 ---
@@ -733,13 +733,13 @@ Newest first. Format: `commit_or_date — item_id — note`.
   9 of 10 corpus functions improved (E28 −9 lines, 44BCC −7,
   0602A664 −9, others smaller). Zero regressions; broad corpus
   168/168 still pass. The path to byte-match used 4 layers: char*
-  refactor (`30b5f00`), #pragma sh_weird_rule_1 (`b67fe7e`), H2
+  refactor (`30b5f00`), #pragma sh_word_indexed_after_first (`b67fe7e`), H2
   allocator spike (`385eafb`), and this peephole batch.
 - `b67fe7e` — `Gap 2` closed (for FUN_06044834). Corpus survey of
   3873 prod functions (19,087 disp loads) showed only 3 anomalies
   where indexed was chosen over fitting disp — 2 of them in
   FUN_06044834, 1 in FUN_06033DC8. No generalizable SHC rule.
-  Added opt-in `#pragma sh_weird_rule_1` to let the C source
+  Added opt-in `#pragma sh_word_indexed_after_first` to let the C source
   declare the intent explicitly (like Gap 0 but for compiler
   directives). FUN_06044834: 16 → 10.
 - `30b5f00` — `Gap 0` (FUN_06044834). Param rewrite `int → char *`
