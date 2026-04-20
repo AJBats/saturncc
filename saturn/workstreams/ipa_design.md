@@ -7,6 +7,32 @@ preservation guarantees that go beyond standard SH-2 ABI.
 **Status:** problem statement only. No implementation. Awaiting
 design discussion before any code is written.
 
+## Handoff protocol for fresh sessions
+
+If you are picking this up in a new session, do these four things
+in order before writing any code:
+
+1. **Read this doc end to end** — the problem statement, the three
+   axes of design space, and the open questions at the bottom.
+2. **Read the linked toolkit context** — recent commits and the
+   workstream docs listed under "Context for fresh sessions"
+   below. You need to know what infrastructure already exists
+   (save-default inversion, `__asm` intrinsic, normalizer folds,
+   r0 allocator heuristic) before proposing an IPA mechanism that
+   sits on top of it.
+3. **Read the auto-memory entries**, especially
+   `feedback_byte_matched_functions_are_the_oracle.md`. The
+   strategic framing — that each byte-matched function becomes a
+   teaching surface via future regressions — is why the IPA work
+   matters beyond #001.
+4. **Discuss the design choices with the user BEFORE writing
+   code.** The source axis (S1–S5), allocator axis (A1–A5), and
+   granularity axis (G1–G3) are deliberately left open. The doc's
+   "Recommended next steps" gives one viable starting point
+   (S1+A4+G1) but that is a suggestion, not a decision. The user
+   wants the axis choices resolved in conversation before any
+   implementation work begins.
+
 ## The concrete problem (#001's class C residual)
 
 After Phase 1 (save-default inversion), Phase 2 (`__asm` intrinsic),
