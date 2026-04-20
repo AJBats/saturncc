@@ -113,6 +113,25 @@ static int sh_uses_macl;
 static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
 static int sh_word_indexed_after_first;  /* #pragma sh_word_indexed_after_first: see sh_apply_word_indexed_after_first */
 
+/* IPA defer queue (Phase A.0): captures per-function state at each
+ * IR->function() call so end-of-TU processing can walk the queue in
+ * reverse-topological order. Phase A.0 is capture-only — still
+ * processes immediately in source order. FUNC arena is retained
+ * (Xinterface.retain_func_arena) so the Code linked list and Node
+ * DAGs referenced here stay live until progend drains the queue.
+ * See saturn/workstreams/ipa_design.md for the full roadmap. */
+struct sh_ipa_fn {
+        Symbol f;
+        Symbol *caller;
+        Symbol *callee;
+        int ncalls;
+        struct code code_head;
+        struct sh_ipa_fn *next;
+};
+static struct sh_ipa_fn *sh_ipa_queue;
+static struct sh_ipa_fn *sh_ipa_tail;
+static int sh_ipa_nqueued;
+
 /* Switch jump table: recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
  * Only one switch table per function is supported (enough for Daytona). */
@@ -1289,6 +1308,14 @@ static void sh_emit_gbr_entry(int i) {
 
 static void progend(void) {
         int i, base_idx = -1;
+        /* Phase A.0 diagnostic: capture count to stderr, gated by
+         * dflag (-d). Stays silent on normal runs so validate_build's
+         * "stderr must be empty" regtests keep passing. Remove once
+         * consumption (Phase D) lands and we have end-to-end evidence
+         * from byte-match numbers. */
+        if (dflag && sh_ipa_nqueued > 0)
+                fprint(stderr, "[ipa] captured %d function(s)\n",
+                       sh_ipa_nqueued);
         if (ngbr_pool == 0)
                 return;
         print("\t.section\t.gbr_data,\"aw\"\n");
@@ -5992,6 +6019,27 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         unsigned saved_vmask = vmask[IREG];
         Symbol saved_intvar_prio[7];
 
+        /* Phase A.0: capture state for end-of-TU IPA. Shallow copy of
+         * codehead preserves the head pointer to this function's Code
+         * linked list; FUNC-arena entries stay live because Xinterface
+         * .retain_func_arena = 1 suppresses decl.c's deallocate(FUNC).
+         * Still processes immediately below — deferral comes in A.1. */
+        {
+                struct sh_ipa_fn *e;
+                NEW0(e, PERM);
+                e->f = f;
+                e->caller = caller;
+                e->callee = callee;
+                e->ncalls = ncalls;
+                e->code_head = codehead;
+                if (!sh_ipa_queue)
+                        sh_ipa_queue = e;
+                else
+                        sh_ipa_tail->next = e;
+                sh_ipa_tail = e;
+                sh_ipa_nqueued++;
+        }
+
         nshlit = 0;
         sh_all_returns_inlined = 0;
         sh_uses_macl = 0;
@@ -6799,5 +6847,8 @@ Interface shIR = {
                 target,
                 clobber,
                 sh_prealloc_mask,
+                1,  /* retain_func_arena: IPA Phase A.0 — keeps FUNC
+                     * arena alive across functions so the defer queue
+                     * can still reach Code lists at progend drain. */
         }
 };

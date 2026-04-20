@@ -39,7 +39,7 @@ void program(void) {
 		|| t == ID || t == '*' || t == '(') {
 			decl(dclglobal);
 			deallocate(STMT);
-			if (!(glevel >= 3 || xref))
+			if (!(glevel >= 3 || xref || IR->x.retain_func_arena))
 			deallocate(FUNC);
 		} else if (t == ';') {
 			warning("empty declaration\n");

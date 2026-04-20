@@ -29,6 +29,11 @@ typedef struct {
 	 * value would live across an r0-clobbering operation). Leave
 	 * NULL if the target has no such preferences. */
 	unsigned (*prealloc_mask)(Symbol, Node, unsigned);
+	/* retain_func_arena: if set, decl.c skips deallocate(FUNC) between
+	 * functions. Backends that need per-function state to persist past
+	 * IR->function() (e.g. IPA defer queues holding Code linked lists
+	 * and Node DAGs) set this. See saturn/workstreams/ipa_design.md. */
+	unsigned retain_func_arena:1;
 } Xinterface;
 extern int     askregvar(Symbol, Symbol);
 extern void    blkcopy(int, int, int, int, int, int[]);
