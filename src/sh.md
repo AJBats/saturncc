@@ -163,6 +163,13 @@ struct sh_ipa_fn {
          * single global struct gets overwritten by later functions'
          * switch parsing, so capture per-function and restore at drain. */
         struct sh_switch_state switch_state;
+        /* Phase B: direct-call edges, collected at capture time by
+         * walking the DAG for CALL nodes whose function-pointer kid
+         * is an ADDRG. Indirect calls (function pointers, pool loads)
+         * have no compile-time callee — we omit them and rely on the
+         * ABI-conservative clobber fallback at the CALL site. */
+        Symbol *direct_callees;   /* array of callee Symbols, dedup'd */
+        int n_direct_callees;
         struct sh_ipa_fn *next;
 };
 static struct sh_ipa_fn *sh_ipa_queue;
@@ -1342,9 +1349,19 @@ static void sh_emit_gbr_entry(int i) {
  * Code linked list. */
 static void sh_drain_ipa_queue(void) {
         struct sh_ipa_fn *e;
-        if (dflag && sh_ipa_nqueued > 0)
+        if (dflag && sh_ipa_nqueued > 0) {
                 fprint(stderr, "[ipa] draining %d function(s)\n",
                        sh_ipa_nqueued);
+                for (e = sh_ipa_queue; e; e = e->next) {
+                        int i;
+                        fprint(stderr, "[ipa]   %s ->",
+                               e->f->name);
+                        for (i = 0; i < e->n_direct_callees; i++)
+                                fprint(stderr, " %s",
+                                       e->direct_callees[i]->name);
+                        fprint(stderr, "\n");
+                }
+        }
         sh_ipa_in_drain = 1;
         /* cseg tracks the section during parse-suppressed calls, so it
          * may already read CODE from a suppressed swtoseg(CODE) at
@@ -6053,12 +6070,66 @@ static void sh_capture_end(int savfd, FILE *tmp) {
         fclose(tmp);
 }
 
+/* Phase B.0: recursive DAG walk that collects every direct callee
+ * (CALL whose function-pointer kid is an ADDRG). Indirect calls are
+ * skipped — the ABI-conservative clobber at the call site handles
+ * them. LCC's DAGs can share sub-nodes via hash-consing, so the same
+ * CALL node may be reached via multiple paths; dedup is handled by
+ * the caller (linear scan on a small callee list). */
+#define SH_MAX_DIRECT_CALLEES 128
+static void sh_collect_callees_rec(Node p, Symbol *buf, int *n, int max) {
+        Node fp;
+        int i;
+        if (!p)
+                return;
+        if (generic(p->op) == CALL) {
+                fp = p->kids[0];
+                if (fp && generic(fp->op) == ADDRG && fp->syms[0]
+                    && fp->syms[0]->name) {
+                        Symbol tgt = fp->syms[0];
+                        for (i = 0; i < *n; i++)
+                                if (buf[i] == tgt)
+                                        break;
+                        if (i == *n && *n < max)
+                                buf[(*n)++] = tgt;
+                }
+        }
+        sh_collect_callees_rec(p->kids[0], buf, n, max);
+        sh_collect_callees_rec(p->kids[1], buf, n, max);
+}
+
+/* Scan every Gen/Jump/Label Code in the current codehead's list,
+ * walk each forest root chain via ->link, and collect direct callees.
+ * Runs at function() capture time when codehead.next still points to
+ * this function's code and DAGs are in parse-time form. */
+static void sh_collect_direct_callees(struct sh_ipa_fn *e) {
+        static Symbol buf[SH_MAX_DIRECT_CALLEES];
+        Code cp;
+        Node n;
+        int count = 0;
+        for (cp = codehead.next; cp; cp = cp->next) {
+                if (cp->kind != Gen && cp->kind != Jump
+                    && cp->kind != Label)
+                        continue;
+                for (n = cp->u.forest; n; n = n->link)
+                        sh_collect_callees_rec(n, buf, &count,
+                                               SH_MAX_DIRECT_CALLEES);
+        }
+        if (count > 0) {
+                e->direct_callees = allocate(
+                        count * sizeof(Symbol), PERM);
+                memcpy(e->direct_callees, buf,
+                       count * sizeof(Symbol));
+                e->n_direct_callees = count;
+        }
+}
+
 /* IR->function() entry point — Phase A.1: capture only, defer all
  * codegen to sh_drain_ipa_queue() at progend. Snapshot of codehead
  * preserves the head of this function's Code linked list; retained
  * FUNC arena (Xinterface.retain_func_arena=1) keeps the list reachable
- * until the drain consumes it. Source order preserved for now;
- * reverse-topological sort lands in Phase B. */
+ * until the drain consumes it. Phase B.0 also walks the DAG to
+ * extract this function's direct-call edges for the cgraph. */
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         struct sh_ipa_fn *e;
         NEW0(e, PERM);
@@ -6079,6 +6150,10 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
          * at codegen. Capture the whole struct, then zero the global. */
         e->switch_state = sh_switch;
         memset(&sh_switch, 0, sizeof sh_switch);
+        /* Phase B.0: extract direct-call edges from the DAG while it's
+         * still reachable via codehead.next. Consumed by the cgraph
+         * builder at drain time (Phase B.1). */
+        sh_collect_direct_callees(e);
         if (!sh_ipa_queue)
                 sh_ipa_queue = e;
         else
