@@ -327,6 +327,37 @@ reverse-topo order to make cache lookups for callees always hit a
 populated entry (within an SCC, all members pessimistically assume
 ABI as each other's callee — standard GCC/LLVM fallback).
 
+## Phase D outcome: infrastructure complete, transformation deferred
+
+Phase D plumbs the `writes_r4` cache into the parameter-homing loop
+and clobber callback, and adds `sh_ipa_all_callees_preserve_r4()`
+as the query helper. It wires up cleanly and byte-match is unchanged.
+
+But the transformation itself — pinning p1 to r4 when IPA confirms
+preservation — trips an LCC allocator assertion (`gen.c:736`,
+`bestreg->x.regnode->vbl == NULL`). Root cause: once p1 is pinned
+via askregvar, the register is vbl-bound; any subsequent CALL that
+needs r4 as an argument has no way to produce p1+0x30 into r4 in
+place because spillee refuses to evict vbl-bound registers.
+
+SHC's IPA-optimized output requires more than just a "callee
+preserves r4" flag at the clobber site. It requires the allocator to
+support:
+
+ - A long-lived value living in a caller-saved register across
+   calls the compiler has proven preserve it.
+ - In-place arithmetic that mutates that register for argument
+   setup (`add #48, r4` — producing p1+0x30 while p1 "becomes"
+   p1+0x30 for the call duration).
+ - Cross-call liveness tracking that says "r4 after call 1 still
+   holds the value from before (plus our mutation), not garbage."
+
+Those are gen.c changes, not sh.md changes. Scope-wise that's a
+separate workstream — "LCC allocator support for IPA-derived
+caller-saved liveness." The data the allocator would need is
+already cached (`writes_r4` per function), so that workstream can
+pick up where Phase D left off without redesigning the analysis.
+
 ## Known A.1 side effect: section ordering in multi-function TUs
 
 Phase A.1's deferral changes section ordering when a TU mixes code

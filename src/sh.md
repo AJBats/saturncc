@@ -6349,6 +6349,34 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         sh_ipa_nqueued++;
 }
 
+/* Phase D: returns 1 iff every direct callee of `e` is known in the
+ * queue AND has writes_r4 == 0 (set by Phase C's reverse-topo pass).
+ * When true, the parameter-homing logic in sh_process_deferred_fn
+ * can pin the first parameter to r4 (via askregvar with argreg(0))
+ * instead of promoting it to a callee-saved INTVAR wildcard — the
+ * "keep p1 in r4 across all calls" optimization SHC does when it
+ * has IPA visibility. A leaf function (no calls) gets this for free
+ * via the ncalls == 0 path; this helper is for the non-leaf case. */
+static int sh_ipa_all_callees_preserve_r4(struct sh_ipa_fn *e) {
+        int k, m;
+        if (!e || e->n_direct_callees == 0)
+                return 0;
+        for (k = 0; k < e->n_direct_callees; k++) {
+                Symbol tgt = e->direct_callees[k];
+                int found = 0;
+                for (m = 0; m < sh_ipa_count; m++)
+                        if (sh_ipa_arr[m]->f == tgt) {
+                                if (sh_ipa_arr[m]->writes_r4)
+                                        return 0;
+                                found = 1;
+                                break;
+                        }
+                if (!found)
+                        return 0;
+        }
+        return 1;
+}
+
 /* The full per-function codegen pipeline, formerly the body of
  * function(). Restores codehead from the captured snapshot so
  * gencode()/emitcode() iterate this function's Code list. */
