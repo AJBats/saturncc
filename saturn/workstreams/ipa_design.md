@@ -293,3 +293,20 @@ The "byte-matched functions are the oracle" project framing is
 captured in the auto-memory file
 `feedback_byte_matched_functions_are_the_oracle.md` and is the
 strategic principle this IPA work serves.
+
+## Known A.1 side effect: section ordering in multi-function TUs
+
+Phase A.1's deferral changes section ordering when a TU mixes code
+and data declarations. Under A.0 (immediate processing), a source
+layout like `fn1; data1; fn2; data2;` emitted as
+`.text fn1 .data data1 .text fn2 .data data2`. Under A.1 the `.text`
+emit is suppressed during parse (to keep `.global`/`.text` adjacent
+to each function body at drain), so data sections print during parse
+but function bodies land at the drain at end-of-TU. Resulting layout:
+`.data data1 .data data2 .text fn1 fn2 …`.
+
+**Per-function byte-match is unaffected** — the normalizer
+(`asm_normalize.py`) extracts per-function slices independent of
+section placement. But any future consumer that diffs raw `.s`
+section structure will see this shift. Standalone single-function
+corpora don't exhibit it.

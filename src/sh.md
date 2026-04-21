@@ -1346,6 +1346,11 @@ static void sh_drain_ipa_queue(void) {
                 fprint(stderr, "[ipa] draining %d function(s)\n",
                        sh_ipa_nqueued);
         sh_ipa_in_drain = 1;
+        /* cseg tracks the section during parse-suppressed calls, so it
+         * may already read CODE from a suppressed swtoseg(CODE) at
+         * decl.c:812. Invalidate here so the first drain iteration's
+         * segment(CODE) call actually emits the .text directive. */
+        cseg = -1;
         for (e = sh_ipa_queue; e; e = e->next)
                 sh_process_deferred_fn(e);
         sh_ipa_in_drain = 0;
@@ -6109,7 +6114,12 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
 
         /* Emit .global then .text, matching A.0's export→swtoseg(CODE)
          * sequence at decl.c:809-812. segment(CODE) fires only the
-         * first time through the drain since cseg tracks the section. */
+         * first time through the drain since cseg tracks the section.
+         * We call segment() directly rather than swtoseg(CODE): init.c's
+         * curseg is already CODE from parse-time swtoseg calls, so
+         * swtoseg would early-return without invoking IR->segment.
+         * Bypassing gets us to the suppression-aware sh.md segment()
+         * with sh_ipa_in_drain=1, which emits correctly. */
         if (f->sclass != STATIC)
                 print("\t.global %s\n", f->x.name);
         segment(CODE);
@@ -6842,9 +6852,14 @@ static void segment(int n) {
         /* Suppress .text emission during parse — it would sit before
          * the deferred function body instead of adjacent to it. The
          * drain calls segment(CODE) itself for the first function so
-         * .text ends up right between .global and body, matching A.0. */
-        if (n == CODE && !sh_ipa_in_drain)
+         * .text ends up right between .global and body, matching A.0.
+         * Still update cseg so subsequent in-parse segment() calls see
+         * the correct current section (keeps our cseg in sync with
+         * init.c's curseg, which swtoseg updates unconditionally). */
+        if (n == CODE && !sh_ipa_in_drain) {
+                cseg = n;
                 return;
+        }
         cseg = n;
         switch (n) {
         case CODE: print("\t.text\n");            break;
