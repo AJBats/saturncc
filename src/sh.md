@@ -75,7 +75,10 @@ static void emit2(Node);
 static void export(Symbol);
 static void clobber(Node);
 static unsigned sh_prealloc_mask(Symbol, Node, unsigned);
+struct sh_ipa_fn;  /* forward: full defn lower, with the queue globals */
 static void function(Symbol, Symbol[], Symbol[], int);
+static void sh_process_deferred_fn(struct sh_ipa_fn *e);
+static void sh_drain_ipa_queue(void);
 static void global(Symbol);
 static void import(Symbol);
 static void local(Symbol);
@@ -113,6 +116,22 @@ static int sh_uses_macl;
 static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
 static int sh_word_indexed_after_first;  /* #pragma sh_word_indexed_after_first: see sh_apply_word_indexed_after_first */
 
+/* Switch-dispatch state recorded by sh_switchjump() during front-end
+ * processing, emitted by sh_emit_switch_dispatch() after body capture.
+ * Only one switch table per function is supported (enough for Daytona).
+ * Named struct so sh_ipa_fn can capture a copy per-function. */
+#define SH_MAX_SWITCH_LABELS 64
+struct sh_switch_state {
+        int active;
+        int dispatch_lab;         /* label where braf dispatch goes */
+        int deflab;               /* default/out-of-range label */
+        int ncases;               /* number of table entries */
+        int min_val;              /* minimum case value */
+        char labels[SH_MAX_SWITCH_LABELS][64]; /* case label names */
+        char deflabel[64];        /* default label name */
+        char hilabel[64];         /* upper bounds-check label name */
+};
+
 /* IPA defer queue (Phase A.0): captures per-function state at each
  * IR->function() call so end-of-TU processing can walk the queue in
  * reverse-topological order. Phase A.0 is capture-only — still
@@ -126,26 +145,36 @@ struct sh_ipa_fn {
         Symbol *callee;
         int ncalls;
         struct code code_head;
+        /* Positional pragma flags captured at function() time. These
+         * are "applies to the next function compiled" pragmas that set
+         * a scalar global during parse and are consumed by the next
+         * IR->function() call. Under deferred drain, all parse-time
+         * pragmas fire before any drain, so a raw scalar gets consumed
+         * by the wrong (source-order-first) function. Capturing the
+         * flag value here at function() time binds it to THIS specific
+         * function — we reset the global immediately after capture so
+         * the next function starts clean, and restore the captured
+         * value at drain before sh_process_deferred_fn runs. */
+        int gbr_param;
+        int word_indexed_after_first;
+        /* Switch-dispatch state populated by sh_switchjump() during
+         * front-end parsing, consumed by sh_emit_switch_dispatch() at
+         * codegen. Same positional-state bug as the pragma flags: a
+         * single global struct gets overwritten by later functions'
+         * switch parsing, so capture per-function and restore at drain. */
+        struct sh_switch_state switch_state;
         struct sh_ipa_fn *next;
 };
 static struct sh_ipa_fn *sh_ipa_queue;
 static struct sh_ipa_fn *sh_ipa_tail;
 static int sh_ipa_nqueued;
+/* True while sh_drain_ipa_queue is processing. Controls whether
+ * function-related output (function exports, .text switches) emits
+ * immediately or waits for drain so the layout stays adjacent
+ * .global/.text/body per function (matches A.0 output). */
+static int sh_ipa_in_drain;
 
-/* Switch jump table: recorded by sh_switchjump() during front-end
- * processing, emitted by sh_emit_switch_dispatch() after body capture.
- * Only one switch table per function is supported (enough for Daytona). */
-#define SH_MAX_SWITCH_LABELS 64
-static struct {
-        int active;
-        int dispatch_lab;         /* label where braf dispatch goes */
-        int deflab;               /* default/out-of-range label */
-        int ncases;               /* number of table entries */
-        int min_val;              /* minimum case value */
-        char labels[SH_MAX_SWITCH_LABELS][64]; /* case label names */
-        char deflabel[64];        /* default label name */
-        char hilabel[64];         /* upper bounds-check label name */
-} sh_switch;
+static struct sh_switch_state sh_switch;
 
 /* Literal pool: per-function table of 32-bit constants and symbol
  * addresses that can't be loaded with an inline 8-bit immediate.
@@ -1306,16 +1335,25 @@ static void sh_emit_gbr_entry(int i) {
         print("\t.space\t%d\n", gbr_pool[i].size);
 }
 
+/* Phase A.1 drain: process every captured function in source order.
+ * Reverse-topo sort (callees before callers) lands in Phase B.
+ * Each iteration restores codehead from the entry's snapshot inside
+ * sh_process_deferred_fn so gencode()/emitcode() see the right
+ * Code linked list. */
+static void sh_drain_ipa_queue(void) {
+        struct sh_ipa_fn *e;
+        if (dflag && sh_ipa_nqueued > 0)
+                fprint(stderr, "[ipa] draining %d function(s)\n",
+                       sh_ipa_nqueued);
+        sh_ipa_in_drain = 1;
+        for (e = sh_ipa_queue; e; e = e->next)
+                sh_process_deferred_fn(e);
+        sh_ipa_in_drain = 0;
+}
+
 static void progend(void) {
         int i, base_idx = -1;
-        /* Phase A.0 diagnostic: capture count to stderr, gated by
-         * dflag (-d). Stays silent on normal runs so validate_build's
-         * "stderr must be empty" regtests keep passing. Remove once
-         * consumption (Phase D) lands and we have end-to-end evidence
-         * from byte-match numbers. */
-        if (dflag && sh_ipa_nqueued > 0)
-                fprint(stderr, "[ipa] captured %d function(s)\n",
-                       sh_ipa_nqueued);
+        sh_drain_ipa_queue();
         if (ngbr_pool == 0)
                 return;
         print("\t.section\t.gbr_data,\"aw\"\n");
@@ -6010,7 +6048,48 @@ static void sh_capture_end(int savfd, FILE *tmp) {
         fclose(tmp);
 }
 
+/* IR->function() entry point — Phase A.1: capture only, defer all
+ * codegen to sh_drain_ipa_queue() at progend. Snapshot of codehead
+ * preserves the head of this function's Code linked list; retained
+ * FUNC arena (Xinterface.retain_func_arena=1) keeps the list reachable
+ * until the drain consumes it. Source order preserved for now;
+ * reverse-topological sort lands in Phase B. */
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
+        struct sh_ipa_fn *e;
+        NEW0(e, PERM);
+        e->f = f;
+        e->caller = caller;
+        e->callee = callee;
+        e->ncalls = ncalls;
+        e->code_head = codehead;
+        /* Capture positional pragma flags bound to THIS function, then
+         * reset globals so the next function starts clean (matches A.0
+         * semantics where these pragmas applied to the next compile). */
+        e->gbr_param = sh_gbr_param;
+        e->word_indexed_after_first = sh_word_indexed_after_first;
+        sh_gbr_param = 0;
+        sh_word_indexed_after_first = 0;
+        /* Same pattern for sh_switch: populated by sh_switchjump()
+         * during the front-end, consumed by sh_emit_switch_dispatch()
+         * at codegen. Capture the whole struct, then zero the global. */
+        e->switch_state = sh_switch;
+        memset(&sh_switch, 0, sizeof sh_switch);
+        if (!sh_ipa_queue)
+                sh_ipa_queue = e;
+        else
+                sh_ipa_tail->next = e;
+        sh_ipa_tail = e;
+        sh_ipa_nqueued++;
+}
+
+/* The full per-function codegen pipeline, formerly the body of
+ * function(). Restores codehead from the captured snapshot so
+ * gencode()/emitcode() iterate this function's Code list. */
+static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
+        Symbol f = e->f;
+        Symbol *caller = e->caller;
+        Symbol *callee = e->callee;
+        int ncalls = e->ncalls;
         int i, localsize, sizeisave, need_fp, has_prologue;
         int need_r14_rename = 0;
         int r14_rename_to = -1;
@@ -6019,26 +6098,21 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
         unsigned saved_vmask = vmask[IREG];
         Symbol saved_intvar_prio[7];
 
-        /* Phase A.0: capture state for end-of-TU IPA. Shallow copy of
-         * codehead preserves the head pointer to this function's Code
-         * linked list; FUNC-arena entries stay live because Xinterface
-         * .retain_func_arena = 1 suppresses decl.c's deallocate(FUNC).
-         * Still processes immediately below — deferral comes in A.1. */
-        {
-                struct sh_ipa_fn *e;
-                NEW0(e, PERM);
-                e->f = f;
-                e->caller = caller;
-                e->callee = callee;
-                e->ncalls = ncalls;
-                e->code_head = codehead;
-                if (!sh_ipa_queue)
-                        sh_ipa_queue = e;
-                else
-                        sh_ipa_tail->next = e;
-                sh_ipa_tail = e;
-                sh_ipa_nqueued++;
-        }
+        codehead = e->code_head;
+        /* Restore per-function positional pragma state from the queue
+         * entry. Captured at function() parse-time; the processing
+         * body reads + clears these as if they had been set moments
+         * before (matching A.0 semantics). */
+        sh_gbr_param = e->gbr_param;
+        sh_word_indexed_after_first = e->word_indexed_after_first;
+        sh_switch = e->switch_state;
+
+        /* Emit .global then .text, matching A.0's export→swtoseg(CODE)
+         * sequence at decl.c:809-812. segment(CODE) fires only the
+         * first time through the drain since cseg tracks the section. */
+        if (f->sclass != STATIC)
+                print("\t.global %s\n", f->x.name);
+        segment(CODE);
 
         nshlit = 0;
         sh_all_returns_inlined = 0;
@@ -6702,6 +6776,12 @@ static void defstring(int n, char *str) {
 }
 
 static void export(Symbol p) {
+        /* Function exports are emitted by sh_process_deferred_fn at
+         * drain time so .global stays adjacent to the function body
+         * (matches A.0 layout). Non-function exports (data globals)
+         * emit immediately — they're not deferred. */
+        if (p->type && isfunc(p->type))
+                return;
         print("\t.global %s\n", p->x.name);
 }
 
@@ -6758,6 +6838,12 @@ static void global(Symbol p) {
 
 static void segment(int n) {
         if (n == cseg)
+                return;
+        /* Suppress .text emission during parse — it would sit before
+         * the deferred function body instead of adjacent to it. The
+         * drain calls segment(CODE) itself for the first function so
+         * .text ends up right between .global and body, matching A.0. */
+        if (n == CODE && !sh_ipa_in_drain)
                 return;
         cseg = n;
         switch (n) {
