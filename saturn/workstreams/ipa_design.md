@@ -9,6 +9,63 @@ design discussion before any code is written.
 
 ## Handoff protocol for fresh sessions
 
+**Status as of commit 0cd24d7:** Phases A–D of the sh.md infrastructure
+are landed on branch `ipa-phase-a`. The writes_r4 analysis cache is
+populated correctly — FUN_06044060's four r4-preserving callees all
+answer writes_r4=0 as predicted. The unfinished work lives in LCC's
+shared allocator `src/gen.c`, not in `src/sh.md`.
+
+### If you're picking this up now, the task is:
+
+**Teach `src/gen.c` to spill a `vbl`-bound register when the new
+occupant is a safe mutation proven by IPA.**
+
+Concrete failure mode: attempted to pin p1 to r4 via `askregvar` at
+sh.md:6463. When the first argument-setup for an outgoing call needs
+to compute `p1 + 0x30` into r4, `spillee()` at `gen.c:736` asserts
+`bestreg->x.regnode->vbl == NULL` and crashes. See the "Phase D
+outcome" section lower in this doc for the full diagnosis.
+
+### Starting points for the new session:
+
+1. **Read `saturn/workstreams/ipa_design.md`** (this doc) end-to-end
+   for the problem framing and what's already been tried.
+2. **Read `src/sh.md`**:
+   - `struct sh_ipa_fn` around line ~125 — the per-function queue
+     entry with the `writes_r4` field.
+   - `sh_analyze_writes_r4()` — the reverse-topo pre-pass that
+     populates the cache.
+   - `sh_ipa_all_callees_preserve_r4()` — the query helper you'll
+     consume from the allocator side.
+   - The parameter-homing block at ~sh.md:6463 is where `askregvar`
+     currently pins p1 to a wildcard. That's the site to re-enable
+     once gen.c supports the in-place mutation case.
+3. **Read `src/gen.c`** — `ralloc()` around line 633, `spillee()`
+   around line 706, and `askregvar()` around line 598.
+4. **Don't break other backends.** alpha.md, mips.md, sparc.md,
+   x86.md, x86linux.md all share gen.c. Gate the new behavior behind
+   something the SH backend sets (e.g. a new `Xinterface` flag) so
+   those backends see unchanged allocator logic.
+5. **Validate with `wsl bash saturn/tools/validate_build.sh`** on
+   every iteration. 41/41 must pass. FUN_06044060's diff should
+   drop from 21 toward 0 when the allocator change takes effect.
+6. **Talk to the user before coding.** The specific strategy for
+   "mutate a pinned register in place" is open — options include a
+   new liveness rule, an IR-level annotation on CALL/ARG nodes, or
+   a targeted relaxation of the spillee assertion. The user has
+   historically spotted the right cut before implementation starts.
+
+### What NOT to change:
+
+- The sh.md IPA infrastructure (A–D) is working. Don't rewrite it.
+- The existing drain order (source-order). Phase B.1's Tarjan infra
+  is for the *analysis* pass; drain still emits in source order.
+- The shlit latent bug (shlit_num/shlit_word asymmetric lookup).
+  Noted in B.1's commit message; surfaces only under reverse-topo
+  drain, which we're not doing. Leave alone until it bites.
+
+### Previous-session handoff (kept for context)
+
 If you are picking this up in a new session, do these four things
 in order before writing any code:
 
