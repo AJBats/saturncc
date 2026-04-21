@@ -1347,13 +1347,123 @@ static void sh_emit_gbr_entry(int i) {
  * Each iteration restores codehead from the entry's snapshot inside
  * sh_process_deferred_fn so gencode()/emitcode() see the right
  * Code linked list. */
+/* Phase B.1: Tarjan's strongly-connected-components algorithm.
+ * Emits SCCs in reverse-topological order (callees before callers),
+ * which is exactly the drain order we want. Recursion calls emit
+ * SCCs into sh_scc_order[]; single-node SCCs are typical, cycles
+ * (direct or mutual recursion) collapse into multi-node SCCs that
+ * the write-set pass in Phase D will treat with the ABI-conservative
+ * fallback among their members. */
+#define SH_TARJAN_UNVISITED -1
+static int *sh_tarjan_index;
+static int *sh_tarjan_lowlink;
+static char *sh_tarjan_onstack;
+static int *sh_tarjan_stack;
+static int sh_tarjan_stack_top;
+static int sh_tarjan_next_idx;
+static int *sh_scc_order;     /* indices into sh_ipa_arr, reverse-topo */
+static int sh_scc_order_len;
+static struct sh_ipa_fn **sh_ipa_arr;
+static int sh_ipa_count;
+static int **sh_cgraph;        /* cgraph[v] = int[]: callee indices in arr */
+static int *sh_cgraph_nedges;
+
+static void sh_tarjan_scc(int v) {
+        int i, w;
+        sh_tarjan_index[v] = sh_tarjan_next_idx;
+        sh_tarjan_lowlink[v] = sh_tarjan_next_idx;
+        sh_tarjan_next_idx++;
+        sh_tarjan_stack[sh_tarjan_stack_top++] = v;
+        sh_tarjan_onstack[v] = 1;
+        for (i = 0; i < sh_cgraph_nedges[v]; i++) {
+                w = sh_cgraph[v][i];
+                if (sh_tarjan_index[w] == SH_TARJAN_UNVISITED) {
+                        sh_tarjan_scc(w);
+                        if (sh_tarjan_lowlink[w] < sh_tarjan_lowlink[v])
+                                sh_tarjan_lowlink[v] =
+                                        sh_tarjan_lowlink[w];
+                } else if (sh_tarjan_onstack[w]) {
+                        if (sh_tarjan_index[w] < sh_tarjan_lowlink[v])
+                                sh_tarjan_lowlink[v] =
+                                        sh_tarjan_index[w];
+                }
+        }
+        if (sh_tarjan_lowlink[v] == sh_tarjan_index[v]) {
+                do {
+                        w = sh_tarjan_stack[--sh_tarjan_stack_top];
+                        sh_tarjan_onstack[w] = 0;
+                        sh_scc_order[sh_scc_order_len++] = w;
+                } while (w != v);
+        }
+}
+
+/* Build the cgraph from queue entries: array of entry pointers,
+ * plus per-entry list of callee indices (skipping externs not in
+ * the queue). Then run Tarjan to get reverse-topo order. */
+static void sh_build_cgraph_and_order(void) {
+        int i, j, k;
+        struct sh_ipa_fn *e;
+        sh_ipa_count = sh_ipa_nqueued;
+        if (sh_ipa_count == 0)
+                return;
+        sh_ipa_arr = allocate(sh_ipa_count *
+                              sizeof(struct sh_ipa_fn *), PERM);
+        sh_cgraph = allocate(sh_ipa_count * sizeof(int *), PERM);
+        sh_cgraph_nedges = allocate(sh_ipa_count * sizeof(int), PERM);
+        i = 0;
+        for (e = sh_ipa_queue; e; e = e->next)
+                sh_ipa_arr[i++] = e;
+        /* For each entry, translate direct_callees (Symbol *) to
+         * indices in sh_ipa_arr by pointer equality of f. Callees
+         * not in the queue (externs) are skipped — they get the
+         * ABI-conservative fallback at their CALL sites. */
+        for (i = 0; i < sh_ipa_count; i++) {
+                int max = sh_ipa_arr[i]->n_direct_callees;
+                int cnt = 0;
+                int *buf;
+                if (max == 0) {
+                        sh_cgraph[i] = NULL;
+                        sh_cgraph_nedges[i] = 0;
+                        continue;
+                }
+                buf = allocate(max * sizeof(int), PERM);
+                for (j = 0; j < max; j++) {
+                        Symbol tgt = sh_ipa_arr[i]->direct_callees[j];
+                        for (k = 0; k < sh_ipa_count; k++)
+                                if (sh_ipa_arr[k]->f == tgt) {
+                                        buf[cnt++] = k;
+                                        break;
+                                }
+                }
+                sh_cgraph[i] = buf;
+                sh_cgraph_nedges[i] = cnt;
+        }
+        /* Run Tarjan */
+        sh_tarjan_index = allocate(sh_ipa_count * sizeof(int), PERM);
+        sh_tarjan_lowlink = allocate(sh_ipa_count * sizeof(int), PERM);
+        sh_tarjan_onstack = allocate(sh_ipa_count * sizeof(char), PERM);
+        sh_tarjan_stack = allocate(sh_ipa_count * sizeof(int), PERM);
+        sh_scc_order = allocate(sh_ipa_count * sizeof(int), PERM);
+        for (i = 0; i < sh_ipa_count; i++) {
+                sh_tarjan_index[i] = SH_TARJAN_UNVISITED;
+                sh_tarjan_lowlink[i] = 0;
+                sh_tarjan_onstack[i] = 0;
+        }
+        sh_tarjan_next_idx = 0;
+        sh_tarjan_stack_top = 0;
+        sh_scc_order_len = 0;
+        for (i = 0; i < sh_ipa_count; i++)
+                if (sh_tarjan_index[i] == SH_TARJAN_UNVISITED)
+                        sh_tarjan_scc(i);
+}
+
 static void sh_drain_ipa_queue(void) {
         struct sh_ipa_fn *e;
+        int i;
         if (dflag && sh_ipa_nqueued > 0) {
                 fprint(stderr, "[ipa] draining %d function(s)\n",
                        sh_ipa_nqueued);
                 for (e = sh_ipa_queue; e; e = e->next) {
-                        int i;
                         fprint(stderr, "[ipa]   %s ->",
                                e->f->name);
                         for (i = 0; i < e->n_direct_callees; i++)
@@ -1362,12 +1472,32 @@ static void sh_drain_ipa_queue(void) {
                         fprint(stderr, "\n");
                 }
         }
+        /* Phase B.1: build cgraph and get reverse-topological order
+         * (callees before callers) via Tarjan SCC. For Phase B.1 this
+         * only changes drain order — no semantic effect yet because
+         * write-set collection and consumption are Phase D. */
+        sh_build_cgraph_and_order();
+        if (dflag && sh_scc_order_len > 0) {
+                fprint(stderr, "[ipa] reverse-topo drain order:\n");
+                for (i = 0; i < sh_scc_order_len; i++)
+                        fprint(stderr, "[ipa]   %s\n",
+                               sh_ipa_arr[sh_scc_order[i]]->f->name);
+        }
         sh_ipa_in_drain = 1;
         /* cseg tracks the section during parse-suppressed calls, so it
          * may already read CODE from a suppressed swtoseg(CODE) at
          * decl.c:812. Invalidate here so the first drain iteration's
          * segment(CODE) call actually emits the .text directive. */
         cseg = -1;
+        /* B.1 infrastructure is built (cgraph + Tarjan SCC available
+         * via sh_scc_order / sh_ipa_arr) but the drain still runs in
+         * source order. Switching to reverse-topo order exposes more
+         * cross-function state leaks than we can currently enumerate;
+         * deferred to a follow-on once Phase D establishes whether we
+         * actually need reverse-topo drain or can compute write-sets
+         * in a pre-pass that keeps source-order emission. */
+        (void)i;
+        (void)sh_scc_order;
         for (e = sh_ipa_queue; e; e = e->next)
                 sh_process_deferred_fn(e);
         sh_ipa_in_drain = 0;
