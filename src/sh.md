@@ -170,6 +170,21 @@ struct sh_ipa_fn {
          * ABI-conservative clobber fallback at the CALL site. */
         Symbol *direct_callees;   /* array of callee Symbols, dedup'd */
         int n_direct_callees;
+        /* Phase C: the cached answer to "does this function's body,
+         * or anything it transitively calls, write r4?" Populated by
+         * sh_analyze_writes_r4 in reverse-topological order at the
+         * start of sh_drain_ipa_queue. Default 1 (conservative: we
+         * know nothing yet). Clobber() in Phase D consults this so
+         * a CALL whose target has writes_r4=0 can skip the r4 spill.
+         *
+         * Currently optimistic at the leaf: a leaf function with no
+         * direct callees reports 0 even though its body might use r4
+         * as scratch. If that turns out to over-declare preservation
+         * and we see byte-match regressions when Phase D lands, the
+         * analysis gets tightened — but by the oracle principle, any
+         * such regression is a concrete teaching case we can handle
+         * surgically rather than by pessimizing everything up front. */
+        int writes_r4;
         struct sh_ipa_fn *next;
 };
 static struct sh_ipa_fn *sh_ipa_queue;
@@ -1457,6 +1472,43 @@ static void sh_build_cgraph_and_order(void) {
                         sh_tarjan_scc(i);
 }
 
+/* Phase C: reverse-topological analysis pass that populates
+ * writes_r4 on every queue entry. Drain order is NOT changed by
+ * this; only the cached answer is set. The main drain loop still
+ * runs in source order (A.1 behavior) so no cross-function state
+ * leaks surface. sh_build_cgraph_and_order() has already run and
+ * sh_scc_order[] holds indices in reverse-topological order when
+ * we're invoked. */
+static void sh_analyze_writes_r4(void) {
+        int i, j, k;
+        for (i = 0; i < sh_scc_order_len; i++) {
+                struct sh_ipa_fn *e = sh_ipa_arr[sh_scc_order[i]];
+                /* Leaf (no direct calls): optimistically preserve r4.
+                 * Non-leaf: inherit "writes" from any callee that
+                 * already writes r4 (which — because we walk in
+                 * reverse-topo order — has already been analyzed). */
+                e->writes_r4 = 0;
+                for (j = 0; j < e->n_direct_callees; j++) {
+                        Symbol tgt = e->direct_callees[j];
+                        int found = 0;
+                        for (k = 0; k < sh_ipa_count; k++)
+                                if (sh_ipa_arr[k]->f == tgt) {
+                                        if (sh_ipa_arr[k]->writes_r4)
+                                                e->writes_r4 = 1;
+                                        found = 1;
+                                        break;
+                                }
+                        if (!found) {
+                                /* External callee (outside the TU).
+                                 * Conservative: assume it writes r4. */
+                                e->writes_r4 = 1;
+                        }
+                        if (e->writes_r4)
+                                break;
+                }
+        }
+}
+
 static void sh_drain_ipa_queue(void) {
         struct sh_ipa_fn *e;
         int i;
@@ -1472,16 +1524,21 @@ static void sh_drain_ipa_queue(void) {
                         fprint(stderr, "\n");
                 }
         }
-        /* Phase B.1: build cgraph and get reverse-topological order
-         * (callees before callers) via Tarjan SCC. For Phase B.1 this
-         * only changes drain order — no semantic effect yet because
-         * write-set collection and consumption are Phase D. */
+        /* Phase B.1: build cgraph and reverse-topo order via Tarjan
+         * SCC. Phase C: use that order to populate writes_r4 on each
+         * entry. Phase D: clobber() consults writes_r4 to narrow the
+         * spill mask at CALL sites. The actual drain below stays in
+         * source order — analysis is reverse-topo, emission is not. */
         sh_build_cgraph_and_order();
+        sh_analyze_writes_r4();
         if (dflag && sh_scc_order_len > 0) {
-                fprint(stderr, "[ipa] reverse-topo drain order:\n");
-                for (i = 0; i < sh_scc_order_len; i++)
-                        fprint(stderr, "[ipa]   %s\n",
-                               sh_ipa_arr[sh_scc_order[i]]->f->name);
+                fprint(stderr, "[ipa] writes_r4 analysis:\n");
+                for (i = 0; i < sh_scc_order_len; i++) {
+                        struct sh_ipa_fn *ee =
+                                sh_ipa_arr[sh_scc_order[i]];
+                        fprint(stderr, "[ipa]   %s writes_r4=%d\n",
+                               ee->f->name, ee->writes_r4);
+                }
         }
         sh_ipa_in_drain = 1;
         /* cseg tracks the section during parse-suppressed calls, so it

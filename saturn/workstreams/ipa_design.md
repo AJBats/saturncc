@@ -294,6 +294,39 @@ captured in the auto-memory file
 `feedback_byte_matched_functions_are_the_oracle.md` and is the
 strategic principle this IPA work serves.
 
+## Architectural pivot after B.1: analysis, not drain reordering
+
+Phase B.1 landed the Tarjan SCC infrastructure as committed dead code.
+The original plan was to switch the drain loop to reverse-topological
+order so each function was emitted after its callees — but activating
+that exposed 28 small shifts in unmatched functions. Root cause: LCC's
+per-function globals (shlits lookups that don't check is_word, plus
+undetermined others) only accidentally behaved correctly under source
+order; reordering surfaced latent asymmetries.
+
+Rather than chase every latent state leak, the design pivots to:
+
+**Pre-pass analysis. Source-order drain unchanged.**
+
+At drain time we run a new reverse-topological analytical pass that
+answers, for every captured function, "which hard registers does your
+body write?" That pass stores the write-set on the function's Symbol
+(or the queue entry) and touches nothing else. The main source-order
+drain then emits each function unchanged — except at CALL sites,
+where `clobber()` consults the cached write-set to narrow the spill
+mask. Output order is the A.1 output order, so all latent state
+asymmetries stay papered over.
+
+The question each function has to answer for IPA is purely "does
+anything I transitively call write r4?" Caching that answer on the
+symbol makes the function drainable in any order once the answer is
+ready.
+
+The Tarjan code from B.1 remains useful: the pre-pass needs the same
+reverse-topo order to make cache lookups for callees always hit a
+populated entry (within an SCC, all members pessimistically assume
+ABI as each other's callee — standard GCC/LLVM fallback).
+
 ## Known A.1 side effect: section ordering in multi-function TUs
 
 Phase A.1's deferral changes section ordering when a TU mixes code
