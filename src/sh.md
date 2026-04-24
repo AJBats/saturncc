@@ -6429,6 +6429,195 @@ static int sh_ipa_all_callees_preserve_r4(struct sh_ipa_fn *e) {
         return 1;
 }
 
+/* Phase E.1b: recursive search for any INDIR(ADDRF(pinned)) in a
+ * subtree. Used to detect ARG subtrees that reference the pinned
+ * parameter in a shape our rewrite doesn't recognize, so we can
+ * veto the pin rather than produce miscompiled output. */
+static int sh_ipa_subtree_reads_pinned(Node p, Symbol pinned) {
+        int i;
+        if (!p)
+                return 0;
+        if (generic(p->op) == INDIR
+            && p->kids[0]
+            && generic(p->kids[0]->op) == ADDRF
+            && p->kids[0]->syms[0] == pinned)
+                return 1;
+        for (i = 0; i < NELEMS(p->kids); i++)
+                if (p->kids[i]
+                    && sh_ipa_subtree_reads_pinned(p->kids[i], pinned))
+                        return 1;
+        return 0;
+}
+
+/* Does this forest root write to pinned via ASGN(ADDRF(pinned), ...)?
+ * Such writes veto the pin: the rewrite pass tracks delta arithmetic
+ * relative to pinned's original value, which is invalidated once the
+ * source program itself rebinds pinned. */
+static int sh_ipa_root_writes_pinned(Node p, Symbol pinned) {
+        if (!p)
+                return 0;
+        if (generic(p->op) == ASGN
+            && p->kids[0]
+            && generic(p->kids[0]->op) == ADDRF
+            && p->kids[0]->syms[0] == pinned)
+                return 1;
+        return 0;
+}
+
+enum {
+        SH_IPA_PAT_NONE = 0,  /* subtree doesn't reference pinned */
+        SH_IPA_PAT_RAW  = 1,  /* ARG(INDIR(ADDRF(pinned))) */
+        SH_IPA_PAT_ADD  = 2,  /* ARG(ADD(INDIR(ADDRF(pinned)), CNST)) */
+        SH_IPA_PAT_BAIL = 3   /* references pinned in unsupported shape */
+};
+
+/* Classify an ARG root's kid subtree against the two supported
+ * in-place-mutation shapes. For PAT_ADD, *out_k receives the CNST
+ * immediate (signed). */
+static int sh_ipa_classify_arg(Node arg, Symbol pinned, int *out_k) {
+        Node sub;
+        assert(arg && generic(arg->op) == ARG);
+        sub = arg->kids[0];
+        if (!sub)
+                return SH_IPA_PAT_NONE;
+        if (generic(sub->op) == INDIR
+            && sub->kids[0]
+            && generic(sub->kids[0]->op) == ADDRF
+            && sub->kids[0]->syms[0] == pinned)
+                return SH_IPA_PAT_RAW;
+        if (generic(sub->op) == ADD
+            && sub->kids[0]
+            && sub->kids[1]
+            && generic(sub->kids[0]->op) == INDIR
+            && sub->kids[0]->kids[0]
+            && generic(sub->kids[0]->kids[0]->op) == ADDRF
+            && sub->kids[0]->kids[0]->syms[0] == pinned
+            && generic(sub->kids[1]->op) == CNST) {
+                *out_k = (int)sub->kids[1]->syms[0]->u.c.v.i;
+                return SH_IPA_PAT_ADD;
+        }
+        if (sh_ipa_subtree_reads_pinned(sub, pinned))
+                return SH_IPA_PAT_BAIL;
+        return SH_IPA_PAT_NONE;
+}
+
+/* Build a fresh DAG:
+ *     ASGN+ty(ADDRF+P4(pinned),
+ *             ADD+ty(INDIR+ty(ADDRF+P4(pinned)), CNST+ty(delta)))
+ * for splicing into a Gen forest as a sibling root. ty is the full
+ * type+size byte of the ARG driving this mutation so the synthetic
+ * tree matches the parameter's own kind (I4 for int, P4 for pointer). */
+static Node sh_ipa_build_mutation_asgn(Symbol pinned, int ty, int delta) {
+        int ptrop = P + sizeop(IR->ptrmetric.size);
+        Node addrf1 = newnode(ADDRF + ptrop, NULL, NULL, pinned);
+        Node addrf2 = newnode(ADDRF + ptrop, NULL, NULL, pinned);
+        Node indir  = newnode(INDIR + ty, addrf2, NULL, NULL);
+        Node cnst   = newnode(CNST + ty, NULL, NULL, intconst(delta));
+        Node add    = newnode(ADD   + ty, indir, cnst, NULL);
+        return newnode(ASGN + ty, addrf1, add, NULL);
+}
+
+/* Scan every captured forest for pin-incompatible shapes involving
+ * pinned. Returns 1 iff the pin is SAFE AND PROFITABLE to engage:
+ *   (a) every ARG root whose subtree touches pinned matches PAT_RAW
+ *       or PAT_ADD, and no non-ARG root writes pinned (safety); AND
+ *   (b) at least one ARG root matches PAT_ADD (profitability).
+ *
+ * Condition (b) is critical. Engaging the pin without any mutation
+ * sites to rewrite still causes allocator cascades (r4 leaves the
+ * wildcard pool, other values shift callee-saved slots, the r14-FP
+ * rename path takes different branches) that surfaced as byte-match
+ * regressions on PAT_RAW-only callers during E.1b validation. Those
+ * functions would get nothing from the pin — skip them. */
+static int sh_ipa_scan_pin_safety(Symbol pinned) {
+        Code cp;
+        int has_add_site = 0;
+        for (cp = codehead.next; cp; cp = cp->next) {
+                Node n;
+                if (cp->kind != Gen && cp->kind != Jump
+                    && cp->kind != Label)
+                        continue;
+                for (n = cp->u.forest; n; n = n->link) {
+                        int k;
+                        if (generic(n->op) == ARG) {
+                                int pat = sh_ipa_classify_arg(
+                                        n, pinned, &k);
+                                if (pat == SH_IPA_PAT_BAIL)
+                                        return 0;
+                                if (pat == SH_IPA_PAT_ADD)
+                                        has_add_site = 1;
+                                continue;
+                        }
+                        if (sh_ipa_root_writes_pinned(n, pinned))
+                                return 0;
+                }
+        }
+        return has_add_site;
+}
+
+/* Destructive rewrite: for every ADD-pattern ARG in a Gen forest,
+ * splice a synthesized ASGN mutation root BEFORE the ARG and drop
+ * the ADD wrapper off the ARG's kid so it reads pinned's register
+ * directly. Tracks a running net-delta across the whole function
+ * so calls 2..N whose ARG is p+K with K matching the running delta
+ * get no new ASGN (their value is already live in the pinned reg).
+ *
+ * The synthesized ASGN's LHS is ADDRF(pinned), whose prelabel case
+ * (gen.c:454-456) converts to VREG+P because pinned->sclass is
+ * REGISTER. The ASGN case (gen.c:462-464) then rtargets the RHS
+ * ADD to pinned's Symbol directly. ralloc's REGISTER-class short-
+ * circuit (gen.c:655) handles the mutation with no getreg / no
+ * spillee / no vbl crash; the ADDI4(reg,immi8) `?` copy-elim rule
+ * at sh.md:563 emits `add #delta, r<pinned>` because the result
+ * and first-kid registers coincide. */
+static void sh_ipa_apply_mutation_rewrite(struct sh_ipa_fn *e,
+                                          Symbol pinned) {
+        Code cp;
+        int running = 0;
+        for (cp = codehead.next; cp; cp = cp->next) {
+                Node prev, n, next;
+                if (cp->kind != Gen)
+                        continue;
+                prev = NULL;
+                for (n = cp->u.forest; n; n = next) {
+                        int k, pat;
+                        next = n->link;
+                        if (generic(n->op) != ARG) {
+                                prev = n;
+                                continue;
+                        }
+                        pat = sh_ipa_classify_arg(n, pinned, &k);
+                        if (pat == SH_IPA_PAT_ADD) {
+                                int delta = k - running;
+                                running = k;
+                                if (delta != 0) {
+                                        int ty = opkind(n->op);
+                                        Node asgn = sh_ipa_build_mutation_asgn(
+                                                pinned, ty, delta);
+                                        asgn->link = n;
+                                        if (prev == NULL)
+                                                cp->u.forest = asgn;
+                                        else
+                                                prev->link = asgn;
+                                        prev = asgn;
+                                }
+                                /* ARG's new kid is the bare INDIR
+                                 * subtree — drop the ADD wrapper.
+                                 * The INDIR will read pinned's
+                                 * register, and the ARG's target()
+                                 * hook (E.1a) rtargets to
+                                 * pinned_param directly, skipping
+                                 * the LOAD-wrap that would otherwise
+                                 * crash. */
+                                n->kids[0] = n->kids[0]->kids[0];
+                        }
+                        prev = n;
+                }
+        }
+        e->total_delta = running;
+        e->needs_restore = (running != 0);
+}
+
 /* The full per-function codegen pipeline, formerly the body of
  * function(). Restores codehead from the captured snapshot so
  * gencode()/emitcode() iterate this function's Code list. */
@@ -6553,6 +6742,45 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
                                        && p->x.regnode->vbl == p);
                                 q->x = p->x;
                                 q->type = p->type;
+                        } else if (i == 0 && !isstruct(q->type)
+                                   && !p->addressed
+                                   && sh_ipa_all_callees_preserve_r4(e)
+                                   && sh_ipa_scan_pin_safety(p)) {
+                                /* Phase E.1b: non-leaf, but IPA
+                                 * proves every direct callee
+                                 * preserves r4 AND every ARG site's
+                                 * use of this parameter matches a
+                                 * supported mutation pattern. Pin
+                                 * the parameter to argreg(0) and
+                                 * apply the pre-ralloc rewrite so
+                                 * in-place ADDs reach the allocator
+                                 * as standard ASGN(VREG, ADD(VREG,
+                                 * CNST)) mutations. target()'s ARG
+                                 * redirection (E.1a) then keeps the
+                                 * ARG's LOAD-wrap from firing. */
+                                p->sclass = q->sclass = REGISTER;
+                                if (askregvar(p, r)) {
+                                        assert(p->x.regnode
+                                               && p->x.regnode->vbl == p);
+                                        q->x = p->x;
+                                        q->type = p->type;
+                                        e->pinned_param = p;
+                                        e->pinned_reg =
+                                                r->x.regnode->number;
+                                        sh_ipa_apply_mutation_rewrite(
+                                                e, p);
+                                } else {
+                                        /* r4 unexpectedly taken —
+                                         * fall back to wildcard. */
+                                        p->sclass = REGISTER;
+                                        if (askregvar(p,
+                                                      rmap(ttob(p->type)))) {
+                                                q->sclass = REGISTER;
+                                                q->type = p->type;
+                                        } else {
+                                                p->sclass = AUTO;
+                                        }
+                                }
                         } else if (i < 4 && !isstruct(q->type)
                                    && !p->addressed) {
                                 p->sclass = REGISTER;
