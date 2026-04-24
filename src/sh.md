@@ -185,6 +185,29 @@ struct sh_ipa_fn {
          * such regression is a concrete teaching case we can handle
          * surgically rather than by pessimizing everything up front. */
         int writes_r4;
+        /* Phase E (IPA allocator): state threaded through the
+         * pre-ralloc rewrite pass (sh_ipa_rewrite_arg_adds) and the
+         * restore-emission pass (sh_ipa_emit_restore).
+         *
+         * pinned_param: the parameter Symbol we bound to r4 via
+         *   askregvar in the non-leaf param-homing path when
+         *   sh_ipa_all_callees_preserve_r4(e) is true. NULL when the
+         *   IPA predicate didn't fire for this function (the common
+         *   case) — leaves downstream rewrites as no-ops.
+         * pinned_reg: hard register number of the pin (4 for r4);
+         *   carried so future generalization to r5/r6/r7 can reuse
+         *   the same state.
+         * total_delta: net signed byte offset applied to pinned_param
+         *   across all ARG sites in this function after rewrite. Drives
+         *   the restore synthesis (add #-total_delta, rN) before the
+         *   epilogue.
+         * needs_restore: 1 iff the rewrite pass observed at least one
+         *   non-zero-offset ARG mutation. Scalar gate for whether to
+         *   synthesize the restore ASGN. */
+        Symbol pinned_param;
+        int    pinned_reg;
+        int    total_delta;
+        int    needs_restore;
         struct sh_ipa_fn *next;
 };
 static struct sh_ipa_fn *sh_ipa_queue;
