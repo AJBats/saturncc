@@ -219,6 +219,14 @@ static int sh_ipa_nqueued;
  * .global/.text/body per function (matches A.0 output). */
 static int sh_ipa_in_drain;
 
+/* Phase E (IPA): the queue entry currently inside
+ * sh_process_deferred_fn. Read by target() to learn whether this
+ * function has its first-argument register pinned to a specific
+ * parameter Symbol via askregvar (pinned_param set), so ARG+X(argno=0)
+ * can rtarget to that Symbol directly instead of to the plain register
+ * Symbol ireg[4]. NULL outside the deferred-function pipeline. */
+static struct sh_ipa_fn *sh_ipa_current;
+
 static struct sh_switch_state sh_switch;
 
 /* Literal pool: per-function table of 32-bit constants and symbol
@@ -1707,6 +1715,27 @@ static void target(Node p) {
          * sequences in the captured body. */
         case ARG+I: case ARG+P: case ARG+U: {
                 Symbol q = argreg(p->x.argno);
+                /* Phase E.1a: redirect ARG(argno=0) rtarget from
+                 * ireg[argno] to the pinned parameter Symbol when
+                 * IPA has engaged the r4 pin for the current
+                 * function. ireg[4] has sclass=0 (from mkreg's
+                 * NEW0), so rtargeting ARG's kid chain to ireg[4]
+                 * either inserts a LOAD wrapper (when the kid's
+                 * syms[RX] is the non-wildcard pinned Symbol) or
+                 * drives allocation through getreg → askfixedreg
+                 * → spillee's vbl-bound assert (Phase D's crash).
+                 * Rtargeting to pinned_param instead yields
+                 * r == q->syms[RX] inside gen.c's rtarget, which
+                 * skips the LOAD wrap, and ralloc short-circuits
+                 * at gen.c:655 because pinned_param is REGISTER-
+                 * class. pinned_param is populated only after a
+                 * successful askregvar in sh_ipa_try_engage_pin
+                 * (Phase E.1b); until then this branch is dead. */
+                if (sh_ipa_current
+                    && sh_ipa_current->pinned_param
+                    && sh_ipa_current->pinned_reg == 4
+                    && p->x.argno == 0)
+                        q = sh_ipa_current->pinned_param;
                 if (q) {
                         rtarget(p, 0, q);
                         /* Propagate the arg register down through
@@ -6408,6 +6437,11 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         Symbol *caller = e->caller;
         Symbol *callee = e->callee;
         int ncalls = e->ncalls;
+        /* Phase E: publish the current queue entry so per-node hooks
+         * (target(), clobber(), doarg()) can consult IPA state. Paired
+         * with the reset at end of function; leaving it set after the
+         * body would leak into the next function's processing. */
+        sh_ipa_current = e;
         int i, localsize, sizeisave, need_fp, has_prologue;
         int need_r14_rename = 0;
         int r14_rename_to = -1;
@@ -7061,6 +7095,10 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
          * swapped them. */
         for (i = 0; i < 7; i++)
                 ireg_prio[21 + i] = saved_intvar_prio[i];
+        /* Phase E: clear the current-entry pointer. Leaving it set
+         * would leak our IPA pin into the next function's target()
+         * calls via sh_ipa_current->pinned_param. */
+        sh_ipa_current = NULL;
 }
 
 static void defconst(int suffix, int size, Value v) {
