@@ -593,6 +593,86 @@ else
 fi
 rm -f "$asm_out" "$asm_err"
 
+# 4ah. Parser round-trip (Stage 1 of asm-shim work).
+# sh_parse_asm_text captures each line's src_text exactly. The
+# -d-asm dump prints `[asm-dump]     src: <src_text>` for each
+# parsed insn. Round-trip means the extracted src_text concatenated
+# matches the original block content.
+cat > /tmp/regtest.c <<'EOF'
+int test(int x) {
+    asm { mov r1, r2 }
+    return x;
+}
+EOF
+asm_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
+if grep -q '^\[asm-dump\]     src:  mov r1, r2 $' "$asm_dump"; then
+    pass "regtest: asm parser round-trips line content via src_text"
+else
+    fail "regtest: asm parser round-trip failed — inspect $asm_dump"
+fi
+rm -f "$asm_dump"
+
+# 4ai. Parser destination detection — every write category in
+# sh_p_apply_kind must produce the right writes mask.
+#   mov r4, r5      → writes r5 = 0x20
+#   add #1, r0      → writes r0 = 0x1
+#   mov.l @r4+, r3  → writes r3+r4 (post-inc base) = 0x18
+#   sts.l pr,@-r15  → writes r15 (pre-dec) = 0x8000; reads pr
+#   jsr @r6         → branch+call; reads r6 = 0x40; writes pr
+#   dt r5           → reads+writes r5 = 0x20; writes T
+cat > /tmp/regtest.c <<'EOF'
+int test(int x) {
+    asm {
+        mov r4, r5
+        add #1, r0
+        mov.l @r4+, r3
+        sts.l pr, @-r15
+        jsr @r6
+        dt r5
+    }
+    return x;
+}
+EOF
+asm_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
+ok=1
+grep -qE 'mn=mov reads=0x10 writes=0x20' "$asm_dump" || ok=0
+grep -qE 'mn=add reads=0x1 writes=0x1' "$asm_dump" || ok=0
+grep -qE 'mn=mov\.l reads=0x10 writes=0x18' "$asm_dump" || ok=0
+grep -qE 'mn=sts\.l reads=0x8000 writes=0x8000 sr_r=0x1' "$asm_dump" || ok=0
+grep -qE '\[BC\] mn=jsr reads=0x40 writes=0x0 sr_r=0x0 sr_w=0x1' "$asm_dump" || ok=0
+grep -qE 'mn=dt reads=0x20 writes=0x20 sr_r=0x0 sr_w=0x40' "$asm_dump" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: asm parser destination detection per write-category"
+else
+    fail "regtest: asm parser destination detection wrong — inspect $asm_dump"
+fi
+rm -f "$asm_dump"
+
+# 4aj. Conservative-on-unknown: a deliberately bad mnemonic must
+# get is_unknown=1 and reads/writes default to 0xffff so any
+# downstream analysis sees it as "could clobber anything." False-
+# clean answers would silently break byte-match.
+cat > /tmp/regtest.c <<'EOF'
+int test(int x) {
+    asm {
+        nop
+        zzzfake r1, r2
+        nop
+    }
+    return x;
+}
+EOF
+asm_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
+if grep -qE '\[U\] mn=zzzfake reads=0xffff writes=0xffff' "$asm_dump"; then
+    pass "regtest: asm parser conservative on unknown mnemonic"
+else
+    fail "regtest: asm parser unknown-mnemonic handling wrong — inspect $asm_dump"
+fi
+rm -f "$asm_dump"
+
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
 #     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)

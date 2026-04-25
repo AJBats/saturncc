@@ -78,6 +78,14 @@ static unsigned sh_prealloc_mask(Symbol, Node, unsigned);
 struct sh_ipa_fn;  /* forward: full defn lower, with the queue globals */
 static void function(Symbol, Symbol[], Symbol[], int);
 static void sh_process_deferred_fn(struct sh_ipa_fn *e);
+
+/* Stage 1 asm-shim parser — forward decls. The full definitions
+ * live in the line-level helper section near sh_regs_used. emit2's
+ * LABEL+V case calls these under -d-asm. */
+struct sh_asm_body;
+struct sh_asm_body *sh_parse_asm_text(const char *text);
+static void sh_dump_asm_body(const struct sh_asm_body *body,
+                             const char *label);
 static void sh_drain_ipa_queue(void);
 static void global(Symbol);
 static void import(Symbol);
@@ -115,6 +123,13 @@ static int sh_all_returns_inlined;
 static int sh_uses_macl;
 static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
 static int sh_word_indexed_after_first;  /* #pragma sh_word_indexed_after_first: see sh_apply_word_indexed_after_first */
+
+/* -d-asm: dump every parsed asm body to stderr at emit time. Used
+ * by Stage 1 regtests in saturn/workstreams/asm_shim_design.md to
+ * verify the parser's destination detection and round-trip
+ * behavior. Stage 1 only invokes the parser when this flag is on;
+ * Stage 2 will invoke it unconditionally at frontend time. */
+static int sh_dflag_asm;
 
 /* Switch-dispatch state recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
@@ -1620,6 +1635,8 @@ static void progbeg(int argc, char *argv[]) {
         for (i = 0; i < argc; i++)
                 if (strncmp(argv[i], "-gbr-base=", 10) == 0)
                         gbr_base_cname = argv[i] + 10;
+                else if (strcmp(argv[i], "-d-asm") == 0)
+                        sh_dflag_asm = 1;
         shc_pragma_hook = sh_pragma;
         flush_deferred_pragmas();
         for (i = 0; i < 16; i++)
@@ -1880,9 +1897,18 @@ static void emit2(Node p) {
                  * text — `__asm("mov #1, r6")` — without the
                  * character-escape noise of `"\tmov\t#1,r6"`. */
                 Symbol ls = p->syms[0];
-                if (ls->u.l.label == 0)
+                if (ls->u.l.label == 0) {
+                        if (sh_dflag_asm) {
+                                /* Stage 1: parse the asm text and dump
+                                 * for inspection. Result discarded;
+                                 * Stage 2 will wire it into the IR. */
+                                struct sh_asm_body *parsed =
+                                        sh_parse_asm_text(ls->name);
+                                sh_dump_asm_body(parsed,
+                                        cfunc ? cfunc->name : NULL);
+                        }
                         print("\t%s\n", ls->name);
-                else
+                } else
                         print("%s:\n", ls->x.name);
                 break;
                 }
@@ -2598,6 +2624,1018 @@ static int sh_reads_reg(const char *line, int rN) {
                 p++;
         }
         return 0;
+}
+
+/* ──────────────────────────────────────────────────────────
+ * Asm-shim parsed IR (Stage 1, foundation for §4 of
+ * saturn/workstreams/asm_shim_design.md)
+ *
+ * sh_parse_asm_text() consumes the raw text of an `asm { ... }`
+ * block and returns a struct sh_asm_body — a list of per-line
+ * sh_asm_insn records with parsed mnemonic, operands, and
+ * reads/writes register masks. Every cross-function analysis
+ * (Stage 3 writes_r4, future clobber narrowing, MAC/GBR tracking)
+ * queries these masks; no analysis re-scans text or carries its
+ * own mnemonic table.
+ *
+ * Stage 1 ships this as a self-contained library: the parser
+ * runs only when -d-asm is on, dumps to stderr, and the result
+ * is discarded. Stage 2 wires the parser into the frontend so
+ * each ASM_INSN Node carries its parsed insn record.
+ *
+ * Conservative-on-unknown: any line the parser can't classify
+ * gets is_unknown=1 and reads/writes set to ~0 — analyses
+ * default to "this line could clobber anything" rather than
+ * silently underreporting and breaking byte-match.
+ * ────────────────────────────────────────────────────────── */
+
+enum sh_operand_kind {
+        SH_OP_NONE = 0,
+        SH_OP_REG,        /* r0..r15 */
+        SH_OP_SREG,       /* pr, gbr, vbr, sr, mach, macl, t */
+        SH_OP_IMM,        /* #imm or bare number (directive arg) */
+        SH_OP_MEM,        /* @rN family — see sh_mem_mode */
+        SH_OP_LABEL       /* bare identifier — branch target, pool sym */
+};
+
+enum sh_mem_mode {
+        SH_MEM_NONE = 0,
+        SH_MEM_INDIR,     /* @rN */
+        SH_MEM_PREDEC,    /* @-rN */
+        SH_MEM_POSTINC,   /* @rN+ */
+        SH_MEM_DISP,      /* @(disp,rN) */
+        SH_MEM_R0IDX,     /* @(R0,rN) */
+        SH_MEM_GBRDISP,   /* @(disp,GBR) */
+        SH_MEM_PCDISP     /* @(disp,PC) */
+};
+
+enum sh_sreg_id {
+        SH_SR_PR = 0, SH_SR_GBR, SH_SR_VBR, SH_SR_SR,
+        SH_SR_MACH, SH_SR_MACL, SH_SR_T,
+        SH_SR_COUNT
+};
+
+struct sh_operand {
+        enum sh_operand_kind kind;
+        int reg;                  /* SH_OP_REG, SH_OP_MEM: base/only reg */
+        enum sh_sreg_id sreg;     /* SH_OP_SREG */
+        long imm;                 /* SH_OP_IMM, SH_OP_MEM disp */
+        char *label;              /* SH_OP_LABEL: stringn'd; also for
+                                   *   #LABEL imm */
+        enum sh_mem_mode mem_mode;
+};
+
+struct sh_asm_insn {
+        char *src_text;       /* the original line, including trailing
+                               * newline if present. Round-trip
+                               * handle. */
+        char *mnemonic;       /* canonicalized; NULL on parse failure */
+        int n_operands;
+        struct sh_operand operands[3];
+
+        unsigned reads;       /* GP regs read (bit N = rN) */
+        unsigned writes;      /* GP regs written */
+        unsigned reads_sreg;  /* bitmask indexed by enum sh_sreg_id */
+        unsigned writes_sreg;
+        unsigned char is_branch;
+        unsigned char is_call;
+        unsigned char is_directive;
+        unsigned char is_label;
+        unsigned char is_comment;
+        unsigned char is_unknown;
+        int line_no;
+};
+
+struct sh_asm_body {
+        struct sh_asm_insn *insns;
+        int n_insns;
+        int n_capacity;
+        char *raw_text;
+};
+
+/* ── parser tokenizer helpers ─────────────────────────── */
+
+static const char *sh_p_skip_ws(const char *p) {
+        while (*p == ' ' || *p == '\t') p++;
+        return p;
+}
+
+/* Match `rN` (N in [0,15]). On success, advance *p and set *out. */
+static int sh_p_match_reg(const char **p, int *out) {
+        const char *s = *p;
+        int n;
+        if (*s != 'r' && *s != 'R') return 0;
+        s++;
+        if (*s < '0' || *s > '9') return 0;
+        n = *s++ - '0';
+        if (*s >= '0' && *s <= '9') n = n * 10 + (*s++ - '0');
+        if (n < 0 || n > 15) return 0;
+        /* Don't match `r0pad` as r0 — must be followed by a non-
+         * identifier character. */
+        if ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z')
+            || *s == '_' || *s == '.')
+                return 0;
+        *p = s;
+        *out = n;
+        return 1;
+}
+
+static int sh_p_match_sreg(const char **p, enum sh_sreg_id *out) {
+        static const struct {
+                const char *name;
+                int len;
+                enum sh_sreg_id id;
+        } tab[] = {
+                { "mach", 4, SH_SR_MACH }, { "MACH", 4, SH_SR_MACH },
+                { "macl", 4, SH_SR_MACL }, { "MACL", 4, SH_SR_MACL },
+                { "gbr",  3, SH_SR_GBR  }, { "GBR",  3, SH_SR_GBR  },
+                { "vbr",  3, SH_SR_VBR  }, { "VBR",  3, SH_SR_VBR  },
+                { "pr",   2, SH_SR_PR   }, { "PR",   2, SH_SR_PR   },
+                { "sr",   2, SH_SR_SR   }, { "SR",   2, SH_SR_SR   },
+                { "t",    1, SH_SR_T    }, { "T",    1, SH_SR_T    }
+        };
+        int i;
+        for (i = 0; i < (int)(sizeof tab / sizeof tab[0]); i++) {
+                if (strncmp(*p, tab[i].name, tab[i].len) == 0) {
+                        char nxt = (*p)[tab[i].len];
+                        if (!((nxt >= 'a' && nxt <= 'z')
+                              || (nxt >= 'A' && nxt <= 'Z')
+                              || (nxt >= '0' && nxt <= '9')
+                              || nxt == '_' || nxt == '.')) {
+                                *p += tab[i].len;
+                                *out = tab[i].id;
+                                return 1;
+                        }
+                }
+        }
+        return 0;
+}
+
+/* Numeric immediate: optional sign, optional 0x prefix. Decimal or
+ * hex digits required. */
+static int sh_p_match_num(const char **p, long *out) {
+        const char *s = *p;
+        long sign = 1, val = 0;
+        int saw_digit = 0;
+        if (*s == '-') { sign = -1; s++; }
+        else if (*s == '+') { s++; }
+        if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+                s += 2;
+                while (1) {
+                        int d;
+                        if (*s >= '0' && *s <= '9') d = *s - '0';
+                        else if (*s >= 'a' && *s <= 'f') d = *s - 'a' + 10;
+                        else if (*s >= 'A' && *s <= 'F') d = *s - 'A' + 10;
+                        else break;
+                        val = val * 16 + d;
+                        s++;
+                        saw_digit = 1;
+                }
+        } else {
+                while (*s >= '0' && *s <= '9') {
+                        val = val * 10 + (*s - '0');
+                        s++;
+                        saw_digit = 1;
+                }
+        }
+        if (!saw_digit) return 0;
+        *out = sign * val;
+        *p = s;
+        return 1;
+}
+
+/* Read an identifier (label-like). Returns 1 and a stringn'd copy on
+ * success; otherwise 0. */
+static int sh_p_match_ident(const char **p, char **out) {
+        const char *s = *p;
+        const char *start = s;
+        if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z')
+              || *s == '_' || *s == '.'))
+                return 0;
+        while ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z')
+               || (*s >= '0' && *s <= '9') || *s == '_' || *s == '.')
+                s++;
+        *out = stringn((char *)start, s - start);
+        *p = s;
+        return 1;
+}
+
+/* Parse one operand starting at *p. Sets *op and advances *p. */
+static int sh_p_parse_operand(const char **p, struct sh_operand *op) {
+        const char *s;
+        int reg;
+        enum sh_sreg_id sreg;
+        long imm;
+        char *label;
+
+        memset(op, 0, sizeof(*op));
+        s = sh_p_skip_ws(*p);
+
+        /* SH_OP_IMM: #... */
+        if (*s == '#') {
+                const char *q = s + 1;
+                if (sh_p_match_num(&q, &imm)) {
+                        op->kind = SH_OP_IMM;
+                        op->imm = imm;
+                        *p = q;
+                        return 1;
+                }
+                if (sh_p_match_ident(&q, &label)) {
+                        op->kind = SH_OP_IMM;
+                        op->label = label;
+                        *p = q;
+                        return 1;
+                }
+                return 0;
+        }
+
+        /* SH_OP_MEM: @... */
+        if (*s == '@') {
+                const char *q = s + 1;
+                if (*q == '-') {
+                        q++;
+                        if (sh_p_match_reg(&q, &reg)) {
+                                op->kind = SH_OP_MEM;
+                                op->mem_mode = SH_MEM_PREDEC;
+                                op->reg = reg;
+                                *p = q;
+                                return 1;
+                        }
+                        return 0;
+                }
+                if (*q == '(') {
+                        /* @(disp,X) or @(R0,rN) */
+                        const char *save;
+                        q++;
+                        q = sh_p_skip_ws(q);
+                        save = q;
+                        /* @(R0,rN) form */
+                        {
+                                int r0;
+                                if (sh_p_match_reg(&q, &r0) && r0 == 0) {
+                                        q = sh_p_skip_ws(q);
+                                        if (*q == ',') {
+                                                q++;
+                                                q = sh_p_skip_ws(q);
+                                                if (sh_p_match_reg(&q, &reg)) {
+                                                        q = sh_p_skip_ws(q);
+                                                        if (*q == ')') {
+                                                                q++;
+                                                                op->kind = SH_OP_MEM;
+                                                                op->mem_mode = SH_MEM_R0IDX;
+                                                                op->reg = reg;
+                                                                *p = q;
+                                                                return 1;
+                                                        }
+                                                }
+                                        }
+                                }
+                                q = save;
+                        }
+                        /* @(disp,X) */
+                        if (sh_p_match_num(&q, &imm)) {
+                                q = sh_p_skip_ws(q);
+                                if (*q == ',') {
+                                        q++;
+                                        q = sh_p_skip_ws(q);
+                                        if (sh_p_match_reg(&q, &reg)) {
+                                                q = sh_p_skip_ws(q);
+                                                if (*q == ')') {
+                                                        q++;
+                                                        op->kind = SH_OP_MEM;
+                                                        op->mem_mode = SH_MEM_DISP;
+                                                        op->reg = reg;
+                                                        op->imm = imm;
+                                                        *p = q;
+                                                        return 1;
+                                                }
+                                        } else if (strncmp(q, "GBR", 3) == 0
+                                                   || strncmp(q, "gbr", 3) == 0) {
+                                                q += 3;
+                                                q = sh_p_skip_ws(q);
+                                                if (*q == ')') {
+                                                        q++;
+                                                        op->kind = SH_OP_MEM;
+                                                        op->mem_mode = SH_MEM_GBRDISP;
+                                                        op->imm = imm;
+                                                        *p = q;
+                                                        return 1;
+                                                }
+                                        } else if (strncmp(q, "PC", 2) == 0
+                                                   || strncmp(q, "pc", 2) == 0) {
+                                                q += 2;
+                                                q = sh_p_skip_ws(q);
+                                                if (*q == ')') {
+                                                        q++;
+                                                        op->kind = SH_OP_MEM;
+                                                        op->mem_mode = SH_MEM_PCDISP;
+                                                        op->imm = imm;
+                                                        *p = q;
+                                                        return 1;
+                                                }
+                                        }
+                                }
+                        }
+                        return 0;
+                }
+                /* @rN or @rN+ */
+                if (sh_p_match_reg(&q, &reg)) {
+                        op->kind = SH_OP_MEM;
+                        op->reg = reg;
+                        if (*q == '+') {
+                                op->mem_mode = SH_MEM_POSTINC;
+                                q++;
+                        } else {
+                                op->mem_mode = SH_MEM_INDIR;
+                        }
+                        *p = q;
+                        return 1;
+                }
+                return 0;
+        }
+
+        /* SH_OP_REG: rN */
+        {
+                const char *q = s;
+                if (sh_p_match_reg(&q, &reg)) {
+                        op->kind = SH_OP_REG;
+                        op->reg = reg;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        /* SH_OP_SREG */
+        {
+                const char *q = s;
+                if (sh_p_match_sreg(&q, &sreg)) {
+                        op->kind = SH_OP_SREG;
+                        op->sreg = sreg;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        /* Bare numeric immediate (directive args like `.long 4`) */
+        {
+                const char *q = s;
+                if (sh_p_match_num(&q, &imm)) {
+                        op->kind = SH_OP_IMM;
+                        op->imm = imm;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        /* SH_OP_LABEL: identifier. Branch targets, pool refs. */
+        {
+                const char *q = s;
+                if (sh_p_match_ident(&q, &label)) {
+                        op->kind = SH_OP_LABEL;
+                        op->label = label;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        op->kind = SH_OP_NONE;
+        return 0;
+}
+
+static int sh_p_parse_operands(const char **p,
+                               struct sh_operand operands[3]) {
+        int n = 0;
+        const char *s = *p;
+        s = sh_p_skip_ws(s);
+        if (*s == 0 || *s == '\n' || *s == '\r' || *s == '!'
+            || *s == ';' || (*s == '/' && s[1] == '*')) {
+                *p = s;
+                return 0;
+        }
+        while (n < 3) {
+                if (!sh_p_parse_operand(&s, &operands[n])) break;
+                n++;
+                s = sh_p_skip_ws(s);
+                if (*s == ',') {
+                        s++;
+                        s = sh_p_skip_ws(s);
+                        continue;
+                }
+                break;
+        }
+        *p = s;
+        return n;
+}
+
+/* ── mnemonic dispatch ────────────────────────────────── */
+
+enum sh_mn_kind {
+        MK_UNKNOWN,
+        MK_NOP,            /* no GP-reg effects */
+        MK_NOP_T,          /* clrt/sett — write T */
+        MK_NOP_MAC,        /* clrmac — write MACH+MACL */
+        MK_BIN_LAST_DEST,  /* `op A,B` — read A, read+write B */
+        MK_UNARY_DEST,     /* `op N` — read+write N */
+        MK_DT,             /* dt rN — read+write rN, write T */
+        MK_MOVT,           /* movt rN — write rN, read T */
+        MK_MOV,            /* mov / mov.b/w/l — refined per operand */
+        MK_CMP,            /* cmp/* rA,rB — read; write T */
+        MK_CMP_UNARY,      /* cmp/pl/pz rN — read; write T */
+        MK_TST,            /* tst rA,rB / tst #imm,r0 — read; write T */
+        MK_BRANCH_LABEL,   /* bra/bsr/bt/bf label */
+        MK_BRANCH_INDIR,   /* jmp/jsr @rN */
+        MK_RTS,            /* rts — read PR */
+        MK_LDS,            /* lds rA,sreg */
+        MK_LDS_L,          /* lds.l @rN+,sreg */
+        MK_STS,            /* sts sreg,rA */
+        MK_STS_L,          /* sts.l sreg,@-rN */
+        MK_LDC,            /* ldc rA,sreg (gbr/vbr/sr) */
+        MK_LDC_L,          /* ldc.l @rN+,sreg */
+        MK_STC,            /* stc sreg,rA */
+        MK_STC_L,          /* stc.l sreg,@-rN */
+        MK_MUL,            /* mul.l rA,rB */
+        MK_DMUL,           /* dmuls.l/dmulu.l */
+        MK_MULSW,          /* muls.w/mulu.w */
+        MK_MAC,            /* mac.l/mac.w @rA+,@rB+ */
+        MK_DIV1,           /* div1 rA,rB */
+        MK_TAS,            /* tas.b @rN */
+        MK_SWAP_XTRCT,     /* swap.X rA,rB / xtrct rA,rB */
+        MK_EXT,            /* extu/exts.X rA,rB */
+        MK_SLEEP_TRAPA     /* opaque, conservative */
+};
+
+static const struct {
+        const char *name;
+        enum sh_mn_kind kind;
+} sh_mnemonic_table[] = {
+        { "nop",     MK_NOP },
+        { "clrt",    MK_NOP_T },
+        { "sett",    MK_NOP_T },
+        { "clrmac",  MK_NOP_MAC },
+        { "shll",    MK_UNARY_DEST }, { "shll2",  MK_UNARY_DEST },
+        { "shll8",   MK_UNARY_DEST }, { "shll16", MK_UNARY_DEST },
+        { "shlr",    MK_UNARY_DEST }, { "shlr2",  MK_UNARY_DEST },
+        { "shlr8",   MK_UNARY_DEST }, { "shlr16", MK_UNARY_DEST },
+        { "shal",    MK_UNARY_DEST }, { "shar",   MK_UNARY_DEST },
+        { "rotl",    MK_UNARY_DEST }, { "rotr",   MK_UNARY_DEST },
+        { "rotcl",   MK_UNARY_DEST }, { "rotcr",  MK_UNARY_DEST },
+        { "movt",    MK_MOVT },
+        { "dt",      MK_DT },
+        { "add",     MK_BIN_LAST_DEST }, { "addc",  MK_BIN_LAST_DEST },
+        { "addv",    MK_BIN_LAST_DEST },
+        { "sub",     MK_BIN_LAST_DEST }, { "subc",  MK_BIN_LAST_DEST },
+        { "subv",    MK_BIN_LAST_DEST },
+        { "and",     MK_BIN_LAST_DEST }, { "or",    MK_BIN_LAST_DEST },
+        { "xor",     MK_BIN_LAST_DEST },
+        { "neg",     MK_BIN_LAST_DEST }, { "negc",  MK_BIN_LAST_DEST },
+        { "not",     MK_BIN_LAST_DEST },
+        { "mov",     MK_MOV }, { "mov.b", MK_MOV },
+        { "mov.w",   MK_MOV }, { "mov.l", MK_MOV },
+        { "cmp/eq",  MK_CMP }, { "cmp/hs", MK_CMP },
+        { "cmp/ge",  MK_CMP }, { "cmp/hi", MK_CMP },
+        { "cmp/gt",  MK_CMP }, { "cmp/str",MK_CMP },
+        { "cmp/pl",  MK_CMP_UNARY }, { "cmp/pz",  MK_CMP_UNARY },
+        { "tst",     MK_TST },
+        { "bra",     MK_BRANCH_LABEL }, { "bsr",   MK_BRANCH_LABEL },
+        { "bsr/s",   MK_BRANCH_LABEL },
+        { "bt",      MK_BRANCH_LABEL }, { "bf",    MK_BRANCH_LABEL },
+        { "bt/s",    MK_BRANCH_LABEL }, { "bf/s",  MK_BRANCH_LABEL },
+        { "jsr",     MK_BRANCH_INDIR }, { "jmp",   MK_BRANCH_INDIR },
+        { "rts",     MK_RTS },
+        { "lds",     MK_LDS },   { "lds.l", MK_LDS_L },
+        { "sts",     MK_STS },   { "sts.l", MK_STS_L },
+        { "ldc",     MK_LDC },   { "ldc.l", MK_LDC_L },
+        { "stc",     MK_STC },   { "stc.l", MK_STC_L },
+        { "mul.l",   MK_MUL },
+        { "dmuls.l", MK_DMUL },  { "dmulu.l", MK_DMUL },
+        { "muls.w",  MK_MULSW }, { "mulu.w",  MK_MULSW },
+        { "mac.l",   MK_MAC },   { "mac.w",   MK_MAC },
+        { "div0s",   MK_CMP }, /* read both, write T (Q) — close enough */
+        { "div0u",   MK_NOP },
+        { "div1",    MK_DIV1 },
+        { "swap.b",  MK_SWAP_XTRCT }, { "swap.w", MK_SWAP_XTRCT },
+        { "xtrct",   MK_SWAP_XTRCT },
+        { "extu.b",  MK_EXT }, { "extu.w", MK_EXT },
+        { "exts.b",  MK_EXT }, { "exts.w", MK_EXT },
+        { "tas.b",   MK_TAS },
+        { "sleep",   MK_SLEEP_TRAPA }, { "trapa", MK_SLEEP_TRAPA }
+};
+
+static enum sh_mn_kind sh_lookup_mnemonic(const char *mn) {
+        int i;
+        int n = (int)(sizeof sh_mnemonic_table
+                      / sizeof sh_mnemonic_table[0]);
+        for (i = 0; i < n; i++)
+                if (strcmp(mn, sh_mnemonic_table[i].name) == 0)
+                        return sh_mnemonic_table[i].kind;
+        return MK_UNKNOWN;
+}
+
+/* Helper: add reg-flow effects of a memory operand.
+ * For a SOURCE memory operand: read base; if post-inc, also write base.
+ * For a DEST memory operand: read base; if pre-dec or post-inc, also
+ * write base. */
+static void sh_p_mem_effects(const struct sh_operand *op,
+                             struct sh_asm_insn *insn,
+                             int as_dest) {
+        if (op->kind != SH_OP_MEM) return;
+        insn->reads |= 1u << op->reg;
+        if (op->mem_mode == SH_MEM_PREDEC
+            || op->mem_mode == SH_MEM_POSTINC)
+                insn->writes |= 1u << op->reg;
+        if (op->mem_mode == SH_MEM_R0IDX) {
+                insn->reads |= 1u << 0;  /* r0 is the index */
+        }
+        if (op->mem_mode == SH_MEM_GBRDISP)
+                insn->reads_sreg |= 1u << SH_SR_GBR;
+        (void)as_dest;
+}
+
+/* Apply read/write semantics for a parsed mnemonic + operands. */
+static void sh_p_apply_kind(struct sh_asm_insn *insn,
+                            enum sh_mn_kind kind) {
+        struct sh_operand *o = insn->operands;
+        int n = insn->n_operands;
+        switch (kind) {
+        case MK_UNKNOWN:
+                /* Conservative: any GP reg / sreg may be touched. */
+                insn->is_unknown = 1;
+                insn->reads = 0xFFFFu;
+                insn->writes = 0xFFFFu;
+                insn->reads_sreg = (1u << SH_SR_COUNT) - 1;
+                insn->writes_sreg = (1u << SH_SR_COUNT) - 1;
+                break;
+        case MK_NOP:
+                break;
+        case MK_NOP_T:
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_NOP_MAC:
+                insn->writes_sreg |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                break;
+        case MK_UNARY_DEST:
+                if (n >= 1 && o[0].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[0].reg;
+                        insn->writes |= 1u << o[0].reg;
+                }
+                break;
+        case MK_DT:
+                if (n >= 1 && o[0].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[0].reg;
+                        insn->writes |= 1u << o[0].reg;
+                }
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_MOVT:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[0].reg;
+                insn->reads_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_BIN_LAST_DEST:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[1].reg;
+                        insn->writes |= 1u << o[1].reg;
+                } else if (n == 1 && o[0].kind == SH_OP_REG) {
+                        /* `neg rN` style — single-operand variant. */
+                        insn->writes |= 1u << o[0].reg;
+                }
+                /* Some forms (addc/subc/negc) read/write T, but we
+                 * only need that for sreg-precise analyses; conservative
+                 * additions as needed. */
+                if (insn->mnemonic
+                    && (strcmp(insn->mnemonic, "addc") == 0
+                        || strcmp(insn->mnemonic, "subc") == 0
+                        || strcmp(insn->mnemonic, "negc") == 0)) {
+                        insn->reads_sreg  |= 1u << SH_SR_T;
+                        insn->writes_sreg |= 1u << SH_SR_T;
+                }
+                if (insn->mnemonic
+                    && (strcmp(insn->mnemonic, "addv") == 0
+                        || strcmp(insn->mnemonic, "subv") == 0))
+                        insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_MOV: {
+                /* Disambiguate by operand kinds:
+                 *   mov rA, rB         → read A, write B
+                 *   mov #imm, rN       → write N
+                 *   mov.X mem, rN      → load:  read mem, write N
+                 *   mov.X rN, mem      → store: read N, mem effects
+                 *   mov.X label, rN    → PC-rel load: write N
+                 */
+                if (n != 2) {
+                        insn->is_unknown = 1;
+                        insn->reads = 0xFFFFu;
+                        insn->writes = 0xFFFFu;
+                        break;
+                }
+                /* Source effects */
+                switch (o[0].kind) {
+                case SH_OP_REG:
+                        insn->reads |= 1u << o[0].reg;
+                        break;
+                case SH_OP_IMM:
+                        break;
+                case SH_OP_MEM:
+                        sh_p_mem_effects(&o[0], insn, 0);
+                        break;
+                case SH_OP_LABEL:
+                        /* PC-rel literal load — no GP-reg read */
+                        break;
+                default:
+                        break;
+                }
+                /* Dest effects */
+                switch (o[1].kind) {
+                case SH_OP_REG:
+                        insn->writes |= 1u << o[1].reg;
+                        break;
+                case SH_OP_MEM:
+                        sh_p_mem_effects(&o[1], insn, 1);
+                        break;
+                default:
+                        insn->is_unknown = 1;
+                        insn->writes = 0xFFFFu;
+                        break;
+                }
+                break;
+        }
+        case MK_CMP:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                if (n >= 1 && o[0].kind == SH_OP_IMM
+                    && n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_CMP_UNARY:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_TST:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                if (n >= 1 && o[0].kind == SH_OP_IMM
+                    && n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_BRANCH_LABEL:
+                insn->is_branch = 1;
+                if (insn->mnemonic
+                    && (insn->mnemonic[0] == 'b'
+                        && insn->mnemonic[1] == 's')) {
+                        insn->is_call = 1;
+                        insn->writes_sreg |= 1u << SH_SR_PR;
+                }
+                if (insn->mnemonic
+                    && (insn->mnemonic[0] == 'b'
+                        && (insn->mnemonic[1] == 't'
+                            || insn->mnemonic[1] == 'f')))
+                        insn->reads_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_BRANCH_INDIR:
+                insn->is_branch = 1;
+                if (n >= 1 && o[0].kind == SH_OP_MEM)
+                        insn->reads |= 1u << o[0].reg;
+                if (insn->mnemonic && insn->mnemonic[0] == 'j'
+                    && insn->mnemonic[1] == 's') {
+                        insn->is_call = 1;
+                        insn->writes_sreg |= 1u << SH_SR_PR;
+                }
+                break;
+        case MK_RTS:
+                insn->is_branch = 1;
+                insn->reads_sreg |= 1u << SH_SR_PR;
+                break;
+        case MK_LDS:
+                /* lds rA, sreg */
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_LDS_L:
+                /* lds.l @rN+, sreg */
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 0);
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_STS:
+                /* sts sreg, rA */
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[1].reg;
+                break;
+        case MK_STS_L:
+                /* sts.l sreg, @-rN */
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2) sh_p_mem_effects(&o[1], insn, 1);
+                break;
+        case MK_LDC:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_LDC_L:
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 0);
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_STC:
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[1].reg;
+                break;
+        case MK_STC_L:
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2) sh_p_mem_effects(&o[1], insn, 1);
+                break;
+        case MK_MUL:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_MACL;
+                break;
+        case MK_DMUL:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                break;
+        case MK_MULSW:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_MACL;
+                break;
+        case MK_MAC:
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 0);
+                if (n >= 2) sh_p_mem_effects(&o[1], insn, 0);
+                insn->reads_sreg  |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                insn->writes_sreg |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                break;
+        case MK_DIV1:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[1].reg;
+                        insn->writes |= 1u << o[1].reg;
+                }
+                insn->reads_sreg  |= 1u << SH_SR_T;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_TAS:
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 1);
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_SWAP_XTRCT:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[1].reg;
+                        insn->writes |= 1u << o[1].reg;
+                }
+                break;
+        case MK_EXT:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[1].reg;
+                break;
+        case MK_SLEEP_TRAPA:
+                /* Opaque: assume it could clobber anything. */
+                insn->is_unknown = 1;
+                insn->reads = 0xFFFFu;
+                insn->writes = 0xFFFFu;
+                insn->reads_sreg = (1u << SH_SR_COUNT) - 1;
+                insn->writes_sreg = (1u << SH_SR_COUNT) - 1;
+                break;
+        }
+}
+
+/* ── per-line classification ──────────────────────────── */
+
+static int sh_p_line_is_blank_or_comment(const char *p) {
+        p = sh_p_skip_ws(p);
+        if (*p == 0 || *p == '\n' || *p == '\r') return 1;
+        if (*p == '!' || *p == ';') return 1;
+        if (p[0] == '/' && p[1] == '*') return 1;
+        return 0;
+}
+
+/* Classify one line into the insn record. */
+static void sh_parse_one_line(struct sh_asm_insn *insn,
+                              const char *line) {
+        const char *p = line;
+        const char *content;
+        char *mnemonic = NULL;
+
+        if (sh_p_line_is_blank_or_comment(p)) {
+                insn->is_comment = 1;
+                return;
+        }
+
+        p = sh_p_skip_ws(p);
+        content = p;
+
+        /* Label-only line? Use existing helper. */
+        if (sh_is_label_line(content)) {
+                insn->is_label = 1;
+                /* Capture the label name for completeness. */
+                {
+                        const char *e = strchr(content, ':');
+                        if (e)
+                                insn->mnemonic = stringn((char *)content,
+                                                         e - content);
+                }
+                return;
+        }
+
+        /* Directive? */
+        if (*p == '.') {
+                /* Read the directive name (`.long`, `.short`, etc.) */
+                const char *start = p;
+                while ((*p >= 'a' && *p <= 'z')
+                       || (*p >= 'A' && *p <= 'Z')
+                       || *p == '.' || *p == '_'
+                       || (*p >= '0' && *p <= '9')) p++;
+                insn->mnemonic = stringn((char *)start, p - start);
+                insn->is_directive = 1;
+                /* Operands for diagnostic dump only — directives have
+                 * no register effects. */
+                insn->n_operands = sh_p_parse_operands(&p, insn->operands);
+                return;
+        }
+
+        /* Combined `LABEL: instruction` form (e.g. `LP0: .long _x`).
+         * For Stage 1, treat the line as if the instruction part
+         * starts after the colon. */
+        {
+                const char *colon = NULL, *q = content;
+                while (((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+                        || (*q >= '0' && *q <= '9') || *q == '_'
+                        || *q == '.'))
+                        q++;
+                if (*q == ':') {
+                        colon = q;
+                        q++;
+                        q = sh_p_skip_ws(q);
+                        if (*q && *q != '\n' && *q != '\r'
+                            && *q != '!' && *q != ';') {
+                                insn->is_label = 1;
+                                p = q;
+                                content = q;
+                                /* Re-check directive after the colon */
+                                if (*p == '.') {
+                                        const char *start = p;
+                                        while ((*p >= 'a' && *p <= 'z')
+                                               || (*p >= 'A' && *p <= 'Z')
+                                               || *p == '.' || *p == '_'
+                                               || (*p >= '0' && *p <= '9'))
+                                                p++;
+                                        insn->mnemonic = stringn((char *)start,
+                                                                 p - start);
+                                        insn->is_directive = 1;
+                                        insn->n_operands = sh_p_parse_operands(
+                                                &p, insn->operands);
+                                        return;
+                                }
+                        }
+                        (void)colon;
+                }
+        }
+
+        /* Mnemonic — read up to whitespace or end-of-line. */
+        {
+                const char *start = p;
+                while (((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')
+                        || (*p >= '0' && *p <= '9') || *p == '/'
+                        || *p == '.'))
+                        p++;
+                if (p == start) {
+                        insn->is_unknown = 1;
+                        sh_p_apply_kind(insn, MK_UNKNOWN);
+                        return;
+                }
+                mnemonic = stringn((char *)start, p - start);
+                insn->mnemonic = mnemonic;
+        }
+
+        /* Operands */
+        insn->n_operands = sh_p_parse_operands(&p, insn->operands);
+
+        /* Dispatch by mnemonic kind. */
+        sh_p_apply_kind(insn, sh_lookup_mnemonic(mnemonic));
+}
+
+/* ── public API ───────────────────────────────────────── */
+
+struct sh_asm_body *sh_parse_asm_text(const char *text) {
+        struct sh_asm_body *body;
+        const char *p = text;
+        int line_no = 1;
+
+        NEW0(body, PERM);
+        body->raw_text = stringn((char *)text, strlen(text));
+        body->n_capacity = 16;
+        body->insns = allocate(body->n_capacity
+                               * sizeof(struct sh_asm_insn), PERM);
+        body->n_insns = 0;
+
+        while (*p) {
+                const char *line_start = p;
+                const char *line_end;
+                int len;
+                struct sh_asm_insn *insn;
+                char *src_text;
+
+                for (line_end = p; *line_end && *line_end != '\n';
+                     line_end++) ;
+                len = line_end - line_start
+                      + (*line_end == '\n' ? 1 : 0);
+                src_text = stringn((char *)line_start, len);
+
+                if (body->n_insns >= body->n_capacity) {
+                        int new_cap = body->n_capacity * 2;
+                        struct sh_asm_insn *new_arr;
+                        new_arr = allocate(new_cap
+                                           * sizeof(struct sh_asm_insn),
+                                           PERM);
+                        memcpy(new_arr, body->insns,
+                               body->n_insns
+                               * sizeof(struct sh_asm_insn));
+                        body->insns = new_arr;
+                        body->n_capacity = new_cap;
+                }
+
+                insn = &body->insns[body->n_insns++];
+                memset(insn, 0, sizeof(*insn));
+                insn->src_text = src_text;
+                insn->line_no = line_no;
+
+                sh_parse_one_line(insn, src_text);
+
+                p = line_end;
+                if (*p == '\n') {
+                        p++;
+                        line_no++;
+                }
+        }
+        return body;
+}
+
+/* Dump the parsed body to stderr in a stable, grep-friendly format
+ * for the Stage 1 regtests. Each insn is one [asm-dump] line. */
+static void sh_dump_asm_body(const struct sh_asm_body *body,
+                             const char *label) {
+        int i;
+        fprint(stderr, "[asm-dump] BLOCK %s: %d insns\n",
+               label ? label : "(anon)", body->n_insns);
+        for (i = 0; i < body->n_insns; i++) {
+                const struct sh_asm_insn *in = &body->insns[i];
+                char flags[16];
+                int fl = 0;
+                flags[fl++] = '[';
+                if (in->is_branch)    flags[fl++] = 'B';
+                if (in->is_call)      flags[fl++] = 'C';
+                if (in->is_directive) flags[fl++] = 'D';
+                if (in->is_label)     flags[fl++] = 'L';
+                if (in->is_comment)   flags[fl++] = 'M';
+                if (in->is_unknown)   flags[fl++] = 'U';
+                flags[fl++] = ']';
+                flags[fl] = 0;
+                fprint(stderr,
+                       "[asm-dump]   %d %s mn=%s reads=0x%x writes=0x%x sr_r=0x%x sr_w=0x%x\n",
+                       i, flags,
+                       in->mnemonic ? in->mnemonic : "(none)",
+                       (unsigned)in->reads, (unsigned)in->writes,
+                       (unsigned)in->reads_sreg,
+                       (unsigned)in->writes_sreg);
+                fprint(stderr, "[asm-dump]     src: %s",
+                       in->src_text);
+                if (in->src_text[0]
+                    && in->src_text[strlen(in->src_text) - 1] != '\n')
+                        fprint(stderr, "\n");
+        }
 }
 
 /* Return 1 if register `rN` is dead immediately after sh_lines[start]
