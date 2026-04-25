@@ -73,22 +73,33 @@ void FUN_06044060(int p1, int p2, int p3, int p4)
   FUN_06044D80(p1 + 0x30);
   if (*(char *)0x06054925 != '\0') {
     /* Prod constructs -0x10000/0x10000/0x10000 inline via
-     * mov #1, shll16, neg — no pool loads. __asm emits this
-     * verbatim; the FUN_06044F30() call below then sees r5/r6/r7
-     * already set and makes the jsr. */
-    asm { mov #1, r6 }
-    asm { shll16 r6 }
-    asm { neg r6, r5 }
-    asm { mov r6, r7 }
+     * mov #1, shll16, neg — no pool loads. The asm block emits
+     * these verbatim; the FUN_06044F30() call below then sees
+     * r5/r6/r7 already set and makes the jsr.
+     *
+     * Note: the bare-signature `FUN_06044F30()` call is the
+     * lines-73-95 pattern flagged in
+     * saturn/workstreams/asm_shim_design.md §2a — it works only
+     * because nothing in the IR currently allocates over r5/r6/r7
+     * between the asm setup and the call. Stage 5 makes this a
+     * proper-signature call once the allocator honors asm-side
+     * register usage. */
+    asm {
+        mov #1, r6
+        shll16 r6
+        neg r6, r5
+        mov r6, r7
+    }
     FUN_06044F30();
   }
-  /* FUN_06044E3C: prod passes p2 as r5 (not r4). Skip C-level args and
-   * set r5 via __asm so the delay-slot filler picks it up. */
+  /* FUN_06044E3C: prod passes p2 as r5 (not r4). Skip C-level args
+   * and set r5 via asm so the delay-slot filler picks it up. */
   asm { mov r9, r5 }
   FUN_06044E3C();
-  /* FUN_060450F2 / FUN_06045006: r0-shim calling convention — arg in
-   * r0 instead of r4. Use __asm for the mov-to-r0; the compiler emits
-   * the call; delay-slot filler pulls our __asm into the delay slot. */
+  /* FUN_060450F2 / FUN_06045006: r0-shim calling convention — arg
+   * in r0 instead of r4. Use asm for the mov-to-r0; the compiler
+   * emits the call; delay-slot filler pulls the asm into the
+   * delay slot. */
   asm { mov r11, r0 }
   FUN_060450F2();
   asm { mov r10, r0 }
