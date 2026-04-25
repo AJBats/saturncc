@@ -484,6 +484,115 @@ else
 fi
 rm -f "$asm_out"
 
+# 4ad. asm { ... } statement-level construct (Session 1 of asm-shim
+# work). Same downstream codepath as __asm("...") — both build an
+# ASMB tree wrapping the raw text — but the construct captures the
+# block content verbatim instead of going through string-literal
+# escape processing. See saturn/workstreams/asm_shim_design.md and
+# src/lex.c lex_asm_body().
+cat > /tmp/regtest.c <<'EOF'
+int hello(int x) {
+    asm { mov r1, r2 }
+    return x + 1;
+}
+EOF
+asm_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
+ok=1
+grep -q '^	 mov r1, r2 $' "$asm_out" || ok=0   # body verbatim incl. surrounding spaces
+grep -q "\.rodata" "$asm_out" && ok=0
+grep -q "jsr" "$asm_out" && ok=0
+grep -q "@-r15" "$asm_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: asm { ... } statement emits captured text verbatim"
+else
+    fail "regtest: asm { ... } statement output wrong — inspect $asm_out"
+fi
+rm -f "$asm_out"
+
+# 4ae. asm { ... } round-trip preservation: a multi-line block with
+# labels, comments, and pool entries inside a regular C function.
+# Each non-empty line of the body must appear in the output unmodified
+# (whitespace, indentation, comment chars all preserved). This is the
+# correctness invariant for prod-derived asm shims (Session 3 of the
+# asm-shim plan).
+cat > /tmp/regtest.c <<'EOF'
+int multi(int x) {
+    asm {
+        mov.l   LP0,r3
+        jsr     @r3
+        nop
+        ! a comment
+LP0:    .long   _target
+    }
+    return x;
+}
+EOF
+asm_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
+ok=1
+grep -qE '^[[:space:]]+mov\.l[[:space:]]+LP0,r3' "$asm_out" || ok=0
+grep -qE '^[[:space:]]+jsr[[:space:]]+@r3' "$asm_out" || ok=0
+grep -qE '^[[:space:]]+! a comment' "$asm_out" || ok=0
+grep -qE '^LP0:[[:space:]]+\.long[[:space:]]+_target' "$asm_out" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: asm { ... } round-trips multi-line content (labels, comments, pool)"
+else
+    fail "regtest: asm { ... } round-trip lost content — inspect $asm_out"
+fi
+rm -f "$asm_out"
+
+# 4af. Empty asm { } block emits no instructions and no error. The
+# backend's `\t%s\n` print produces only whitespace for an empty
+# body — asm_normalize.py drops that line from any diff. Regression
+# guard against parse errors on the degenerate case.
+cat > /tmp/regtest.c <<'EOF'
+int empty(int x) {
+    asm{}
+    return x;
+}
+EOF
+asm_out="$(mktemp)"
+asm_err="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>"$asm_err"; then
+    if [ ! -s "$asm_err" ]; then
+        pass "regtest: empty asm { } accepted, no diagnostic"
+    else
+        fail "regtest: empty asm { } emitted unexpected diagnostic — $(head -1 "$asm_err")"
+    fi
+else
+    fail "regtest: empty asm { } rejected (compiler crash or error)"
+fi
+rm -f "$asm_out" "$asm_err"
+
+# 4ag. File-scope asm-bodied function: `int foo() asm { ... }` parses
+# as a function definition with the asm block as the body. Session 1
+# only proves the parser; Session 2 will skip the prologue/epilogue
+# wrapping (naked emit) so the body byte-matches a prod slice.
+cat > /tmp/regtest.c <<'EOF'
+int FUN_test(int p1) asm {
+    sts.l   pr,@-r15
+    rts
+    nop
+}
+EOF
+asm_out="$(mktemp)"
+asm_err="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>"$asm_err"; then
+    ok=1
+    grep -q '^_FUN_test:' "$asm_out" || ok=0      # function label emitted
+    grep -qE '^[[:space:]]+sts\.l' "$asm_out" || ok=0   # body content present
+    [ ! -s "$asm_err" ] || ok=0                   # no diagnostics
+    if [ "$ok" = "1" ]; then
+        pass "regtest: file-scope asm-bodied function parses and emits body"
+    else
+        fail "regtest: file-scope asm-bodied function wrong — inspect $asm_out / $asm_err"
+    fi
+else
+    fail "regtest: file-scope asm-bodied function rejected (compiler crash)"
+fi
+rm -f "$asm_out" "$asm_err"
+
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
 #     (T)(((ulonglong)((longlong)a * (longlong)b)) >> 32)

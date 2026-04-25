@@ -4,6 +4,11 @@
 
 static char rcsid[] = "$Id$";
 
+/* `asm { ... }` keyword recognition is gated to the SH-2 target so
+ * other backends (alpha, mips, sparc, x86) see `asm` as an ordinary
+ * identifier. See saturn/workstreams/asm_shim_design.md section 4c. */
+extern Interface shIR;
+
 #define MAXTOKEN 32
 
 enum { BLANK=01,  NEWLINE=02, LETTER=04,
@@ -381,6 +386,13 @@ int gettok(void) {
 			&& !(map[rcp[3]]&(DIGIT|LETTER))) {
 				cp = rcp + 3;
 				return AUTO;
+			}
+			if (IR == &shIR
+			&&  rcp[0] == 's'
+			&&  rcp[1] == 'm'
+			&& !(map[rcp[2]]&(DIGIT|LETTER))) {
+				cp = rcp + 2;
+				return ASM;
 			}
 			goto id;
 		case 'b':
@@ -925,4 +937,105 @@ static int backslash(int q) {
 			warning("unrecognized character escape sequence `\\%c'\n", cp[-1]);
 	}
 	return cp[-1];
+}
+
+/* Slurp the raw text of an `asm { ... }` block. Caller has already
+ * consumed the ASM keyword token; cp points at whatever follows it.
+ * We skip leading whitespace, expect `{`, then capture characters
+ * verbatim until the matching `}` at depth 0 — including newlines,
+ * tabs, and comment characters. The captured text is returned as a
+ * stringn-managed buffer (permanent storage). cp ends positioned one
+ * past the closing `}`; the caller calls gettok() to advance t.
+ *
+ * Brace counting is defensive: SH-2 asm doesn't use `{`/`}` in
+ * operand syntax, so the first depth-0 `}` ends the block in
+ * practice. Newlines bump lineno via nextline() so error messages
+ * inside or after the block point at the right source line.
+ *
+ * Round-trip guarantee: leading/trailing whitespace inside the block
+ * is NOT stripped, escape sequences are NOT interpreted. The bytes
+ * in are the bytes out (modulo asm_normalize.py's cosmetic pass for
+ * diff comparison). See saturn/workstreams/asm_shim_design.md §4-§8. */
+char *lex_asm_body(void) {
+	int depth, n, cap;
+	char *buf, *result;
+
+	/* Skip whitespace and newlines between `asm` and `{`. We don't
+	 * call gettok() here because we don't want any tokenization of
+	 * what's inside the block; we drive cp manually. lineno is
+	 * bumped directly rather than via nextline() to avoid the
+	 * latter's side effects (whitespace skip, #pragma resync). */
+	for (;;) {
+		if (limit - cp < MAXTOKEN)
+			fillbuf();
+		if (cp >= limit)
+			break;
+		if (map[*cp] & BLANK) {
+			cp++;
+			continue;
+		}
+		if (map[*cp] & NEWLINE) {
+			cp++;
+			lineno++;
+			continue;
+		}
+		break;
+	}
+	if (cp >= limit || *cp != '{') {
+		error("`asm' expects `{' to start block\n");
+		return stringn("", 0);
+	}
+	cp++;  /* consume opening { */
+
+	cap = 256;
+	buf = allocate(cap, FUNC);
+	n = 0;
+	depth = 1;
+
+	while (depth > 0) {
+		if (limit - cp < MAXTOKEN)
+			fillbuf();
+		if (cp >= limit) {
+			error("unclosed `asm { ... }' block\n");
+			break;
+		}
+		if (*cp == '{') {
+			depth++;
+		} else if (*cp == '}') {
+			depth--;
+			if (depth == 0) {
+				cp++;  /* consume closing } */
+				break;
+			}
+		}
+		if (map[*cp] & NEWLINE) {
+			/* Capture the newline byte verbatim so the body
+			 * round-trips, then bump lineno. We deliberately do
+			 * NOT call nextline() here — it skips leading
+			 * whitespace on the next line, which would corrupt
+			 * the captured indentation. */
+			if (n + 1 >= cap) {
+				char *newbuf;
+				cap *= 2;
+				newbuf = allocate(cap, FUNC);
+				memcpy(newbuf, buf, n);
+				buf = newbuf;
+			}
+			buf[n++] = '\n';
+			cp++;
+			lineno++;
+			continue;
+		}
+		if (n + 1 >= cap) {
+			char *newbuf;
+			cap *= 2;
+			newbuf = allocate(cap, FUNC);
+			memcpy(newbuf, buf, n);
+			buf = newbuf;
+		}
+		buf[n++] = *cp++;
+	}
+
+	result = stringn(buf, n);
+	return result;
 }

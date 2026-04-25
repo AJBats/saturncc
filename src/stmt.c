@@ -170,6 +170,22 @@ void statement(int loop, Swtch swp, int lev) {
 					    break;
 
 	case '{':      compound(loop, swp, lev + 1); break;
+	case ASM:      {
+		       /* `asm { ... }` statement. The body is captured
+		        * verbatim by lex_asm_body(), wrapped in an ASMB
+		        * tree, and emitted into the codelist as a single
+		        * Gen entry. No trailing `;` per the design — the
+		        * closing `}` is the statement terminator. */
+		       char *text;
+		       Tree e;
+		       definept(NULL);
+		       text = lex_asm_body();
+		       e = asm_block(text);
+		       listnodes(e, 0, 0);
+		       walk(NULL, 0, 0);
+		       deallocate(STMT);
+		       t = gettok();
+		       } break;
 	case ';':      definept(NULL); t = gettok(); break;
 	case GOTO:     walk(NULL, 0, 0);
 		       definept(NULL);

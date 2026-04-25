@@ -461,6 +461,13 @@ extern void typeerror(int, Tree, Tree);
 extern void test(int tok, char set[]);
 extern void expect(int tok);
 extern void skipto(int tok, char set[]);
+
+/* asm { ... } construct: lexer slurps the raw block content from the
+ * input stream, expr.c turns it into an ASMB tree, decl.c hooks it as a
+ * file-scope function body. Round-trip guarantee: bytes-in == bytes-out.
+ * Only fires on the SH-2 target; other backends see `asm` as ID. */
+extern char *lex_asm_body(void);
+extern Tree asm_block(char *text);
 extern void error(const char *, ...);
 extern int fatal(const char *, const char *, int);
 extern void warning(const char *, ...);

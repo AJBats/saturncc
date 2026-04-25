@@ -402,16 +402,33 @@ static Tree postfix(Tree p) {
 			return p;
 		}
 }
+/* Build an ASMB+V tree node carrying TEXT as its raw asm body. The
+ * Symbol uses u.l.label == 0 as a sentinel (real labels from
+ * genlabel() start at 1); dag.c's listnodes() ASMB case decomposes
+ * this to a LABEL+V node so the backend emits the name verbatim at
+ * the correct position in the function body. Shared by both the
+ * legacy `__asm("...")` intrinsic and the new `asm { ... }`
+ * construct — same downstream codepath. */
+Tree asm_block(char *text) {
+	Symbol s;
+	Tree p;
+
+	NEW0(s, FUNC);
+	s->name = text;
+	s->u.l.label = 0;
+	s->scope = LABELS;
+	s->generated = 1;
+	p = tree(ASMB + V, voidtype, NULL, NULL);
+	p->u.sym = s;
+	return p;
+}
+
 /* Parse `__asm("literal-string")`. Entry: t == ID, token == "__asm".
  * We bypass the regular identifier/call pipeline entirely — no Symbol
  * for __asm is created, no string symbol (.rodata) is emitted, no
- * CALL/ARG nodes are built. The result is a Tree with op ASMB+V
- * whose u.sym carries the raw asm text in its ->name. See
- * dag.c's listnodes() ASMB case for the downstream handling. */
+ * CALL/ARG nodes are built. */
 static Tree asm_intrinsic(void) {
 	char *text;
-	Symbol s;
-	Tree p;
 
 	t = gettok();  /* consume __asm identifier */
 	if (t != '(') {
@@ -444,14 +461,7 @@ static Tree asm_intrinsic(void) {
 		return cnsttree(inttype, 0L);
 	}
 	t = gettok();  /* consume ) -- leave t at the token after */
-	NEW0(s, FUNC);
-	s->name = text;
-	s->u.l.label = 0;  /* sentinel: real labels from genlabel() start at 1 */
-	s->scope = LABELS;
-	s->generated = 1;
-	p = tree(ASMB + V, voidtype, NULL, NULL);
-	p->u.sym = s;
-	return p;
+	return asm_block(text);
 }
 
 static Tree primary(void) {
