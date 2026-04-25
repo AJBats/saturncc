@@ -456,40 +456,14 @@ else
 fi
 rm -f "$gr_out"
 
-# 4ac. CODEGEN: __asm("...") intrinsic emits the literal string
-# verbatim with no string-literal storage (.rodata), no pool entries
-# for a string-ptr or __asm extern, no jsr/arg-setup, and no
-# callee-saved promotion forced by a phantom call. The backend
-# prepends a single tab; asm_intrinsic() strips user-provided leading
-# whitespace so no double-tabs regardless of source style.
-# See src/expr.c asm_intrinsic() and src/dag.c listnodes() ASMB case.
-cat > /tmp/regtest.c <<'EOF'
-int hello(int x) {
-    __asm("nop");
-    return x + 1;
-}
-EOF
-asm_out="$(mktemp)"
-"$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
-ok=1
-grep -q $'^\tnop$' "$asm_out" || ok=0           # single tab + asm text
-grep -q "\.rodata" "$asm_out" && ok=0           # no .rodata pollution
-grep -q "___asm" "$asm_out" && ok=0             # no extern __asm symbol
-grep -q "jsr" "$asm_out" && ok=0                # no jsr at all (pure leaf)
-grep -q "@-r15" "$asm_out" && ok=0              # no callee-saved push
-if [ "$ok" = "1" ]; then
-    pass "regtest: __asm(\"...\") emits raw text with no pool/rodata/call"
-else
-    fail "regtest: __asm intrinsic polluted the output — inspect $asm_out"
-fi
-rm -f "$asm_out"
+# (4ac removed — `__asm("...")` retired in asm-shim Stage 2; the
+#  asm{}-form regtest 4ad covers the equivalent canonical-emit case.)
 
-# 4ad. asm { ... } statement-level construct (Session 1 of asm-shim
-# work). Same downstream codepath as __asm("...") — both build an
-# ASMB tree wrapping the raw text — but the construct captures the
-# block content verbatim instead of going through string-literal
-# escape processing. See saturn/workstreams/asm_shim_design.md and
-# src/lex.c lex_asm_body().
+# 4ad. asm { ... } statement-level construct, canonical emit.
+# Stage 2 of asm-shim parses the block and re-emits in the same
+# `\t<mn>\t<ops>\n` layout C-derived emit produces. Source whitespace
+# is discarded (assembled-byte equivalence is preserved; the SH-2
+# assembler is whitespace-blind for instruction tokens).
 cat > /tmp/regtest.c <<'EOF'
 int hello(int x) {
     asm { mov r1, r2 }
@@ -499,23 +473,21 @@ EOF
 asm_out="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
 ok=1
-grep -q '^	 mov r1, r2 $' "$asm_out" || ok=0   # body verbatim incl. surrounding spaces
+grep -qE $'^\tmov\tr1,r2$' "$asm_out" || ok=0    # canonical: tab-mn-tab-ops
 grep -q "\.rodata" "$asm_out" && ok=0
 grep -q "jsr" "$asm_out" && ok=0
 grep -q "@-r15" "$asm_out" && ok=0
 if [ "$ok" = "1" ]; then
-    pass "regtest: asm { ... } statement emits captured text verbatim"
+    pass "regtest: asm { ... } statement canonical emit"
 else
     fail "regtest: asm { ... } statement output wrong — inspect $asm_out"
 fi
 rm -f "$asm_out"
 
-# 4ae. asm { ... } round-trip preservation: a multi-line block with
-# labels, comments, and pool entries inside a regular C function.
-# Each non-empty line of the body must appear in the output unmodified
-# (whitespace, indentation, comment chars all preserved). This is the
-# correctness invariant for prod-derived asm shims (Session 3 of the
-# asm-shim plan).
+# 4ae. asm { ... } multi-line block — canonical emit preserves each
+# instruction's mnemonic + operands but normalizes whitespace. Pool
+# entries (`.long`) are kept; whole-line comments are dropped (they
+# don't assemble; canonical emit drops decorative whitespace).
 cat > /tmp/regtest.c <<'EOF'
 int multi(int x) {
     asm {
@@ -531,14 +503,15 @@ EOF
 asm_out="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
 ok=1
-grep -qE '^[[:space:]]+mov\.l[[:space:]]+LP0,r3' "$asm_out" || ok=0
-grep -qE '^[[:space:]]+jsr[[:space:]]+@r3' "$asm_out" || ok=0
-grep -qE '^[[:space:]]+! a comment' "$asm_out" || ok=0
+grep -qE $'^\tmov\\.l\tLP0,r3$' "$asm_out" || ok=0
+grep -qE $'^\tjsr\t@r3$' "$asm_out" || ok=0
 grep -qE '^LP0:[[:space:]]+\.long[[:space:]]+_target' "$asm_out" || ok=0
+# The whole-line comment is dropped by canonical emit (intentional).
+grep -qE '^[[:space:]]+! a comment' "$asm_out" && ok=0
 if [ "$ok" = "1" ]; then
-    pass "regtest: asm { ... } round-trips multi-line content (labels, comments, pool)"
+    pass "regtest: asm { ... } multi-line canonical emit (instructions + pool kept, comments dropped)"
 else
-    fail "regtest: asm { ... } round-trip lost content — inspect $asm_out"
+    fail "regtest: asm { ... } multi-line canonical emit wrong — inspect $asm_out"
 fi
 rm -f "$asm_out"
 
@@ -593,28 +566,11 @@ else
 fi
 rm -f "$asm_out" "$asm_err"
 
-# 4ah. Parser round-trip (Stage 1 of asm-shim work).
-# sh_parse_asm_text captures each line's src_text exactly. The
-# -d-asm dump prints `[asm-dump]     src: <src_text>` for each
-# parsed insn. Round-trip means the extracted src_text concatenated
-# matches the original block content.
-cat > /tmp/regtest.c <<'EOF'
-int test(int x) {
-    asm { mov r1, r2 }
-    return x;
-}
-EOF
-asm_dump="$(mktemp)"
-"$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
-if grep -q '^\[asm-dump\]     src:  mov r1, r2 $' "$asm_dump"; then
-    pass "regtest: asm parser round-trips line content via src_text"
-else
-    fail "regtest: asm parser round-trip failed — inspect $asm_dump"
-fi
-rm -f "$asm_dump"
-
 # 4ai. Parser destination detection — every write category in
-# sh_p_apply_kind must produce the right writes mask.
+# sh_p_apply_kind must produce the right writes mask. -d-asm prints
+# one [asm-emit] line per parsed insn at emit time:
+#   [asm-emit] [<flags>] mn=<name> reads=0x<m> writes=0x<m> sr_r=... sr_w=...
+#
 #   mov r4, r5      → writes r5 = 0x20
 #   add #1, r0      → writes r0 = 0x1
 #   mov.l @r4+, r3  → writes r3+r4 (post-inc base) = 0x18
@@ -637,12 +593,12 @@ EOF
 asm_dump="$(mktemp)"
 "$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
 ok=1
-grep -qE 'mn=mov reads=0x10 writes=0x20' "$asm_dump" || ok=0
-grep -qE 'mn=add reads=0x1 writes=0x1' "$asm_dump" || ok=0
-grep -qE 'mn=mov\.l reads=0x10 writes=0x18' "$asm_dump" || ok=0
-grep -qE 'mn=sts\.l reads=0x8000 writes=0x8000 sr_r=0x1' "$asm_dump" || ok=0
-grep -qE '\[BC\] mn=jsr reads=0x40 writes=0x0 sr_r=0x0 sr_w=0x1' "$asm_dump" || ok=0
-grep -qE 'mn=dt reads=0x20 writes=0x20 sr_r=0x0 sr_w=0x40' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=mov reads=0x10 writes=0x20' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=add reads=0x1 writes=0x1' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=mov\.l reads=0x10 writes=0x18' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=sts\.l reads=0x8000 writes=0x8000 sr_r=0x1' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[BC\] mn=jsr reads=0x40 writes=0x0 sr_r=0x0 sr_w=0x1' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=dt reads=0x20 writes=0x20 sr_r=0x0 sr_w=0x40' "$asm_dump" || ok=0
 if [ "$ok" = "1" ]; then
     pass "regtest: asm parser destination detection per write-category"
 else
@@ -651,9 +607,9 @@ fi
 rm -f "$asm_dump"
 
 # 4aj. Conservative-on-unknown: a deliberately bad mnemonic must
-# get is_unknown=1 and reads/writes default to 0xffff so any
-# downstream analysis sees it as "could clobber anything." False-
-# clean answers would silently break byte-match.
+# get is_unknown=1 (U flag in the dump) and reads/writes default to
+# 0xffff so any downstream analysis sees it as "could clobber
+# anything." False-clean answers would silently break byte-match.
 cat > /tmp/regtest.c <<'EOF'
 int test(int x) {
     asm {
@@ -666,7 +622,7 @@ int test(int x) {
 EOF
 asm_dump="$(mktemp)"
 "$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
-if grep -qE '\[U\] mn=zzzfake reads=0xffff writes=0xffff' "$asm_dump"; then
+if grep -qE '\[asm-emit\] \[U\] mn=zzzfake reads=0xffff writes=0xffff' "$asm_dump"; then
     pass "regtest: asm parser conservative on unknown mnemonic"
 else
     fail "regtest: asm parser unknown-mnemonic handling wrong — inspect $asm_dump"

@@ -20,22 +20,22 @@ _FUN_06044060:
 	mov.b	@r0,r0
 	tst	r0,r0
 	bt	L2
-	mov #1, r6
-	shll16 r6
-	neg r6, r5
+	mov	#1,r6
+	shll16	r6
+	neg	r6,r5
 	mov.l	L2346,r3
 	jsr	@r3
-	mov r6, r7
+	mov	r6,r7
 L2:
 	mov.l	L2347,r3
 	jsr	@r3
-	mov r9, r5
+	mov	r9,r5
 	mov.l	L2348,r3
 	jsr	@r3
-	mov r11, r0
+	mov	r11,r0
 	mov.l	L2349,r3
 	jsr	@r3
-	mov r10, r0
+	mov	r10,r0
 	mov	r8,r4
 	add	#48,r4
 	mov.l	L2350,r5

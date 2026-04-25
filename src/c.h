@@ -325,12 +325,15 @@ enum {
 	COND=41<<4,
 	RIGHT=42<<4,
 	FIELD=43<<4,
-	/* ASMB: parser-only opcode for the __asm("...") intrinsic.
-	 * Carries the raw asm text on its tree's u.sym->name. Decomposed
-	 * in dag.c's listnodes() into a LABEL+V node so the backend can
-	 * emit the text verbatim at the correct position in the function
-	 * body. Never reaches the backend as ASMB — same parser-only
-	 * pattern as AND/OR/COND above. */
+	/* ASMB: parser-only opcode for the `asm { ... }` construct.
+	 * Carries the raw asm text on its tree's u.sym->name. The
+	 * Symbol's Xsymbol may also carry a parsed body (set by
+	 * expr.c's asm_block() via the IR->x.parse_asm hook).
+	 * Decomposed in dag.c's listnodes() into either N ASM_INSN+V
+	 * Nodes (when a parsed body is present) or one legacy
+	 * LABEL+V node (raw-text fallback). Never reaches the
+	 * backend as ASMB — same parser-only pattern as AND/OR/COND
+	 * above. See saturn/workstreams/asm_shim_design.md. */
 	ASMB=44<<4
 };
 struct type {

@@ -1,4 +1,12 @@
 /* $Id$ */
+
+/* Forward decls of the SH-side parsed-asm types. Defined in sh.md.
+ * Other backends never construct or consume these; the pointers live
+ * here as opaque types so c.h's Xinterface / Xsymbol can carry them.
+ * See saturn/workstreams/asm_shim_design.md §5a-§5b. */
+struct sh_asm_body;
+struct sh_asm_insn;
+
 typedef struct {
 	unsigned char max_unaligned_load;
 	Symbol (*rmap)(int);
@@ -34,6 +42,15 @@ typedef struct {
 	 * IR->function() (e.g. IPA defer queues holding Code linked lists
 	 * and Node DAGs) set this. See saturn/workstreams/ipa_design.md. */
 	unsigned retain_func_arena:1;
+	/* parse_asm: optional backend hook for parsing the captured text
+	 * of an `asm { ... }` block into a structured instruction list.
+	 * SH fills this in with sh_parse_asm_text; backends without an
+	 * asm parser leave it null (the asm body falls back to the
+	 * legacy text-blob emit path). expr.c's asm_block() invokes
+	 * this hook at tree-build time and stashes the result via
+	 * Xsymbol on the ASMB tree node's Symbol. See
+	 * saturn/workstreams/asm_shim_design.md §5a. */
+	struct sh_asm_body *(*parse_asm)(const char *text);
 } Xinterface;
 extern int     askregvar(Symbol, Symbol);
 extern void    blkcopy(int, int, int, int, int, int[]);
@@ -92,6 +109,20 @@ typedef struct {
 	int usecount;
 	Regnode regnode;
 	Symbol *wildcard;
+	/* asm_body: parsed `asm { ... }` block attached to the Symbol
+	 * that the ASMB tree node carries. Set by expr.c's asm_block()
+	 * via the IR->x.parse_asm hook (SH only); listnodes() ASMB
+	 * lowering reads it to produce N ASM_INSN Nodes. NULL on
+	 * Symbols that aren't asm-block carriers, and on backends that
+	 * leave parse_asm null. */
+	struct sh_asm_body *asm_body;
+	/* asm_insn: per-instruction parsed record attached to the
+	 * Symbol on each ASM_INSN+V Node. Read by emit2's ASM_INSN
+	 * case to canonically re-format; queried by analysis passes
+	 * (Stage 3+) for reads/writes masks. The record's storage
+	 * lives in the parent sh_asm_body's insn array; ASM_INSN
+	 * Symbols hold a pointer into that array. */
+	struct sh_asm_insn *asm_insn;
 } Xsymbol;
 enum { RX=2 };
 typedef struct {

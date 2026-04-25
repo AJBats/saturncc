@@ -79,13 +79,82 @@ struct sh_ipa_fn;  /* forward: full defn lower, with the queue globals */
 static void function(Symbol, Symbol[], Symbol[], int);
 static void sh_process_deferred_fn(struct sh_ipa_fn *e);
 
-/* Stage 1 asm-shim parser — forward decls. The full definitions
- * live in the line-level helper section near sh_regs_used. emit2's
- * LABEL+V case calls these under -d-asm. */
-struct sh_asm_body;
+/* asm-shim parser + emitter — type definitions and forward decls.
+ * Full implementations live in the line-level helper section near
+ * sh_regs_used. The structs sit here (rather than next to the
+ * implementations) because emit2's ASM_INSN+V case dereferences
+ * sh_asm_insn fields and emit2 lives upstream of the helpers in
+ * the source. See saturn/workstreams/asm_shim_design.md §4-§5. */
+enum sh_operand_kind {
+        SH_OP_NONE = 0,
+        SH_OP_REG,        /* r0..r15 */
+        SH_OP_SREG,       /* pr, gbr, vbr, sr, mach, macl, t */
+        SH_OP_IMM,        /* #imm or bare number (directive arg) */
+        SH_OP_MEM,        /* @rN family — see sh_mem_mode */
+        SH_OP_LABEL       /* bare identifier — branch target, pool sym */
+};
+
+enum sh_mem_mode {
+        SH_MEM_NONE = 0,
+        SH_MEM_INDIR,     /* @rN */
+        SH_MEM_PREDEC,    /* @-rN */
+        SH_MEM_POSTINC,   /* @rN+ */
+        SH_MEM_DISP,      /* @(disp,rN) */
+        SH_MEM_R0IDX,     /* @(R0,rN) */
+        SH_MEM_GBRDISP,   /* @(disp,GBR) */
+        SH_MEM_PCDISP     /* @(disp,PC) */
+};
+
+enum sh_sreg_id {
+        SH_SR_PR = 0, SH_SR_GBR, SH_SR_VBR, SH_SR_SR,
+        SH_SR_MACH, SH_SR_MACL, SH_SR_T,
+        SH_SR_COUNT
+};
+
+struct sh_operand {
+        enum sh_operand_kind kind;
+        int reg;                  /* SH_OP_REG, SH_OP_MEM: base/only reg */
+        enum sh_sreg_id sreg;     /* SH_OP_SREG */
+        long imm;                 /* SH_OP_IMM, SH_OP_MEM disp */
+        char *label;              /* SH_OP_LABEL: stringn'd; also for
+                                   *   #LABEL imm */
+        enum sh_mem_mode mem_mode;
+};
+
+struct sh_asm_insn {
+        char *src_text;       /* original line for diagnostics; emit
+                               * does not read this in Stage 2+. */
+        char *mnemonic;       /* canonicalized; NULL on parse failure */
+        int n_operands;
+        struct sh_operand operands[3];
+
+        unsigned reads;       /* GP regs read (bit N = rN) */
+        unsigned writes;      /* GP regs written */
+        unsigned reads_sreg;  /* bitmask indexed by enum sh_sreg_id */
+        unsigned writes_sreg;
+        unsigned char is_branch;
+        unsigned char is_call;
+        unsigned char is_directive;
+        unsigned char is_label;
+        unsigned char is_comment;
+        unsigned char is_unknown;
+        int line_no;
+};
+
+struct sh_asm_body {
+        struct sh_asm_insn *insns;
+        int n_insns;
+        int n_capacity;
+        char *raw_text;
+};
+
 struct sh_asm_body *sh_parse_asm_text(const char *text);
 static void sh_dump_asm_body(const struct sh_asm_body *body,
                              const char *label);
+static void sh_emit_asm_insn(const struct sh_asm_insn *in);
+int sh_asm_body_n_insns(struct sh_asm_body *body);
+struct sh_asm_insn *sh_asm_body_insn(struct sh_asm_body *body, int i);
+char *sh_asm_insn_src_text(struct sh_asm_insn *in);
 static void sh_drain_ipa_queue(void);
 static void global(Symbol);
 static void import(Symbol);
@@ -497,6 +566,8 @@ static int sh_disp_cost(Node a, int sz);
 
 %term LABELV=600
 
+%term ASM_INSNV=728
+
 %term LOADB=233
 %term LOADF4=4321
 %term LOADF8=8417
@@ -902,6 +973,8 @@ reg:  CVUI1(reg)  "# truncate\n"  1
 reg:  CVUI2(reg)  "# truncate\n"  1
 
 stmt: LABELV  "#\n"
+
+stmt: ASM_INSNV  "#\n"
 
 jtarget: ADDRGP4  "%a"
 stmt: JUMPV(jtarget)  "\tbra\t%0\n\tnop\n"  2
@@ -1889,27 +1962,57 @@ static void emit2(Node p) {
         case LABEL+V: {
                 /* Two flavors of LABEL+V reach us: normal labels
                  * (u.l.label >= 1, from genlabel()) emit as `Lnn:`,
-                 * and the __asm("...") intrinsic's pseudo-label
-                 * (u.l.label == 0, from expr.c's asm_intrinsic())
-                 * emits the symbol's name with a single leading
-                 * tab. asm_intrinsic() strips user-provided leading
-                 * whitespace so the user writes just the instruction
-                 * text — `__asm("mov #1, r6")` — without the
-                 * character-escape noise of `"\tmov\t#1,r6"`. */
+                 * and the legacy asm-fallback pseudo-label
+                 * (u.l.label == 0) emits the symbol's name with a
+                 * single leading tab. The asm-shim Stage 2 path
+                 * uses ASM_INSN+V Nodes instead; LABEL+V with
+                 * sentinel only fires when a parsed asm body
+                 * isn't present (e.g., a backend with no parser,
+                 * or a future path that constructs ASMB without
+                 * going through asm_block's hook). */
                 Symbol ls = p->syms[0];
                 if (ls->u.l.label == 0) {
-                        if (sh_dflag_asm) {
-                                /* Stage 1: parse the asm text and dump
-                                 * for inspection. Result discarded;
-                                 * Stage 2 will wire it into the IR. */
-                                struct sh_asm_body *parsed =
-                                        sh_parse_asm_text(ls->name);
-                                sh_dump_asm_body(parsed,
-                                        cfunc ? cfunc->name : NULL);
-                        }
+                        /* Legacy fallback: print captured text raw
+                         * with one tab. */
                         print("\t%s\n", ls->name);
                 } else
                         print("%s:\n", ls->x.name);
+                break;
+                }
+        case ASM_INSN+V: {
+                /* asm-shim Stage 2: canonical re-emit from the parsed
+                 * insn record. One uniform `\t<mn>\t<ops>\n` layout
+                 * for every asm-derived line. Source whitespace is
+                 * discarded; assembled-byte equivalence is preserved
+                 * (same instruction, same operands, same encoding).
+                 * See saturn/workstreams/asm_shim_design.md §5c. */
+                Symbol ls = p->syms[0];
+                struct sh_asm_insn *in = ls->x.asm_insn;
+                if (sh_dflag_asm) {
+                        /* Per-insn dump for regtest greppability.
+                         * Flags: B=branch C=call D=directive L=label
+                         * M=comment U=unknown. */
+                        char flags[16];
+                        int fl = 0;
+                        flags[fl++] = '[';
+                        if (in->is_branch)    flags[fl++] = 'B';
+                        if (in->is_call)      flags[fl++] = 'C';
+                        if (in->is_directive) flags[fl++] = 'D';
+                        if (in->is_label)     flags[fl++] = 'L';
+                        if (in->is_comment)   flags[fl++] = 'M';
+                        if (in->is_unknown)   flags[fl++] = 'U';
+                        flags[fl++] = ']';
+                        flags[fl] = 0;
+                        fprint(stderr,
+                               "[asm-emit] %s mn=%s reads=0x%x writes=0x%x sr_r=0x%x sr_w=0x%x\n",
+                               flags,
+                               in->mnemonic ? in->mnemonic : "(none)",
+                               (unsigned)in->reads,
+                               (unsigned)in->writes,
+                               (unsigned)in->reads_sreg,
+                               (unsigned)in->writes_sreg);
+                }
+                sh_emit_asm_insn(in);
                 break;
                 }
         case CNST+I: case CNST+U: {
@@ -2648,70 +2751,6 @@ static int sh_reads_reg(const char *line, int rN) {
  * default to "this line could clobber anything" rather than
  * silently underreporting and breaking byte-match.
  * ────────────────────────────────────────────────────────── */
-
-enum sh_operand_kind {
-        SH_OP_NONE = 0,
-        SH_OP_REG,        /* r0..r15 */
-        SH_OP_SREG,       /* pr, gbr, vbr, sr, mach, macl, t */
-        SH_OP_IMM,        /* #imm or bare number (directive arg) */
-        SH_OP_MEM,        /* @rN family — see sh_mem_mode */
-        SH_OP_LABEL       /* bare identifier — branch target, pool sym */
-};
-
-enum sh_mem_mode {
-        SH_MEM_NONE = 0,
-        SH_MEM_INDIR,     /* @rN */
-        SH_MEM_PREDEC,    /* @-rN */
-        SH_MEM_POSTINC,   /* @rN+ */
-        SH_MEM_DISP,      /* @(disp,rN) */
-        SH_MEM_R0IDX,     /* @(R0,rN) */
-        SH_MEM_GBRDISP,   /* @(disp,GBR) */
-        SH_MEM_PCDISP     /* @(disp,PC) */
-};
-
-enum sh_sreg_id {
-        SH_SR_PR = 0, SH_SR_GBR, SH_SR_VBR, SH_SR_SR,
-        SH_SR_MACH, SH_SR_MACL, SH_SR_T,
-        SH_SR_COUNT
-};
-
-struct sh_operand {
-        enum sh_operand_kind kind;
-        int reg;                  /* SH_OP_REG, SH_OP_MEM: base/only reg */
-        enum sh_sreg_id sreg;     /* SH_OP_SREG */
-        long imm;                 /* SH_OP_IMM, SH_OP_MEM disp */
-        char *label;              /* SH_OP_LABEL: stringn'd; also for
-                                   *   #LABEL imm */
-        enum sh_mem_mode mem_mode;
-};
-
-struct sh_asm_insn {
-        char *src_text;       /* the original line, including trailing
-                               * newline if present. Round-trip
-                               * handle. */
-        char *mnemonic;       /* canonicalized; NULL on parse failure */
-        int n_operands;
-        struct sh_operand operands[3];
-
-        unsigned reads;       /* GP regs read (bit N = rN) */
-        unsigned writes;      /* GP regs written */
-        unsigned reads_sreg;  /* bitmask indexed by enum sh_sreg_id */
-        unsigned writes_sreg;
-        unsigned char is_branch;
-        unsigned char is_call;
-        unsigned char is_directive;
-        unsigned char is_label;
-        unsigned char is_comment;
-        unsigned char is_unknown;
-        int line_no;
-};
-
-struct sh_asm_body {
-        struct sh_asm_insn *insns;
-        int n_insns;
-        int n_capacity;
-        char *raw_text;
-};
 
 /* ── parser tokenizer helpers ─────────────────────────── */
 
@@ -3549,6 +3588,21 @@ static void sh_parse_one_line(struct sh_asm_insn *insn,
 
 /* ── public API ───────────────────────────────────────── */
 
+/* Accessors for dag.c — let target-agnostic code walk the parsed
+ * body without seeing the opaque struct internals. */
+int sh_asm_body_n_insns(struct sh_asm_body *body) {
+        return body ? body->n_insns : 0;
+}
+
+struct sh_asm_insn *sh_asm_body_insn(struct sh_asm_body *body, int i) {
+        if (!body || i < 0 || i >= body->n_insns) return NULL;
+        return &body->insns[i];
+}
+
+char *sh_asm_insn_src_text(struct sh_asm_insn *in) {
+        return in ? in->src_text : NULL;
+}
+
 struct sh_asm_body *sh_parse_asm_text(const char *text) {
         struct sh_asm_body *body;
         const char *p = text;
@@ -3601,6 +3655,144 @@ struct sh_asm_body *sh_parse_asm_text(const char *text) {
                 }
         }
         return body;
+}
+
+/* ── canonical emit (Stage 2) ─────────────────────────
+ *
+ * Re-format a parsed instruction in the same `\t<mn>\t<ops>\n`
+ * layout C-derived emit produces. Source whitespace is discarded;
+ * the assembled .o bytes are unchanged because the SH-2 assembler
+ * doesn't care about whitespace within the instruction.
+ *
+ * Operand printers below produce the canonical form for each
+ * operand kind. Comments / blank lines / labels emit their
+ * original src_text (no canonical form for them). Directives emit
+ * `\t<directive>\t<operands>\n`.
+ * ──────────────────────────────────────────────────── */
+
+static const char *sh_sreg_name(enum sh_sreg_id id) {
+        switch (id) {
+        case SH_SR_PR:   return "pr";
+        case SH_SR_GBR:  return "gbr";
+        case SH_SR_VBR:  return "vbr";
+        case SH_SR_SR:   return "sr";
+        case SH_SR_MACH: return "mach";
+        case SH_SR_MACL: return "macl";
+        case SH_SR_T:    return "t";
+        default:         return "?";
+        }
+}
+
+static void sh_emit_operand(const struct sh_operand *op) {
+        switch (op->kind) {
+        case SH_OP_NONE:
+                break;
+        case SH_OP_REG:
+                print("r%d", op->reg);
+                break;
+        case SH_OP_SREG:
+                print("%s", sh_sreg_name(op->sreg));
+                break;
+        case SH_OP_IMM:
+                if (op->label)
+                        print("#%s", op->label);
+                else
+                        print("#%d", (int)op->imm);
+                break;
+        case SH_OP_LABEL:
+                print("%s", op->label ? op->label : "?");
+                break;
+        case SH_OP_MEM:
+                switch (op->mem_mode) {
+                case SH_MEM_INDIR:
+                        print("@r%d", op->reg);
+                        break;
+                case SH_MEM_PREDEC:
+                        print("@-r%d", op->reg);
+                        break;
+                case SH_MEM_POSTINC:
+                        print("@r%d+", op->reg);
+                        break;
+                case SH_MEM_DISP:
+                        print("@(%d,r%d)", (int)op->imm, op->reg);
+                        break;
+                case SH_MEM_R0IDX:
+                        print("@(r0,r%d)", op->reg);
+                        break;
+                case SH_MEM_GBRDISP:
+                        print("@(%d,gbr)", (int)op->imm);
+                        break;
+                case SH_MEM_PCDISP:
+                        print("@(%d,pc)", (int)op->imm);
+                        break;
+                default:
+                        print("@?");
+                        break;
+                }
+                break;
+        }
+}
+
+static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
+        int i;
+        if (!in) return;
+        if (in->is_comment) {
+                /* Blank or comment line — skip emission entirely.
+                 * The assembled output doesn't need decorative
+                 * whitespace from the source. */
+                return;
+        }
+        if (in->is_label && !in->is_directive) {
+                /* Standalone `LABEL:` line. */
+                print("%s:\n", in->mnemonic ? in->mnemonic : "?");
+                return;
+        }
+        if (in->is_directive) {
+                if (in->is_label) {
+                        /* `LABEL: .directive args` form. The Stage 1
+                         * parser only kept the directive name in
+                         * mnemonic; the original line label is in
+                         * src_text. Fall back to printing src_text
+                         * trimmed for these combined lines. */
+                        const char *s = in->src_text;
+                        while (*s == ' ' || *s == '\t') s++;
+                        print("%s", s);
+                        if (s[0] == 0
+                            || s[strlen(s) - 1] != '\n')
+                                print("\n");
+                        return;
+                }
+                print("\t%s", in->mnemonic ? in->mnemonic : "?");
+                if (in->n_operands > 0) {
+                        print("\t");
+                        for (i = 0; i < in->n_operands; i++) {
+                                if (i > 0) print(",");
+                                sh_emit_operand(&in->operands[i]);
+                        }
+                }
+                print("\n");
+                return;
+        }
+        if (in->is_unknown || !in->mnemonic) {
+                /* Unparseable line — fall back to the original
+                 * src_text so we don't drop content. */
+                const char *s = in->src_text;
+                while (*s == ' ' || *s == '\t') s++;
+                print("\t%s", s);
+                if (s[0] == 0 || s[strlen(s) - 1] != '\n')
+                        print("\n");
+                return;
+        }
+        /* Standard `\t<mn>\t<op1>,<op2>\n` form. */
+        print("\t%s", in->mnemonic);
+        if (in->n_operands > 0) {
+                print("\t");
+                for (i = 0; i < in->n_operands; i++) {
+                        if (i > 0) print(",");
+                        sh_emit_operand(&in->operands[i]);
+                }
+        }
+        print("\n");
 }
 
 /* Dump the parsed body to stderr in a stable, grep-friendly format
@@ -8592,5 +8784,7 @@ Interface shIR = {
                 1,  /* retain_func_arena: IPA Phase A.0 — keeps FUNC
                      * arena alive across functions so the defer queue
                      * can still reach Code lists at progend drain. */
+                sh_parse_asm_text,  /* parse_asm: Stage 2 of asm-shim
+                     * — see saturn/workstreams/asm_shim_design.md §5. */
         }
 };
