@@ -14,12 +14,12 @@ unchanged. Analysis sees structure; emit sees bytes.
 
 ## Handoff for next session
 
-**Status:** Stage 1 (parser + IR struct) is the active task. Sessions
-1's lexer/parser landed (commit `7975c40` on
-`asm-shim/session-1-lexer-parser`); statement-level and file-scope
-`asm { ... }` parse, the captured text round-trips through the lexer.
-That work stands — Stage 1 builds **on top of it**, parsing the
-already-captured text into per-instruction records.
+**Status:** Stage 1 (parser + IR struct) landed at commit `57e771a`.
+Stage 2 is the active task: wire the parser into the IR, switch to
+canonical `\t<mn>\t<ops>\n` emit, retire `__asm("...")`, mechanically
+migrate FUN_06044060.c. Stage 1's parser is a self-contained library
+(invoked under `-d-asm`, result discarded); Stage 2 plumbs it
+end-to-end.
 
 **The earlier scanner-based plan was retired in conversation.** A
 text-only `sh_asm_writes_reg` scanner would have answered one
@@ -118,10 +118,20 @@ engages, FUN_06044060's diff drops materially, and byte-match holds.
 with C. No parallel text scanners; one source of truth per analysis.
 This is the substance of the redesign.
 
-**D5 (round-trip via source-text):** each `sh_asm_insn` carries its
-original `src_text`. Emit prints `src_text` unmodified. Analysis
-queries the parsed fields; analysis never rewrites asm-derived
-records or their source text.
+**D5 (normalization round-trip):** the contract is **assembled-byte
+equivalence**, not source-text equivalence. The parser tokenizes the
+asm body and discards presentational whitespace (alignment, leading
+indent, trailing spaces). The emitter re-formats every asm
+instruction in the same canonical layout the C-derived emit already
+uses (`\t<mnemonic>\t<operands>\n`). Result: one uniform whitespace
+style across the entire `.s` file; downstream `asm_normalize.py`
+strips whitespace anyway; what matters is the assembled `.o` bytes
+match prod, which they do because the canonical form contains
+exactly the same instructions and operands as the input.
+
+`src_text` survives in `sh_asm_insn` as a **diagnostic field**
+(used by `-d-asm` dumps and for source-line context in error
+messages). Emit does not read it.
 
 **D6 (memory is not a constraint):** the host machine is not memory-
 bound. If denormalizing data (carrying both raw text and parsed
@@ -424,32 +434,99 @@ green:
 **Validation gate:** all 46 existing tests pass; 3 new regtests
 pass; output `.s` byte-identical to HEAD on the whole corpus.
 
-## 5. Stage 2: frontend wiring
+## 5. Stage 2: frontend wiring + canonical emit + retire `__asm`
 
-Lift the parsed `sh_asm_body` into the IR. The lexer's
-`lex_asm_body()` keeps returning text; `asm_block()` in `expr.c` (or
-a new SH-side hook) calls `sh_parse_asm_text()` and attaches the
-result to the ASMB tree node.
+Stage 2 absorbs the work that v1 deferred to Stage 7. By the end of
+this stage: `__asm("...")` is gone, all sites in FUN_06044060.c are
+rewritten to `asm { ... }`, and the IR carries parsed asm Nodes
+through to a canonical re-emission.
 
-`listnodes()` ASMB lowering is rewritten: instead of producing one
-LABEL+V Node carrying the full text, it produces **N Nodes — one
-per parsed instruction** — each with:
+### 5a. Frontend wiring
 
-  - `op = ASM_INSN+V` (new op code, parallel to LABEL+V)
-  - `syms[0]` → Symbol whose name is `insn->src_text`; backend
-    extension fields carry the parsed `sh_asm_insn` record.
-  - `kids = NULL`.
+The `Interface` struct (c.h) gains a backend-specific hook:
 
-The IPA queue entry's `code_head` already chains Code → Gen → Nodes;
-Stage 2 just makes the Node count match the instruction count.
+```c
+struct Xinterface {
+    ...
+    struct sh_asm_body *(*parse_asm)(const char *text);  /* nullable */
+};
+```
 
-`emit2`'s ASM_INSN+V case prints `\t%s\n` (or just `%s` if the
-src_text already has its leading whitespace) — same shape as today's
-LABEL+V for asm. Round-trip preserved.
+SH backend fills it in with `sh_parse_asm_text`; other backends
+leave it null.
 
-**Stage 2 validation gate:** output unchanged on every test (one
-LABEL+V producing N lines vs N ASM_INSN Nodes producing N lines is
-indistinguishable in `.s` text).
+`asm_block(text)` in expr.c calls `IR->x.parse_asm(text)` if non-
+null and stashes the result via `Xsymbol` on the ASMB tree node's
+Symbol. Other backends keep the legacy text-only path.
+
+### 5b. New op code + Node lowering
+
+  - `ASM_INSN+V` added to `ops.h`, parallel to `LABEL+V`.
+  - `listnodes()` ASMB lowering checks for an attached
+    `sh_asm_body`. If present, it walks the parsed insn list and
+    emits **one ASM_INSN Node per parsed instruction**, each with
+    `syms[0]` carrying that instruction's `sh_asm_insn` record (via
+    `Xsymbol`) plus `src_text` for diagnostic use.
+  - If no parsed body is attached (e.g., non-SH backend, or future
+    fallback), legacy LABEL+V emit still works.
+
+### 5c. Canonical emit
+
+`emit2`'s ASM_INSN+V case formats the parsed instruction in the
+**same canonical layout C-derived emit produces**:
+
+  - `\t<mnemonic>\t<operands>\n`
+  - Operands joined by `,` with no surrounding whitespace.
+  - Memory operands re-emitted in canonical form: `@rN`, `@-rN`,
+    `@rN+`, `@(N,rN)`, `@(R0,rN)`, `@(N,GBR)`, `@(N,PC)`.
+  - Immediates: `#N` (decimal) or `#0xN` (hex) — match what existing
+    C-derived emit chooses for a given value.
+  - Labels: bare label name, no decoration.
+  - Directives (`.long _foo`): `\t.long\t_foo\n`.
+  - Standalone label lines (`LP0:`): `LP0:\n`.
+
+Result: every line in the output `.s` uses the same whitespace
+convention regardless of whether it came from C codegen or asm
+parsing. Easier to string-match against prod `.s` (after both go
+through `asm_normalize.py`); downstream byte-match against `.o`
+is unaffected because the assembled bytes only depend on the
+instruction + operands, not the whitespace.
+
+**Why this is safe**: the SH-2 assembler treats
+`sts.l\tpr,@-r15`, `sts.l   pr, @-r15`, and `sts.l pr,@-r15` as the
+same instruction. The user-visible goal (byte-matching `.o` files)
+is invariant under this normalization.
+
+### 5d. Retire `__asm("...")` + migrate FUN_06044060.c
+
+  - Mechanically convert every `__asm("text")` call site in
+    `FUN_06044060.c` to `asm { text }`.
+  - Delete `asm_intrinsic()` from `src/expr.c` and its dispatch
+    from `primary()`.
+  - Delete the `__asm` regtest (4ac); replacement coverage is
+    already provided by 4ad–4ag.
+  - Update Session 1 regtests 4ad–4ag: their expected output
+    changes from "user's original whitespace verbatim" to
+    "canonical `\t<mn>\t<ops>\n`." Same content, different
+    formatting expectation.
+
+The bare-signature call pattern at FUN_06044060.c lines 73-95
+(`__asm` register setups followed by `FUN_06044F30()` with no args)
+**stays as-is** for Stage 2 — it just uses the new syntax. The
+structural fix (proper-signature calls + allocator awareness)
+lands in Stage 5.
+
+### 5e. Stage 2 validation gate
+
+  - All 49 existing tests still pass after regtest updates for
+    canonical-emit expectations.
+  - `__asm` symbol gone from the codebase (`grep __asm src/*.c
+    src/*.md` returns nothing functional).
+  - `FUN_06044060.c` builds clean and the TU byte-match metric is
+    stable (re-pin if canonical emit changes diff counts —
+    documented in the commit, not ignored).
+  - The IR pipeline plumbs parsed asm bodies end-to-end: Tree →
+    Node list (N ASM_INSN Nodes) → emit (N canonical lines).
 
 ## 6. Stage 3: Phase C writes_r4 from IR
 
@@ -535,44 +612,56 @@ genlabel'd `Lnnn:` labels in a different namespace.
 entries emits with no merge / collision. A mixed C+asm function with
 both pool sources emits both correctly.
 
-## 10. Stage 7: retire `__asm("...")` and migrate the corpus
+## 10. Stage 7: (absorbed into Stage 2)
 
-  - Mechanically convert all remaining `__asm("...")` sites in
-    FUN_06044060.c (and any other TU that's accumulated them) to
-    `asm { ... }`.
-  - Where the `__asm` was a register-arg setup before a bare-
-    signature call, replace with proper-signature C call.
-  - Delete `asm_intrinsic()` from `src/expr.c` and its dispatch
-    from `primary()`.
-  - Remove the `__asm("...") emits raw text...` regtest (4ac); the
-    replacement is the `asm { ... }` regtest already in place.
+The mechanical migration of `__asm("...")` sites to `asm { ... }`
+and deletion of `asm_intrinsic()` was originally Stage 7. Folded
+into Stage 2 (§5d) per design v3 conversation: doing it later means
+two emission paths coexist during transition (legacy raw-print for
+`__asm`, canonical for `asm{}`) — pulling the migration forward
+keeps the pipeline single-path from Stage 2 onward.
 
-**Stage 7 validation gate:** `__asm` intrinsic gone from the
-codebase; all tests still green; FUN_06044060.c is smaller and
-honest.
+The structural follow-up — converting bare-signature call patterns
+(`__asm("mov X, rN"); FUN_X();`) to proper-signature calls
+(`FUN_X(arg);`) — depends on Stage 5's allocator awareness and
+stays in Stage 5.
 
-## 11. Round-trip preservation invariant
+## 11. Normalization round-trip invariant
 
-Every stage upholds: for an asm-derived `sh_asm_insn`, emit
-prints `src_text` unmodified.
+The contract is **assembled-byte equivalence**, not source-text
+equivalence:
+
+  - For an asm-derived instruction with mnemonic M and operand
+    list (op1, ..., opN), the emitted line assembles to the same
+    bytes as the user-written input would have assembled to.
+  - Whitespace is canonicalized to the project's standard layout.
+    `asm_normalize.py` strips whitespace differences anyway; the
+    `.o` byte-match (the actual project goal) is whitespace-blind.
 
 Sources of potential drift to head off:
 
-  - **Lexer escape processing** — block content captured raw. (Done
-    in Session 1.)
-  - **Trailing-whitespace stripping** — don't.
-  - **Tab vs space normalization** — never at capture time.
-    `asm_normalize.py` handles cosmetic differences for diff
-    purposes; raw emit is faithful.
-  - **Pool-label rewrites** — we do label-renumbering across the
-    output for our own emitted code (genlabel'd `Lnnn:`). Asm-shim
-    pool labels are part of the shim's `src_text` — leave alone.
+  - **Operand-form drift**: `mov.l @r4, r3` and `mov.l @(0,r4), r3`
+    assemble to different bytes (different addressing modes). The
+    parser preserves the user's choice; the emitter prints the
+    SAME form. Don't auto-canonicalize `@(0,r4)` → `@r4` or vice
+    versa.
+  - **Immediate base drift**: `#16` and `#0x10` assemble to the
+    same byte; pick one form per emitted line. Default: print
+    decimal for small values, hex for typical-mask values
+    (mirroring how existing C-derived emit chooses).
+  - **Label rewrites**: don't rewrite labels embedded in asm bodies.
+    `LP0:` defined inside an `asm { ... }` is part of that block's
+    addressable contents; renumbering it (as the compiler's own
+    `genlabel` machinery does for C-derived labels) breaks
+    references inside the same block.
   - **Peephole rewrites of `sh_lines[]`** — asm-derived sh_lines
-    entries are tagged immutable. Peephole passes already test
-    `sh_lines[j][0] == 0` for killed lines; we add a parallel
-    "is from asm" mask that peephole respects.
+    entries are tagged immutable in Stage 5+. Peephole passes
+    already test `sh_lines[j][0] == 0` for killed lines; we add a
+    parallel "is from asm" mask that peephole respects.
 
-A regtest at every stage asserts this for a representative asm slice.
+A regtest at every stage asserts this for a representative asm slice
+(parse + emit → run through `sh-elf-as` → compare assembled bytes
+to a reference).
 
 ## 12. Sequencing & TODOs
 
@@ -597,16 +686,34 @@ to "next stage" without explicit agreement.**
   - [ ] **Validation gate:** `validate_build.sh` 46/46, plus 3 new
         Stage 1 regtests, output `.s` byte-identical to HEAD.
 
-### Stage 2 — frontend wiring
+### Stage 2 — frontend wiring + canonical emit + retire `__asm`
 
-  - [ ] `asm_block()` in expr.c (or SH-side hook) calls
-        `sh_parse_asm_text` at tree-build time.
-  - [ ] Parsed body attached to ASMB tree node.
-  - [ ] New `ASM_INSN+V` op code in c.h.
-  - [ ] `listnodes()` ASMB lowering produces N ASM_INSN Nodes
-        instead of one LABEL+V.
-  - [ ] `emit2` ASM_INSN+V case prints `src_text`.
-  - [ ] **Validation gate:** output unchanged.
+  - [ ] Add `IR->x.parse_asm` hook in c.h's `Xinterface`. SH fills
+        it in with `sh_parse_asm_text`; other backends leave it
+        null.
+  - [ ] `asm_block()` in expr.c calls the hook (if non-null) and
+        attaches the parsed body via `Xsymbol` on the ASMB tree
+        node's Symbol.
+  - [ ] New `ASM_INSN+V` op code in `ops.h`.
+  - [ ] `listnodes()` ASMB lowering: produces N ASM_INSN Nodes
+        when a parsed body is attached, one per insn. Each Node's
+        `syms[0]` carries the `sh_asm_insn` record (Xsymbol) +
+        diagnostic `src_text`.
+  - [ ] `emit2` ASM_INSN+V case: re-formats from the parsed insn
+        in canonical `\t<mn>\t<ops>\n` layout. Operand printers
+        for REG / SREG / IMM / MEM / LABEL.
+  - [ ] Delete `asm_intrinsic()` and its dispatch from `primary()`.
+  - [ ] Mechanical migration: convert all `__asm("...")` sites in
+        `FUN_06044060.c` to `asm { ... }` (one-to-one syntax swap).
+  - [ ] Update Session 1 regtests 4ad–4ag to expect canonical-
+        format output instead of user-original whitespace.
+  - [ ] Delete regtest 4ac (the `__asm` regtest) — replaced by
+        4ad–4ag.
+  - [ ] **Validation gate:** all tests pass post-update; `__asm`
+        symbol gone from the codebase; FUN_06044060 TU byte-match
+        re-pinned with documented diff (canonical emit may shift
+        whitespace-driven counts; the metric stays trustworthy
+        because both prod and ours go through `asm_normalize.py`).
 
 ### Stage 3 — Phase C writes_r4 from IR
 
@@ -646,15 +753,13 @@ to "next stage" without explicit agreement.**
   - [ ] **Validation gate:** new regtest passes; existing pool-
         emission regtests unchanged.
 
-### Stage 7 — retire `__asm("...")` + migrate corpus
+### Stage 7 — (absorbed into Stage 2)
 
-  - [ ] Convert all `__asm("...")` sites to `asm { ... }` (or to
-        proper-signature calls per Stage 5 where applicable).
-  - [ ] Delete `asm_intrinsic()` and dispatch.
-  - [ ] Replace regtest 4ac (the `__asm` regtest) — already
-        covered by 4ad–4ag.
-  - [ ] **Validation gate:** all tests green; `__asm` symbol gone
-        from the codebase.
+The mechanical `__asm("...")` retirement and FUN_06044060.c
+syntax migration are now part of Stage 2 (§5d). The structural
+follow-up — converting bare-signature call patterns to proper-
+signature calls — depends on Stage 5's allocator awareness and
+remains in Stage 5.
 
 ## 13. Out of scope (stays out)
 
