@@ -2804,6 +2804,30 @@ static void sh_fill_branch_delays(void) {
                         if (tgt_reg >= 0
                             && sh_writes_reg(sh_lines[k], tgt_reg))
                                 break;
+                        /* Reject k if it occupies another branch's
+                         * delay slot.  Stealing it un-fills the earlier
+                         * branch — and because the candidate-search
+                         * skips empty lines on output, the branch's
+                         * NEXT lexical neighbour silently slides into
+                         * the now-vacated slot position.  When that
+                         * neighbour is itself a branch (a `bra L` two
+                         * lines after a `jsr @r0` after the steal),
+                         * the emitted stream ends up with a branch in
+                         * a delay slot — illegal SH-2 per SH7604
+                         * §branch-instructions ("any branch, MOVA, or
+                         * TRAPA in a delay slot is forbidden"). */
+                        {
+                                int p, in_delay = 0;
+                                for (p = k - 1; p >= 0; p--) {
+                                        if (sh_lines[p][0] == 0)
+                                                continue;
+                                        if (sh_is_branch_line(sh_lines[p]))
+                                                in_delay = 1;
+                                        break;
+                                }
+                                if (in_delay)
+                                        break;
+                        }
                         cand = k;
                         break;
                 }

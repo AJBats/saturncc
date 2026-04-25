@@ -57,8 +57,9 @@ _FUN_06040EA0:
 	mov	r0,r5
 	mov.l	L20,r0
 	jsr	@r0
-	bra	L12
 	mov	#32,r6
+	bra	L12
+	nop
 L8:
 L6:
 	mov.l	@(48,gbr),r0

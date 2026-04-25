@@ -537,6 +537,89 @@ else
 fi
 rm -f "$sf_out"
 
+# 4t. IPA Phase E.1b: mechanism end-to-end — pinned p1 to r4 across
+# all helper calls, with the ADD mutation CSE'd to a single
+# `add #K, r4` that executes BEFORE both calls (in call 1's delay
+# slot or earlier). Exercises the full pipeline: Phase C writes_r4
+# analysis on leaf helpers, sh_ipa_all_callees_preserve_r4 predicate,
+# the pin engagement in param-homing, sh_ipa_apply_mutation_rewrite's
+# ASGN splice, and the running-delta CSE across calls 2..N.
+#
+# The test corpus has no natural trigger for this path: every
+# IPA-qualifying caller in race_FUN_06044060.c has an extern callee
+# that vetoes Phase C's predicate. A synthetic case is the only way
+# to gate the mechanism.
+#
+# KNOWN FAILURE: the delay-slot filler (sh_fill_branch_delays) chain-
+# moves the synthesized `add #16, r4` across both jsrs into the rts
+# delay slot, so both helper calls execute with the un-mutated p1.
+# A naive guard ("don't steal from any delay slot") regresses ~10
+# byte-matched functions that rely on chain-moves for prod-matching.
+# The correct fix is the subject of a separate investigation; this
+# test documents the gap mechanically so the fix lands with proof.
+cat > /tmp/regtest.c <<'EOF'
+void helper_a(int x) { }
+void helper_b(int x) { }
+void caller(int p1) {
+    helper_a(p1 + 16);
+    helper_b(p1 + 16);
+}
+EOF
+ipa_out="$(mktemp)"
+if ! "$RCC" -target=sh/hitachi /tmp/regtest.c "$ipa_out" 2>/dev/null; then
+    fail "regtest: IPA Phase E.1b mechanism end-to-end (compiler crash)"
+else
+    # Extract the caller's body: from _caller: until the next label.
+    # Note: helpers _helper_a / _helper_b emit before _caller in source-
+    # order drain, so the awk must arm `flag` only at _caller and stop
+    # at the next top-level `_<name>:` label. The earlier shorthand
+    # `flag; /^_[a-zA-Z]/{if(seen)exit; seen=1}` exited at _helper_b
+    # before flag was ever set, returning empty body.
+    caller_body="$(awk '
+        /^_caller:/ {flag=1; print; next}
+        flag && /^_[a-zA-Z][a-zA-Z0-9_]*:/ {exit}
+        flag {print}
+    ' "$ipa_out")"
+    # Count `add #16,r4` occurrences — CSE should collapse to one.
+    n_adds=$(printf '%s\n' "$caller_body" \
+             | grep -cE 'add[[:space:]]+#16,r4')
+    # The ADD must appear BEFORE the second jsr to affect it. Find
+    # line number of the add and the second jsr.
+    first_jsr_line=$(printf '%s\n' "$caller_body" \
+                     | grep -nE 'jsr[[:space:]]+@r' \
+                     | head -n1 | cut -d: -f1)
+    second_jsr_line=$(printf '%s\n' "$caller_body" \
+                      | grep -nE 'jsr[[:space:]]+@r' \
+                      | sed -n '2p' | cut -d: -f1)
+    add_line=$(printf '%s\n' "$caller_body" \
+               | grep -nE 'add[[:space:]]+#16,r4' \
+               | head -n1 | cut -d: -f1)
+    # No stash of p1 to a callee-saved register.
+    stash_present=0
+    printf '%s\n' "$caller_body" \
+        | grep -qE 'mov[[:space:]]+r4,r(8|9|1[0-4])' \
+        && stash_present=1
+    ok=1
+    [ "$n_adds" = "1" ] || ok=0
+    [ -n "$add_line" ] || ok=0
+    [ -n "$first_jsr_line" ] || ok=0
+    [ -n "$second_jsr_line" ] || ok=0
+    # The add must land at or before the SECOND jsr's position: a
+    # delay-slot position (one line after jsr 1) is fine, because the
+    # SH-2 delay slot executes before the branch jumps to the target.
+    if [ "$ok" = "1" ]; then
+        # add_line < second_jsr_line, AND
+        # (add_line <= first_jsr_line + 1) for call 1 to also see it.
+        [ "$add_line" -lt "$second_jsr_line" ] || ok=0
+        [ "$add_line" -le "$((first_jsr_line + 1))" ] || ok=0
+    fi
+    [ "$stash_present" = "0" ] || ok=0
+    [ "$ok" = "1" ] \
+        && pass "regtest: IPA Phase E.1b mechanism end-to-end" \
+        || fail "regtest: IPA Phase E.1b mechanism end-to-end (delay-slot filler chain-move; see validate_build.sh 4t)"
+fi
+rm -f "$ipa_out"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:
