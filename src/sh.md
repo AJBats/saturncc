@@ -3815,29 +3815,26 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                 return;
         }
         if (in->is_directive) {
+                /* Directives don't fit the SH-2 instruction operand
+                 * grammar. Forms like `.type X, @function` and
+                 * `.string "..."` have shapes the per-operand parser
+                 * can't represent without growing in unbounded
+                 * directions. Emit directives verbatim from src_text:
+                 * the assembler is the authority on operand syntax.
+                 *
+                 * Indent: bare directives get a leading tab
+                 * (assembler convention); LABEL-prefixed directive
+                 * lines start at column 0 (the label is its own
+                 * statement). */
+                const char *s = in->src_text;
+                while (*s == ' ' || *s == '\t') s++;
                 if (in->is_label) {
-                        /* `LABEL: .directive args` form. The Stage 1
-                         * parser only kept the directive name in
-                         * mnemonic; the original line label is in
-                         * src_text. Fall back to printing src_text
-                         * trimmed for these combined lines. */
-                        const char *s = in->src_text;
-                        while (*s == ' ' || *s == '\t') s++;
                         print("%s", s);
-                        if (s[0] == 0
-                            || s[strlen(s) - 1] != '\n')
-                                print("\n");
-                        return;
+                } else {
+                        print("\t%s", s);
                 }
-                print("\t%s", in->mnemonic ? in->mnemonic : "?");
-                if (in->n_operands > 0) {
-                        print("\t");
-                        for (i = 0; i < in->n_operands; i++) {
-                                if (i > 0) print(",");
-                                sh_emit_operand(&in->operands[i], 1);
-                        }
-                }
-                print("\n");
+                if (s[0] == 0 || s[strlen(s) - 1] != '\n')
+                        print("\n");
                 return;
         }
         if (in->is_unknown || !in->mnemonic) {

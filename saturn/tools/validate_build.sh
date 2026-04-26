@@ -900,11 +900,19 @@ else
 fi
 rm -f "$alloc_out"
 
-# 4x. asm-shim directive operands: `.byte 0x30, 0x00` and `.4byte 4`
-# must emit as bare numerics, NOT as instruction-style immediates
-# with `#` prefix. The SH-2 assembler rejects `.byte #48` —
-# discovered while bringing up the unity-build beachhead
-# (decomp/race/FUN_06029810 in the DaytonaCCEReverse tree).
+# 4x. asm-shim directive emission: directives (`.byte`, `.4byte`,
+# `.type`, etc.) must emit as bare verbatim text — not as
+# instruction-style operands. Two failure modes that motivated this
+# regtest:
+#   - `.byte 0x30, 0x00` previously emitted `.byte #48,#0` because
+#     SH_OP_IMM was unconditionally `#`-prefixed. sh-elf-as rejects
+#     `#` outside instruction immediate context.
+#   - `.type FUN_X, @function` previously dropped `@function`
+#     silently because `@<ident>` doesn't fit the SH-2 operand
+#     grammar. Assembler then rejects `.type` with no type expr.
+# The fix is upstream: directives emit from src_text verbatim, the
+# assembler is authority on operand syntax. Discovered while
+# bringing up the unity-build beachhead (decomp/race in CCE).
 cat > /tmp/regtest.c <<'EOF'
 int FUN_dir_ops(void) asm {
     rts
@@ -912,20 +920,23 @@ int FUN_dir_ops(void) asm {
 LP0:
     .byte   0x30, 0x00
     .4byte  4
+    .type   FUN_dir_ops, @function
 }
 EOF
 dir_out="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c "$dir_out" 2>/dev/null
 ok=1
-# Directive operands must be bare — no `#`.
-grep -qE $'^\t\\.byte\t48,0$' "$dir_out" || ok=0
-grep -qE $'^\t\\.4byte\t4$' "$dir_out" || ok=0
-# Negative: no `#` should appear in any directive line.
-grep -qE $'^\t\\.(byte|4byte|long|short|word)\t.*#' "$dir_out" && ok=0
+# All three directives must appear in the output, with their
+# operands intact.
+grep -qE '\.byte[[:space:]]+0x30,[[:space:]]*0x00' "$dir_out" || ok=0
+grep -qE '\.4byte[[:space:]]+4' "$dir_out" || ok=0
+grep -qE '\.type[[:space:]]+FUN_dir_ops,[[:space:]]*@function' "$dir_out" || ok=0
+# Negative: no `#` should appear on any directive line.
+grep -qE '^[[:space:]]+\.(byte|4byte|long|short|word|type)[[:space:]].*#' "$dir_out" && ok=0
 if [ "$ok" = "1" ]; then
-    pass "regtest: directive operands emit bare (no #)"
+    pass "regtest: directive emission is verbatim (no `#`, no operand drop)"
 else
-    fail "regtest: directive operands wrong — inspect $dir_out"
+    fail "regtest: directive emission wrong — inspect $dir_out"
 fi
 rm -f "$dir_out"
 
