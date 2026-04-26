@@ -3746,7 +3746,7 @@ static const char *sh_sreg_name(enum sh_sreg_id id) {
         }
 }
 
-static void sh_emit_operand(const struct sh_operand *op) {
+static void sh_emit_operand(const struct sh_operand *op, int as_directive) {
         switch (op->kind) {
         case SH_OP_NONE:
                 break;
@@ -3757,10 +3757,14 @@ static void sh_emit_operand(const struct sh_operand *op) {
                 print("%s", sh_sreg_name(op->sreg));
                 break;
         case SH_OP_IMM:
+                /* Directive operands (`.byte 0x30`, `.long 4`) print
+                 * as bare values — the SH-2 assembler rejects `#`
+                 * outside instruction immediate context. Instruction
+                 * operands (`mov #1, r3`) keep the `#` prefix. */
                 if (op->label)
-                        print("#%s", op->label);
+                        print(as_directive ? "%s" : "#%s", op->label);
                 else
-                        print("#%d", (int)op->imm);
+                        print(as_directive ? "%d" : "#%d", (int)op->imm);
                 break;
         case SH_OP_LABEL:
                 print("%s", op->label ? op->label : "?");
@@ -3830,7 +3834,7 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                         print("\t");
                         for (i = 0; i < in->n_operands; i++) {
                                 if (i > 0) print(",");
-                                sh_emit_operand(&in->operands[i]);
+                                sh_emit_operand(&in->operands[i], 1);
                         }
                 }
                 print("\n");
@@ -3852,7 +3856,7 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                 print("\t");
                 for (i = 0; i < in->n_operands; i++) {
                         if (i > 0) print(",");
-                        sh_emit_operand(&in->operands[i]);
+                        sh_emit_operand(&in->operands[i], 0);
                 }
         }
         print("\n");

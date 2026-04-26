@@ -900,6 +900,35 @@ else
 fi
 rm -f "$alloc_out"
 
+# 4x. asm-shim directive operands: `.byte 0x30, 0x00` and `.4byte 4`
+# must emit as bare numerics, NOT as instruction-style immediates
+# with `#` prefix. The SH-2 assembler rejects `.byte #48` —
+# discovered while bringing up the unity-build beachhead
+# (decomp/race/FUN_06029810 in the DaytonaCCEReverse tree).
+cat > /tmp/regtest.c <<'EOF'
+int FUN_dir_ops(void) asm {
+    rts
+    nop
+LP0:
+    .byte   0x30, 0x00
+    .4byte  4
+}
+EOF
+dir_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$dir_out" 2>/dev/null
+ok=1
+# Directive operands must be bare — no `#`.
+grep -qE $'^\t\\.byte\t48,0$' "$dir_out" || ok=0
+grep -qE $'^\t\\.4byte\t4$' "$dir_out" || ok=0
+# Negative: no `#` should appear in any directive line.
+grep -qE $'^\t\\.(byte|4byte|long|short|word)\t.*#' "$dir_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: directive operands emit bare (no #)"
+else
+    fail "regtest: directive operands wrong — inspect $dir_out"
+fi
+rm -f "$dir_out"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:
