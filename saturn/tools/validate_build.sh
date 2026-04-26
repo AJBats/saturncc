@@ -803,6 +803,54 @@ else
 fi
 rm -f "$ipa_d"
 
+# 4v. asm-shim Stage 4: a whole-function asm shim
+# (`int foo() asm { ... }`) emits as exactly its body content with
+# no prologue, no epilogue, no synthetic return, no compiler pool
+# entries. The body's own `rts` terminates flow. See
+# saturn/workstreams/asm_shim_design.md §7.
+cat > /tmp/regtest.c <<'EOF'
+int FUN_naked_shim(int p) asm {
+    sts.l   pr,@-r15
+    mov.l   LP0,r3
+    jsr     @r3
+    nop
+    rts
+    nop
+LP0:    .long   _some_target
+}
+EOF
+naked_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$naked_out" 2>/dev/null
+ok=1
+# Function label present.
+grep -qE '^_FUN_naked_shim:' "$naked_out" || ok=0
+# Body lines present in canonical form.
+grep -qE $'^\tsts\\.l\tpr,@-r15$' "$naked_out" || ok=0
+grep -qE $'^\tmov\\.l\tLP0,r3$' "$naked_out" || ok=0
+grep -qE $'^\tjsr\t@r3$' "$naked_out" || ok=0
+grep -qE '^LP0:[[:space:]]+\.long[[:space:]]+_some_target' "$naked_out" || ok=0
+# No prologue: no callee-saved push other than the body's sts.l pr.
+# Count `mov.l rN,@-r15` — should be ZERO (the body has no such push).
+n_pushes=$(grep -cE 'mov\.l[[:space:]]+r[0-9]+,@-r15' "$naked_out")
+[ "$n_pushes" = "0" ] || ok=0
+# No epilogue: no callee-saved pop. Count `mov.l @r15+,rN` — ZERO.
+n_pops=$(grep -cE 'mov\.l[[:space:]]+@r15\+,r[0-9]+' "$naked_out")
+[ "$n_pops" = "0" ] || ok=0
+# Exactly ONE rts (the body's own); a synthetic epilogue return
+# would add a second.
+n_rts=$(grep -cE '^[[:space:]]+rts$' "$naked_out")
+[ "$n_rts" = "1" ] || ok=0
+# No compiler-generated pool labels (`Lnnn:` from genlabel). The
+# shim's own LP0 is fine; the test verifies no L<digit>: labels
+# from the compiler's machinery.
+grep -qE '^L[0-9]+:' "$naked_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: naked asm shim emits body verbatim, no prologue/epilogue"
+else
+    fail "regtest: naked asm shim wrong (n_pushes=$n_pushes n_pops=$n_pops n_rts=$n_rts) — inspect $naked_out"
+fi
+rm -f "$naked_out"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:

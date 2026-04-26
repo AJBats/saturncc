@@ -778,16 +778,19 @@ static void funcdefn(int sclass, char *id, Type ty, Symbol params[], Coordinate 
 		retv = genident(AUTO, ptr(unqual(rty)), PARAM);
 	if (t == ASM) {
 		/* asm-bodied function: emit the captured asm block as a
-		 * single Gen entry with the same Blockbeg/Blockend framing
-		 * compound() builds. lex_asm_body() consumes `{...}` and
-		 * advances cp past the closing `}`; we drive the trailing
-		 * gettok() ourselves below (skipping the compound-form
-		 * `expect('}')` since there's nothing left to consume).
+		 * single Gen entry with Blockbeg/Blockend framing.
+		 * lex_asm_body() consumes `{...}` and advances cp past the
+		 * closing `}`; we drive the trailing gettok() ourselves
+		 * below (skipping the compound-form `expect('}')` since
+		 * there's nothing left to consume).
 		 *
-		 * Session 1 emits a synthetic retcode so the standard
-		 * prologue/epilogue still wraps the body. Session 2 will
-		 * detect "body is single ASMB Code entry" in the backend
-		 * and skip the wrapping (naked emit). */
+		 * Stage 4 (saturn/workstreams/asm_shim_design.md §7): no
+		 * synthetic retcode for asm-bodied functions. The body's
+		 * own `rts` terminates flow; the backend detects "naked
+		 * shim" and emits just the body lines without the standard
+		 * prologue/epilogue wrap. Without a synthetic retcode in
+		 * the captured code list, the naked detector cleanly sees
+		 * "every Gen forest is ASM_INSN-only." */
 		Code blk;
 		char *text;
 		Tree e;
@@ -801,10 +804,6 @@ static void funcdefn(int sclass, char *id, Type ty, Symbol params[], Coordinate 
 		e = asm_block(text);
 		listnodes(e, 0, 0);
 		walk(NULL, 0, 0);
-		if (freturn(cfunc->type) == voidtype)
-			retcode(NULL);
-		else
-			retcode(cnsttree(inttype, 0L));
 		blk->u.block.level = level;
 		blk->u.block.identifiers = identifiers;
 		blk->u.block.types = types;

@@ -7914,6 +7914,33 @@ static void sh_ipa_apply_mutation_rewrite(struct sh_ipa_fn *e,
 /* The full per-function codegen pipeline, formerly the body of
  * function(). Restores codehead from the captured snapshot so
  * gencode()/emitcode() iterate this function's Code list. */
+/* asm-shim Stage 4 (saturn/workstreams/asm_shim_design.md §7):
+ * a "naked shim" is a function whose body is nothing but
+ * ASM_INSN+V Nodes — no C-derived RET, JUMP, ASGN, etc. We emit
+ * such functions as just their body lines (canonical form) with
+ * the function label and section directives, no prologue/epilogue
+ * wrapping. The asm body's own `rts` terminates flow.
+ *
+ * Detection: walk the captured Code list; any Gen forest carrying
+ * a non-ASM_INSN Node fails the check. Framing records
+ * (Blockbeg/Blockend/Defpoint/Label) are skipped — they don't
+ * represent emitted code. */
+static int sh_function_is_naked_shim(struct sh_ipa_fn *e) {
+        Code cp;
+        int saw_asm_insn = 0;
+        for (cp = e->code_head.next; cp; cp = cp->next) {
+                Node n;
+                if (cp->kind != Gen)
+                        continue;
+                for (n = cp->u.forest; n; n = n->link) {
+                        if (specific(n->op) != ASM_INSN+V)
+                                return 0;
+                        saw_asm_insn = 1;
+                }
+        }
+        return saw_asm_insn;
+}
+
 static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         Symbol f = e->f;
         Symbol *caller = e->caller;
@@ -7952,6 +7979,38 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         if (f->sclass != STATIC)
                 print("\t.global %s\n", f->x.name);
         segment(CODE);
+
+        /* asm-shim Stage 4: naked-shim fast path. Skip
+         * prologue/epilogue/pool-flush/peephole/allocator entirely
+         * and emit just the body's ASM_INSN Nodes in canonical
+         * form. The body's own `rts` terminates flow; the function
+         * exit label (cfunc->u.f.label) is unused for an all-asm
+         * body — defined-but-not-emitted is fine. The result
+         * round-trips a prod-derived shim's bytes (modulo canonical
+         * whitespace, which asm_normalize.py strips). */
+        if (sh_function_is_naked_shim(e)) {
+                Code cp;
+                print("\t.align 2\n");
+                print("%s:\n", f->x.name);
+                for (cp = e->code_head.next; cp; cp = cp->next) {
+                        Node n;
+                        if (cp->kind != Gen)
+                                continue;
+                        for (n = cp->u.forest; n; n = n->link) {
+                                if (specific(n->op) != ASM_INSN+V)
+                                        continue;
+                                sh_emit_asm_insn(n->syms[0]
+                                                 ? n->syms[0]->x.asm_insn
+                                                 : NULL);
+                        }
+                }
+                /* Restore Phase E state so the next function's
+                 * processing starts clean. tmask/vmask and the
+                 * wildcard priority array were not touched on this
+                 * path. */
+                sh_ipa_current = NULL;
+                return;
+        }
 
         nshlit = 0;
         sh_all_returns_inlined = 0;
