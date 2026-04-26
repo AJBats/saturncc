@@ -58,7 +58,13 @@ extern int FUN_06045760();
  * answer-key match on per-call register conventions — out of scope
  * for this nightshift session. Gap #3 (inline literal construction)
  * is the next tractable peephole. */
-extern int FUN_06044F30();  /* not in this TU */
+extern int FUN_06044F30(void *obj);  /* not in this TU.
+ *  Honest signature: takes the threaded object pointer in r4
+ *  (= p1 + 0x30), preserves r4 by convention (its prod body is
+ *  a sub-entry of FUN_06044E3C, which advances r4 by 0x30 then
+ *  restores via `add #-0x30, r4` on rts). Implicit r5/r6/r7
+ *  setup is via the asm pinpoint at the call site. See
+ *  saturn/workstreams/asm_shim_design.md §8 (Stage 5). */
 
 /* 4-param signature — Ghidra decompiled this as 1-param but prod's
  * prologue stashes r5/r6/r7 into r8/r9/r10, proving there are four
@@ -70,41 +76,51 @@ extern int FUN_06044F30();  /* not in this TU */
 void FUN_06044060(int p1, int p2, int p3, int p4)
 
 {
-  FUN_06044D80(p1 + 0x30);
+  /* Threaded object pointer. Per asm_shim_design.md §8 (Stage 5):
+   * prod's FUN_06044060 sets up `r4 = p1 + 0x30` once (in the
+   * FUN_06044D80 call's delay slot) and threads it through every
+   * subsequent callee — FUN_06044F30, FUN_06044E3C, FUN_060450F2,
+   * FUN_06045006, FUN_060457DC — all of which preserve r4 by
+   * convention (their prod bodies either don't touch r4 at all
+   * or advance it across a loop and restore via `add #-0x30, r4`
+   * on rts). Our compiler doesn't model the preserves-r4
+   * convention yet, so each call site here re-sets up r4 from
+   * obj — that costs a few extra `mov rN, r4 / add #0x30, r4`
+   * pairs vs prod, accepted as the price of structural honesty
+   * until a future #pragma preserves_r4 mechanism lands. */
+  void *obj = (void *)(p1 + 0x30);
+  FUN_06044D80(obj);
   if (*(char *)0x06054925 != '\0') {
     /* Prod constructs -0x10000/0x10000/0x10000 inline via
      * mov #1, shll16, neg — no pool loads. The asm block emits
-     * these verbatim; the FUN_06044F30() call below then sees
-     * r5/r6/r7 already set and makes the jsr.
-     *
-     * Note: the bare-signature `FUN_06044F30()` call is the
-     * lines-73-95 pattern flagged in
-     * saturn/workstreams/asm_shim_design.md §2a — it works only
-     * because nothing in the IR currently allocates over r5/r6/r7
-     * between the asm setup and the call. Stage 5 makes this a
-     * proper-signature call once the allocator honors asm-side
-     * register usage. */
+     * these verbatim into r5/r6/r7; the call below carries
+     * `obj` in r4. Stage 5's allocator awareness keeps the
+     * compiler from clobbering r5/r6/r7 between the asm and
+     * the call. */
     asm {
         mov #1, r6
         shll16 r6
         neg r6, r5
         mov r6, r7
     }
-    FUN_06044F30();
+    FUN_06044F30(obj);
   }
-  /* FUN_06044E3C: prod passes p2 as r5 (not r4). Skip C-level args
-   * and set r5 via asm so the delay-slot filler picks it up. */
+  /* FUN_06044E3C takes (obj, p2_ptr): r4 = obj, r5 = p2 from
+   * caller's saved-in-r9 location. asm pinpoint sets r5; the C
+   * call drives r4 from obj. */
   asm { mov r9, r5 }
-  FUN_06044E3C();
-  /* FUN_060450F2 / FUN_06045006: r0-shim calling convention — arg
-   * in r0 instead of r4. Use asm for the mov-to-r0; the compiler
-   * emits the call; delay-slot filler pulls the asm into the
-   * delay slot. */
+  FUN_06044E3C(obj);
+  /* FUN_060450F2 / FUN_06045006: prod uses an r0-shim calling
+   * convention (arg in r0 instead of r4). Asm pinpoint sets r0;
+   * the C call still drives r4 from obj since prod's r4 is the
+   * threaded object pointer at this point — even though the
+   * called function doesn't read r4, leaving it pointing at
+   * obj keeps the threading invariant. */
   asm { mov r11, r0 }
-  FUN_060450F2();
+  FUN_060450F2(obj);
   asm { mov r10, r0 }
-  FUN_06045006();
-  FUN_060457DC(p1 + 0x30, *(int *)0x060569B4);
+  FUN_06045006(obj);
+  FUN_060457DC(obj, *(int *)0x060569B4);
   return;
 }
 

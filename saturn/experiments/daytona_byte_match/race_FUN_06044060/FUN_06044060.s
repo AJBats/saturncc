@@ -10,12 +10,15 @@ _FUN_06044060:
 	mov.l	r9,@-r15
 	mov.l	r8,@-r15
 	sts.l	pr,@-r15
+	mov	r4,r8
 	mov	r5,r9
 	mov	r6,r10
 	mov	r7,r11
+	mov	r8,r12
+	add	#48,r12
 	mov.l	L2344,r3
 	jsr	@r3
-	add	#48,r4
+	mov	r12,r4
 	mov.l	L2345,r0
 	mov.b	@r0,r0
 	tst	r0,r0
@@ -23,21 +26,24 @@ _FUN_06044060:
 	mov	#1,r6
 	shll16	r6
 	neg	r6,r5
+	mov	r6,r7
 	mov.l	L2346,r3
 	jsr	@r3
-	mov	r6,r7
+	mov	r12,r4
 L2:
+	mov	r9,r5
 	mov.l	L2347,r3
 	jsr	@r3
-	mov	r9,r5
+	mov	r12,r4
+	mov	r11,r0
 	mov.l	L2348,r3
 	jsr	@r3
-	mov	r11,r0
+	mov	r12,r4
+	mov	r10,r0
 	mov.l	L2349,r3
 	jsr	@r3
-	mov	r10,r0
-	mov	r8,r4
-	add	#48,r4
+	mov	r12,r4
+	mov	r12,r4
 	mov.l	L2350,r5
 	mov.l	L2351,r3
 	jsr	@r3

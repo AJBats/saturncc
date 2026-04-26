@@ -1948,6 +1948,30 @@ static unsigned sh_prealloc_mask(Symbol sym, Node p, unsigned m) {
         int i;
         if (!sym || !p)
                 return m;
+
+        /* asm-shim Stage 5 (saturn/workstreams/asm_shim_design.md §8):
+         * walk backward through the linear Node sequence accumulating
+         * register writes from any ASM_INSN+V Nodes encountered. Stop
+         * at the first CALL going backward — the call's ABI clobber
+         * is presumed to have consumed any prior asm-set values, so
+         * we only care about asm writes since the last call. The
+         * accumulated mask is registers the asm has just written and
+         * a downstream consumer (typically the next call) is expected
+         * to read; allocation onto these registers between asm and
+         * consumer would silently stomp the asm-set value. */
+        {
+                unsigned blocked_by_asm = 0;
+                for (n = p->x.prev; n; n = n->x.prev) {
+                        if (generic(n->op) == CALL)
+                                break;
+                        if (specific(n->op) == ASM_INSN+V
+                            && n->syms[0]
+                            && n->syms[0]->x.asm_insn)
+                                blocked_by_asm |=
+                                        n->syms[0]->x.asm_insn->writes;
+                }
+                m &= ~blocked_by_asm;
+        }
         /* Find p's lastuse by walking the linear forest forward, looking
          * for the last node that references p in its kids. We can't rely
          * on sym->x.lastuse because the symbol here is typically a

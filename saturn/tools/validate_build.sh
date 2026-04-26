@@ -851,6 +851,55 @@ else
 fi
 rm -f "$naked_out"
 
+# 4w. asm-shim Stage 5: allocator awareness for adjacent ASM_INSN
+# reads/writes. Within the window between an asm block and the next
+# call/branch, the allocator must NOT pick a register the asm just
+# wrote. See saturn/workstreams/asm_shim_design.md §8.
+#
+# The probe: a function with several local C variables (forces the
+# allocator to dip into r0..r3 for short-lived temporaries), plus
+# an asm block that writes r2, followed by an extern call. If the
+# mechanism works, no instruction between the asm and the jsr
+# writes r2 with a non-asm value.
+cat > /tmp/regtest.c <<'EOF'
+extern void hungry(int a, int b, int c);
+extern int produce(void);
+void caller(int seed) {
+    int a = produce() + seed;
+    int b = produce() + a;
+    int c = produce() + b;
+    asm { mov #99, r2 }
+    hungry(a, b, c);
+    /* Use a/b/c after to keep them live across the asm/call. */
+    if (a + b + c == 0) hungry(0, 0, 0);
+}
+EOF
+alloc_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$alloc_out" 2>/dev/null
+ok=1
+# The asm block emits `mov #99, r2`. Find that line.
+asm_line=$(grep -nE 'mov[[:space:]]+#99,r2' "$alloc_out" | head -n1 | cut -d: -f1)
+# Find the next jsr after the asm.
+if [ -n "$asm_line" ]; then
+    after_asm=$(sed -n "${asm_line},\$p" "$alloc_out")
+    # Between the asm line and the next jsr, there must be no
+    # instruction that writes r2. Match `<mn>\tX,r2$` (any
+    # destination is r2 form). Excluding the asm line itself.
+    inner=$(printf '%s\n' "$after_asm" | sed -n '2,/jsr/p')
+    if printf '%s\n' "$inner" \
+       | grep -qE $'^\t[a-z]+(\\.[bwl])?\t[^,]+,r2$'; then
+        ok=0
+    fi
+else
+    ok=0
+fi
+if [ "$ok" = "1" ]; then
+    pass "regtest: allocator honors adjacent ASM_INSN writes (Stage 5)"
+else
+    fail "regtest: allocator picked an asm-written register — inspect $alloc_out"
+fi
+rm -f "$alloc_out"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:
