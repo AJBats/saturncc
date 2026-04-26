@@ -14,12 +14,48 @@ unchanged. Analysis sees structure; emit sees bytes.
 
 ## Handoff for next session
 
-**Status:** Stage 1 (parser + IR struct) landed at commit `57e771a`.
-Stage 2 is the active task: wire the parser into the IR, switch to
-canonical `\t<mn>\t<ops>\n` emit, retire `__asm("...")`, mechanically
-migrate FUN_06044060.c. Stage 1's parser is a self-contained library
-(invoked under `-d-asm`, result discarded); Stage 2 plumbs it
-end-to-end.
+**Status: closed.** Stages 1–5 landed on branch
+`asm-shim/session-1-lexer-parser`:
+
+  - Stage 1 (`57e771a`) — parser + IR struct.
+  - Stage 2 (`4cc621f`) — IR end-to-end, canonical emit,
+    `__asm("...")` retired, FUN_06044060.c migrated to `asm { ... }`.
+  - Stage 3 (`142dc6e`) — Phase C reads ASM_INSN writes mask.
+  - Stage 4 (`40f3b71`) — naked emit for whole-function shims.
+  - Stage 5 (`b427ae9`) — allocator awareness for adjacent
+    ASM_INSN; FUN_06044060 call sites use threaded object-pointer
+    signatures; TU baseline re-pinned 21 → 29 (8-line cost from
+    redundant r4 setups, recoverable via Phase C's writes_r4
+    consulted at the C call site — see "next" below).
+  - **Stage 6 deferred.** Pool isolation for shims with internal
+    `.long` pools coexisting with the compiler's shlit pool. Only
+    matters for mixed C+asm with embedded pool entries; no current
+    TU exercises this. Defer until a real prod-imported shim
+    surfaces the failure case, then design against the actual
+    constraint rather than speculating.
+
+50/50 tests pass. Standalone byte-match 10/10 ok, TU
+`race_FUN_06044060` 190 ok with the re-pinned baseline,
+broad-corpus stable (183 pass, 0 crash).
+
+**Next workstreams** (separately scoped, not part of this doc):
+
+  - **Unity-build bring-in.** Mechanical generation of naked asm
+    shims for every prod function in
+    `D:/Projects/DaytonaCCEReverse/src/race/*.s`. ~850 functions
+    per the 2026-04-24 race-module census. Stages 1–5 give the
+    infrastructure; the bring-in is a generation-tooling project
+    plus the surface-the-laundry-list integration work that
+    follows. Fresh design pass needed.
+  - **Phase C writes_r4 → C call site** codegen extension. The
+    8-line cost in FUN_06044060 (and the same pattern in any
+    function with multiple calls to preserves-r4 callees) is
+    recoverable: when Phase C says `writes_r4 == 0` for a callee,
+    skip the C-side `mov rN, r4` setup if r4 is already known to
+    hold the same value from the previous call. Strictly
+    derived from existing analysis — no new pragma. Parallel to
+    Phase E.1b's pin engagement; same shape of change.
+  - The two are independent; either can land first.
 
 **The earlier scanner-based plan was retired in conversation.** A
 text-only `sh_asm_writes_reg` scanner would have answered one
