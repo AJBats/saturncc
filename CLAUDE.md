@@ -36,6 +36,20 @@ bash saturn/tools/build.sh
 Produces `build/rcc` at the repo root. Requires WSL Ubuntu with
 gcc + make + patch. The script runs a smoke test after compiling.
 
+## Release artifact (for downstream consumers)
+
+```bash
+bash saturn/tools/release.sh
+```
+
+Builds rcc and stamps a copy at `build/release/rcc`, with
+`build/release/VERSION` recording the git short-sha + date.
+**External projects (notably DaytonaCCEReverse) reference
+`build/release/rcc` and never reach into `build/rcc` directly.**
+This is the rubber-stamp boundary: saturncc decides what's
+released; consumers see a frozen artifact, not whatever happens
+to be in the working tree.
+
 ## Using the compiler
 
 ```bash

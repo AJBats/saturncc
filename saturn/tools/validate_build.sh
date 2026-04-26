@@ -456,33 +456,178 @@ else
 fi
 rm -f "$gr_out"
 
-# 4ac. CODEGEN: __asm("...") intrinsic emits the literal string
-# verbatim with no string-literal storage (.rodata), no pool entries
-# for a string-ptr or __asm extern, no jsr/arg-setup, and no
-# callee-saved promotion forced by a phantom call. The backend
-# prepends a single tab; asm_intrinsic() strips user-provided leading
-# whitespace so no double-tabs regardless of source style.
-# See src/expr.c asm_intrinsic() and src/dag.c listnodes() ASMB case.
+# (4ac removed — `__asm("...")` retired in asm-shim Stage 2; the
+#  asm{}-form regtest 4ad covers the equivalent canonical-emit case.)
+
+# 4ad. asm { ... } statement-level construct, canonical emit.
+# Stage 2 of asm-shim parses the block and re-emits in the same
+# `\t<mn>\t<ops>\n` layout C-derived emit produces. Source whitespace
+# is discarded (assembled-byte equivalence is preserved; the SH-2
+# assembler is whitespace-blind for instruction tokens).
 cat > /tmp/regtest.c <<'EOF'
 int hello(int x) {
-    __asm("nop");
+    asm { mov r1, r2 }
     return x + 1;
 }
 EOF
 asm_out="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
 ok=1
-grep -q $'^\tnop$' "$asm_out" || ok=0           # single tab + asm text
-grep -q "\.rodata" "$asm_out" && ok=0           # no .rodata pollution
-grep -q "___asm" "$asm_out" && ok=0             # no extern __asm symbol
-grep -q "jsr" "$asm_out" && ok=0                # no jsr at all (pure leaf)
-grep -q "@-r15" "$asm_out" && ok=0              # no callee-saved push
+grep -qE $'^\tmov\tr1,r2$' "$asm_out" || ok=0    # canonical: tab-mn-tab-ops
+grep -q "\.rodata" "$asm_out" && ok=0
+grep -q "jsr" "$asm_out" && ok=0
+grep -q "@-r15" "$asm_out" && ok=0
 if [ "$ok" = "1" ]; then
-    pass "regtest: __asm(\"...\") emits raw text with no pool/rodata/call"
+    pass "regtest: asm { ... } statement canonical emit"
 else
-    fail "regtest: __asm intrinsic polluted the output — inspect $asm_out"
+    fail "regtest: asm { ... } statement output wrong — inspect $asm_out"
 fi
 rm -f "$asm_out"
+
+# 4ae. asm { ... } multi-line block — canonical emit preserves each
+# instruction's mnemonic + operands but normalizes whitespace. Pool
+# entries (`.long`) are kept; whole-line comments are dropped (they
+# don't assemble; canonical emit drops decorative whitespace).
+cat > /tmp/regtest.c <<'EOF'
+int multi(int x) {
+    asm {
+        mov.l   LP0,r3
+        jsr     @r3
+        nop
+        ! a comment
+LP0:    .long   _target
+    }
+    return x;
+}
+EOF
+asm_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
+ok=1
+grep -qE $'^\tmov\\.l\tLP0,r3$' "$asm_out" || ok=0
+grep -qE $'^\tjsr\t@r3$' "$asm_out" || ok=0
+grep -qE '^LP0:[[:space:]]+\.long[[:space:]]+_target' "$asm_out" || ok=0
+# The whole-line comment is dropped by canonical emit (intentional).
+grep -qE '^[[:space:]]+! a comment' "$asm_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: asm { ... } multi-line canonical emit (instructions + pool kept, comments dropped)"
+else
+    fail "regtest: asm { ... } multi-line canonical emit wrong — inspect $asm_out"
+fi
+rm -f "$asm_out"
+
+# 4af. Empty asm { } block emits no instructions and no error. The
+# backend's `\t%s\n` print produces only whitespace for an empty
+# body — asm_normalize.py drops that line from any diff. Regression
+# guard against parse errors on the degenerate case.
+cat > /tmp/regtest.c <<'EOF'
+int empty(int x) {
+    asm{}
+    return x;
+}
+EOF
+asm_out="$(mktemp)"
+asm_err="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>"$asm_err"; then
+    if [ ! -s "$asm_err" ]; then
+        pass "regtest: empty asm { } accepted, no diagnostic"
+    else
+        fail "regtest: empty asm { } emitted unexpected diagnostic — $(head -1 "$asm_err")"
+    fi
+else
+    fail "regtest: empty asm { } rejected (compiler crash or error)"
+fi
+rm -f "$asm_out" "$asm_err"
+
+# 4ag. File-scope asm-bodied function: `int foo() asm { ... }` parses
+# as a function definition with the asm block as the body. Session 1
+# only proves the parser; Session 2 will skip the prologue/epilogue
+# wrapping (naked emit) so the body byte-matches a prod slice.
+cat > /tmp/regtest.c <<'EOF'
+int FUN_test(int p1) asm {
+    sts.l   pr,@-r15
+    rts
+    nop
+}
+EOF
+asm_out="$(mktemp)"
+asm_err="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>"$asm_err"; then
+    ok=1
+    grep -q '^FUN_test:' "$asm_out" || ok=0       # function label emitted (bare; Hitachi SHC convention)
+    grep -qE '^[[:space:]]+sts\.l' "$asm_out" || ok=0   # body content present
+    [ ! -s "$asm_err" ] || ok=0                   # no diagnostics
+    if [ "$ok" = "1" ]; then
+        pass "regtest: file-scope asm-bodied function parses and emits body"
+    else
+        fail "regtest: file-scope asm-bodied function wrong — inspect $asm_out / $asm_err"
+    fi
+else
+    fail "regtest: file-scope asm-bodied function rejected (compiler crash)"
+fi
+rm -f "$asm_out" "$asm_err"
+
+# 4ai. Parser destination detection — every write category in
+# sh_p_apply_kind must produce the right writes mask. -d-asm prints
+# one [asm-emit] line per parsed insn at emit time:
+#   [asm-emit] [<flags>] mn=<name> reads=0x<m> writes=0x<m> sr_r=... sr_w=...
+#
+#   mov r4, r5      → writes r5 = 0x20
+#   add #1, r0      → writes r0 = 0x1
+#   mov.l @r4+, r3  → writes r3+r4 (post-inc base) = 0x18
+#   sts.l pr,@-r15  → writes r15 (pre-dec) = 0x8000; reads pr
+#   jsr @r6         → branch+call; reads r6 = 0x40; writes pr
+#   dt r5           → reads+writes r5 = 0x20; writes T
+cat > /tmp/regtest.c <<'EOF'
+int test(int x) {
+    asm {
+        mov r4, r5
+        add #1, r0
+        mov.l @r4+, r3
+        sts.l pr, @-r15
+        jsr @r6
+        dt r5
+    }
+    return x;
+}
+EOF
+asm_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
+ok=1
+grep -qE '\[asm-emit\] \[\] mn=mov reads=0x10 writes=0x20' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=add reads=0x1 writes=0x1' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=mov\.l reads=0x10 writes=0x18' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=sts\.l reads=0x8000 writes=0x8000 sr_r=0x1' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[BC\] mn=jsr reads=0x40 writes=0x0 sr_r=0x0 sr_w=0x1' "$asm_dump" || ok=0
+grep -qE '\[asm-emit\] \[\] mn=dt reads=0x20 writes=0x20 sr_r=0x0 sr_w=0x40' "$asm_dump" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: asm parser destination detection per write-category"
+else
+    fail "regtest: asm parser destination detection wrong — inspect $asm_dump"
+fi
+rm -f "$asm_dump"
+
+# 4aj. Conservative-on-unknown: a deliberately bad mnemonic must
+# get is_unknown=1 (U flag in the dump) and reads/writes default to
+# 0xffff so any downstream analysis sees it as "could clobber
+# anything." False-clean answers would silently break byte-match.
+cat > /tmp/regtest.c <<'EOF'
+int test(int x) {
+    asm {
+        nop
+        zzzfake r1, r2
+        nop
+    }
+    return x;
+}
+EOF
+asm_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-asm /tmp/regtest.c /dev/null 2>"$asm_dump"
+if grep -qE '\[asm-emit\] \[U\] mn=zzzfake reads=0xffff writes=0xffff' "$asm_dump"; then
+    pass "regtest: asm parser conservative on unknown mnemonic"
+else
+    fail "regtest: asm parser unknown-mnemonic handling wrong — inspect $asm_dump"
+fi
+rm -f "$asm_dump"
 
 # 4r. 64-bit multiply-high idiom (SH-2 dmuls.l / dmulu.l + sts mach).
 # Ghidra decompiles the dmuls.l/sts mach pair as
@@ -569,15 +714,13 @@ ipa_out="$(mktemp)"
 if ! "$RCC" -target=sh/hitachi /tmp/regtest.c "$ipa_out" 2>/dev/null; then
     fail "regtest: IPA Phase E.1b mechanism end-to-end (compiler crash)"
 else
-    # Extract the caller's body: from _caller: until the next label.
-    # Note: helpers _helper_a / _helper_b emit before _caller in source-
-    # order drain, so the awk must arm `flag` only at _caller and stop
-    # at the next top-level `_<name>:` label. The earlier shorthand
-    # `flag; /^_[a-zA-Z]/{if(seen)exit; seen=1}` exited at _helper_b
-    # before flag was ever set, returning empty body.
+    # Extract the caller's body: from caller: until the next label.
+    # Note: helpers helper_a / helper_b emit before caller in source-
+    # order drain, so the awk must arm `flag` only at caller: and stop
+    # at the next top-level `<name>:` label.
     caller_body="$(awk '
-        /^_caller:/ {flag=1; print; next}
-        flag && /^_[a-zA-Z][a-zA-Z0-9_]*:/ {exit}
+        /^caller:/ {flag=1; print; next}
+        flag && /^[a-zA-Z][a-zA-Z0-9_]*:/ {exit}
         flag {print}
     ' "$ipa_out")"
     # Count `add #16,r4` occurrences — CSE should collapse to one.
@@ -619,6 +762,181 @@ else
         || fail "regtest: IPA Phase E.1b mechanism end-to-end (delay-slot filler chain-move; see validate_build.sh 4t)"
 fi
 rm -f "$ipa_out"
+
+# 4u. asm-shim Stage 3: Phase C walks ASM_INSN Nodes and reads
+# their parsed writes mask. Two asm-bodied callees in the same
+# TU — one explicitly writes r4, one doesn't. Phase C's `-d`
+# diagnostic should report writes_r4=1 for the first and
+# writes_r4=0 for the second. See
+# saturn/workstreams/asm_shim_design.md §6.
+cat > /tmp/regtest.c <<'EOF'
+extern int callee_writes_r4(int p);
+extern int callee_preserves_r4(int p);
+
+int caller(int p) {
+    return callee_writes_r4(p) + callee_preserves_r4(p);
+}
+
+int callee_writes_r4(int p) asm {
+    mov #5, r4
+    rts
+    nop
+}
+
+int callee_preserves_r4(int p) asm {
+    mov #1, r0
+    rts
+    nop
+}
+EOF
+ipa_d="$(mktemp)"
+"$RCC" -target=sh/hitachi -d /tmp/regtest.c /dev/null 2>"$ipa_d"
+ok=1
+grep -qE 'callee_writes_r4 writes_r4=1' "$ipa_d" || ok=0
+grep -qE 'callee_preserves_r4 writes_r4=0' "$ipa_d" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: Phase C reads ASM_INSN writes mask (Stage 3)"
+else
+    fail "regtest: Phase C asm writes_r4 detection wrong — inspect $ipa_d"
+fi
+rm -f "$ipa_d"
+
+# 4v. asm-shim Stage 4: a whole-function asm shim
+# (`int foo() asm { ... }`) emits as exactly its body content with
+# no prologue, no epilogue, no synthetic return, no compiler pool
+# entries. The body's own `rts` terminates flow. See
+# saturn/workstreams/asm_shim_design.md §7.
+cat > /tmp/regtest.c <<'EOF'
+int FUN_naked_shim(int p) asm {
+    sts.l   pr,@-r15
+    mov.l   LP0,r3
+    jsr     @r3
+    nop
+    rts
+    nop
+LP0:    .long   _some_target
+}
+EOF
+naked_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$naked_out" 2>/dev/null
+ok=1
+# Function label present.
+grep -qE '^FUN_naked_shim:' "$naked_out" || ok=0
+# Body lines present in canonical form.
+grep -qE $'^\tsts\\.l\tpr,@-r15$' "$naked_out" || ok=0
+grep -qE $'^\tmov\\.l\tLP0,r3$' "$naked_out" || ok=0
+grep -qE $'^\tjsr\t@r3$' "$naked_out" || ok=0
+grep -qE '^LP0:[[:space:]]+\.long[[:space:]]+_some_target' "$naked_out" || ok=0
+# No prologue: no callee-saved push other than the body's sts.l pr.
+# Count `mov.l rN,@-r15` — should be ZERO (the body has no such push).
+n_pushes=$(grep -cE 'mov\.l[[:space:]]+r[0-9]+,@-r15' "$naked_out")
+[ "$n_pushes" = "0" ] || ok=0
+# No epilogue: no callee-saved pop. Count `mov.l @r15+,rN` — ZERO.
+n_pops=$(grep -cE 'mov\.l[[:space:]]+@r15\+,r[0-9]+' "$naked_out")
+[ "$n_pops" = "0" ] || ok=0
+# Exactly ONE rts (the body's own); a synthetic epilogue return
+# would add a second.
+n_rts=$(grep -cE '^[[:space:]]+rts$' "$naked_out")
+[ "$n_rts" = "1" ] || ok=0
+# No compiler-generated pool labels (`Lnnn:` from genlabel). The
+# shim's own LP0 is fine; the test verifies no L<digit>: labels
+# from the compiler's machinery.
+grep -qE '^L[0-9]+:' "$naked_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: naked asm shim emits body verbatim, no prologue/epilogue"
+else
+    fail "regtest: naked asm shim wrong (n_pushes=$n_pushes n_pops=$n_pops n_rts=$n_rts) — inspect $naked_out"
+fi
+rm -f "$naked_out"
+
+# 4w. asm-shim Stage 5: allocator awareness for adjacent ASM_INSN
+# reads/writes. Within the window between an asm block and the next
+# call/branch, the allocator must NOT pick a register the asm just
+# wrote. See saturn/workstreams/asm_shim_design.md §8.
+#
+# The probe: a function with several local C variables (forces the
+# allocator to dip into r0..r3 for short-lived temporaries), plus
+# an asm block that writes r2, followed by an extern call. If the
+# mechanism works, no instruction between the asm and the jsr
+# writes r2 with a non-asm value.
+cat > /tmp/regtest.c <<'EOF'
+extern void hungry(int a, int b, int c);
+extern int produce(void);
+void caller(int seed) {
+    int a = produce() + seed;
+    int b = produce() + a;
+    int c = produce() + b;
+    asm { mov #99, r2 }
+    hungry(a, b, c);
+    /* Use a/b/c after to keep them live across the asm/call. */
+    if (a + b + c == 0) hungry(0, 0, 0);
+}
+EOF
+alloc_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$alloc_out" 2>/dev/null
+ok=1
+# The asm block emits `mov #99, r2`. Find that line.
+asm_line=$(grep -nE 'mov[[:space:]]+#99,r2' "$alloc_out" | head -n1 | cut -d: -f1)
+# Find the next jsr after the asm.
+if [ -n "$asm_line" ]; then
+    after_asm=$(sed -n "${asm_line},\$p" "$alloc_out")
+    # Between the asm line and the next jsr, there must be no
+    # instruction that writes r2. Match `<mn>\tX,r2$` (any
+    # destination is r2 form). Excluding the asm line itself.
+    inner=$(printf '%s\n' "$after_asm" | sed -n '2,/jsr/p')
+    if printf '%s\n' "$inner" \
+       | grep -qE $'^\t[a-z]+(\\.[bwl])?\t[^,]+,r2$'; then
+        ok=0
+    fi
+else
+    ok=0
+fi
+if [ "$ok" = "1" ]; then
+    pass "regtest: allocator honors adjacent ASM_INSN writes (Stage 5)"
+else
+    fail "regtest: allocator picked an asm-written register — inspect $alloc_out"
+fi
+rm -f "$alloc_out"
+
+# 4x. asm-shim directive emission: directives (`.byte`, `.4byte`,
+# `.type`, etc.) must emit as bare verbatim text — not as
+# instruction-style operands. Two failure modes that motivated this
+# regtest:
+#   - `.byte 0x30, 0x00` previously emitted `.byte #48,#0` because
+#     SH_OP_IMM was unconditionally `#`-prefixed. sh-elf-as rejects
+#     `#` outside instruction immediate context.
+#   - `.type FUN_X, @function` previously dropped `@function`
+#     silently because `@<ident>` doesn't fit the SH-2 operand
+#     grammar. Assembler then rejects `.type` with no type expr.
+# The fix is upstream: directives emit from src_text verbatim, the
+# assembler is authority on operand syntax. Discovered while
+# bringing up the unity-build beachhead (decomp/race in CCE).
+cat > /tmp/regtest.c <<'EOF'
+int FUN_dir_ops(void) asm {
+    rts
+    nop
+LP0:
+    .byte   0x30, 0x00
+    .4byte  4
+    .type   FUN_dir_ops, @function
+}
+EOF
+dir_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$dir_out" 2>/dev/null
+ok=1
+# All three directives must appear in the output, with their
+# operands intact.
+grep -qE '\.byte[[:space:]]+0x30,[[:space:]]*0x00' "$dir_out" || ok=0
+grep -qE '\.4byte[[:space:]]+4' "$dir_out" || ok=0
+grep -qE '\.type[[:space:]]+FUN_dir_ops,[[:space:]]*@function' "$dir_out" || ok=0
+# Negative: no `#` should appear on any directive line.
+grep -qE '^[[:space:]]+\.(byte|4byte|long|short|word|type)[[:space:]].*#' "$dir_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: directive emission is verbatim (no `#`, no operand drop)"
+else
+    fail "regtest: directive emission wrong — inspect $dir_out"
+fi
+rm -f "$dir_out"
 
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated

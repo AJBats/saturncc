@@ -1,7 +1,7 @@
-	.global _FUN_06000AF8
+	.global FUN_06000AF8
 	.text
 	.align 2
-_FUN_06000AF8:
+FUN_06000AF8:
 	sts.l	pr,@-r15
 	mov.l	L6,r6
 	mov.l	L5,r5
@@ -21,8 +21,8 @@ L2:
 	rts
 	mov	r4,r0
 	.align 2
-L4:	.long	_dat_06039FC8
-L5:	.long	_daytona96_str
-L6:	.long	_ram_06036F58_base
-L7:	.long	_ext_func
-L8:	.long	_cnt_06036F37
+L4:	.long	dat_06039FC8
+L5:	.long	daytona96_str
+L6:	.long	ram_06036F58_base
+L7:	.long	ext_func
+L8:	.long	cnt_06036F37

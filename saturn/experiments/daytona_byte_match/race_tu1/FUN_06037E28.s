@@ -1,7 +1,7 @@
-	.global _FUN_06037E28
+	.global FUN_06037E28
 	.text
 	.align 2
-_FUN_06037E28:
+FUN_06037E28:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -45,7 +45,7 @@ _FUN_06037E28:
 	.align 2
 L39:	.short	472
 L41:	.short	352
-L38:	.long	_setup_func
+L38:	.long	setup_func
 L40:	.long	100999756
 L2:
 	mov	r14,r0
@@ -76,7 +76,7 @@ L2:
 	nop
 	.align 2
 L42:	.long	101007540
-L43:	.long	_sub_06037EA4
+L43:	.long	sub_06037EA4
 L6:
 	mov	r14,r0
 	mov	r0,r4
@@ -108,11 +108,11 @@ L4:
 	braf	r0
 	nop
 	.align 2
-L44:	.long	_sub_06037ED4
-L45:	.long	_sub_06037ED8
-L46:	.long	_sub_06037EE4
-L47:	.long	_sub_06037EDC
-L48:	.long	_sub_06037EE0
+L44:	.long	sub_06037ED4
+L45:	.long	sub_06037ED8
+L46:	.long	sub_06037EE4
+L47:	.long	sub_06037EDC
+L48:	.long	sub_06037EE0
 Lswt0:
 	.short	L11 - Lswt0
 	.short	L11 - Lswt0
@@ -219,12 +219,12 @@ Lswt0:
 	bra	L9
 	nop
 	.align 2
-L49:	.long	_sub_06038014
-L50:	.long	_sub_06038018
-L60:	.long	_sub_0603801C
-L61:	.long	_sub_06038020
-L63:	.long	_sub_06038024
-L64:	.long	_sub_06038028
+L49:	.long	sub_06038014
+L50:	.long	sub_06038018
+L60:	.long	sub_0603801C
+L61:	.long	sub_06038020
+L63:	.long	sub_06038024
+L64:	.long	sub_06038028
 	mov.l	L65,r0
 	jsr	@r0
 	mov	r14,r4
@@ -265,8 +265,8 @@ L52:	.short	-3
 L53:	.short	-2
 L54:	.short	32767
 L55:	.short	-65
-L65:	.long	_func_06038bc4
-L66:	.long	_sub_06038390
+L65:	.long	func_06038bc4
+L66:	.long	sub_06038390
 	mov.l	L67,r0
 	jsr	@r0
 	mov	r14,r4
@@ -361,17 +361,17 @@ L97:	.short	-3
 L98:	.short	-2
 L99:	.short	32767
 L100:	.short	-65
-L51:	.long	_FUN_06038dd8
-L56:	.long	_FUN_060384c4
-L57:	.long	_func_06038a82
-L58:	.long	_func_060385ce
-L59:	.long	_func_060386d8
-L62:	.long	_FUN_06038c64
-L67:	.long	_sub_0603814C
-L68:	.long	_sub_06038150
-L69:	.long	_sub_06038154
-L70:	.long	_sub_06038158
-L71:	.long	_sub_0603815C
+L51:	.long	FUN_06038dd8
+L56:	.long	FUN_060384c4
+L57:	.long	func_06038a82
+L58:	.long	func_060385ce
+L59:	.long	func_060386d8
+L62:	.long	FUN_06038c64
+L67:	.long	sub_0603814C
+L68:	.long	sub_06038150
+L69:	.long	sub_06038154
+L70:	.long	sub_06038158
+L71:	.long	sub_0603815C
 	mov.l	L72,r0
 	jsr	@r0
 	mov	r14,r4
@@ -394,7 +394,7 @@ L71:	.long	_sub_0603815C
 	.align 2
 L75:	.short	128
 	.align 2
-L72:	.long	_sub_06038160
+L72:	.long	sub_06038160
 L16:
 	mov.w	L76,r14
 L17:
@@ -551,10 +551,10 @@ L112:	.short	-2
 L113:	.short	32767
 L114:	.short	-65
 	.align 2
-L77:	.long	_sub_06038260
-L79:	.long	_sub_06038264
-L80:	.long	_sub_06038268
-L101:	.long	_FUN_060384c4
+L77:	.long	sub_06038260
+L79:	.long	sub_06038264
+L80:	.long	sub_06038268
+L101:	.long	FUN_060384c4
 	mov.l	L83,r0
 	jsr	@r0
 	mov	r14,r4
@@ -629,7 +629,7 @@ L26:
 	.align 2
 L109:	.short	224
 	.align 2
-L96:	.long	_FUN_06038dd8
+L96:	.long	FUN_06038dd8
 	mov.l	L106,r0
 	jsr	@r0
 	mov	r14,r4
@@ -666,8 +666,8 @@ L96:	.long	_FUN_06038dd8
 	bra	L9
 	nop
 	.align 2
-L102:	.long	_func_06038a82
-L103:	.long	_func_060385ce
+L102:	.long	func_06038a82
+L103:	.long	func_060385ce
 	mov	r14,r0
 	mov.w	L110,r1
 	add	r1,r0
@@ -937,27 +937,27 @@ L1:
 	.align 2
 L120:	.short	448
 	.align 2
-L81:	.long	_sub_0603826C
-L82:	.long	_sub_06038270
-L83:	.long	_sub_06038274
-L84:	.long	_sub_06038384
-L85:	.long	_sub_06038388
-L86:	.long	_sub_0603838C
-L87:	.long	_sub_06038394
-L88:	.long	_sub_06038398
+L81:	.long	sub_0603826C
+L82:	.long	sub_06038270
+L83:	.long	sub_06038274
+L84:	.long	sub_06038384
+L85:	.long	sub_06038388
+L86:	.long	sub_0603838C
+L87:	.long	sub_06038394
+L88:	.long	sub_06038398
 L89:	.long	101009696
 L90:	.long	100988900
-L91:	.long	_sub_060384B4
+L91:	.long	sub_060384B4
 L92:	.long	-134217729
 L93:	.long	101001168
 L94:	.long	101001172
 L95:	.long	101007540
-L104:	.long	_func_060386d8
-L105:	.long	_FUN_06038c64
-L106:	.long	_func_06038bc4
-L107:	.long	_sub_06038390
-L115:	.long	_FUN_060384c4
-L116:	.long	_func_06038a82
-L117:	.long	_func_060385ce
-L118:	.long	_func_060386d8
-L119:	.long	_FUN_06038c64
+L104:	.long	func_060386d8
+L105:	.long	FUN_06038c64
+L106:	.long	func_06038bc4
+L107:	.long	sub_06038390
+L115:	.long	FUN_060384c4
+L116:	.long	func_06038a82
+L117:	.long	func_060385ce
+L118:	.long	func_060386d8
+L119:	.long	FUN_06038c64

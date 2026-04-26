@@ -325,12 +325,15 @@ enum {
 	COND=41<<4,
 	RIGHT=42<<4,
 	FIELD=43<<4,
-	/* ASMB: parser-only opcode for the __asm("...") intrinsic.
-	 * Carries the raw asm text on its tree's u.sym->name. Decomposed
-	 * in dag.c's listnodes() into a LABEL+V node so the backend can
-	 * emit the text verbatim at the correct position in the function
-	 * body. Never reaches the backend as ASMB — same parser-only
-	 * pattern as AND/OR/COND above. */
+	/* ASMB: parser-only opcode for the `asm { ... }` construct.
+	 * Carries the raw asm text on its tree's u.sym->name. The
+	 * Symbol's Xsymbol may also carry a parsed body (set by
+	 * expr.c's asm_block() via the IR->x.parse_asm hook).
+	 * Decomposed in dag.c's listnodes() into either N ASM_INSN+V
+	 * Nodes (when a parsed body is present) or one legacy
+	 * LABEL+V node (raw-text fallback). Never reaches the
+	 * backend as ASMB — same parser-only pattern as AND/OR/COND
+	 * above. See saturn/workstreams/asm_shim_design.md. */
 	ASMB=44<<4
 };
 struct type {
@@ -461,6 +464,13 @@ extern void typeerror(int, Tree, Tree);
 extern void test(int tok, char set[]);
 extern void expect(int tok);
 extern void skipto(int tok, char set[]);
+
+/* asm { ... } construct: lexer slurps the raw block content from the
+ * input stream, expr.c turns it into an ASMB tree, decl.c hooks it as a
+ * file-scope function body. Round-trip guarantee: bytes-in == bytes-out.
+ * Only fires on the SH-2 target; other backends see `asm` as ID. */
+extern char *lex_asm_body(void);
+extern Tree asm_block(char *text);
 extern void error(const char *, ...);
 extern int fatal(const char *, const char *, int);
 extern void warning(const char *, ...);

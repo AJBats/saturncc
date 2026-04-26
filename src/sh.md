@@ -78,6 +78,83 @@ static unsigned sh_prealloc_mask(Symbol, Node, unsigned);
 struct sh_ipa_fn;  /* forward: full defn lower, with the queue globals */
 static void function(Symbol, Symbol[], Symbol[], int);
 static void sh_process_deferred_fn(struct sh_ipa_fn *e);
+
+/* asm-shim parser + emitter — type definitions and forward decls.
+ * Full implementations live in the line-level helper section near
+ * sh_regs_used. The structs sit here (rather than next to the
+ * implementations) because emit2's ASM_INSN+V case dereferences
+ * sh_asm_insn fields and emit2 lives upstream of the helpers in
+ * the source. See saturn/workstreams/asm_shim_design.md §4-§5. */
+enum sh_operand_kind {
+        SH_OP_NONE = 0,
+        SH_OP_REG,        /* r0..r15 */
+        SH_OP_SREG,       /* pr, gbr, vbr, sr, mach, macl, t */
+        SH_OP_IMM,        /* #imm or bare number (directive arg) */
+        SH_OP_MEM,        /* @rN family — see sh_mem_mode */
+        SH_OP_LABEL       /* bare identifier — branch target, pool sym */
+};
+
+enum sh_mem_mode {
+        SH_MEM_NONE = 0,
+        SH_MEM_INDIR,     /* @rN */
+        SH_MEM_PREDEC,    /* @-rN */
+        SH_MEM_POSTINC,   /* @rN+ */
+        SH_MEM_DISP,      /* @(disp,rN) */
+        SH_MEM_R0IDX,     /* @(R0,rN) */
+        SH_MEM_GBRDISP,   /* @(disp,GBR) */
+        SH_MEM_PCDISP     /* @(disp,PC) */
+};
+
+enum sh_sreg_id {
+        SH_SR_PR = 0, SH_SR_GBR, SH_SR_VBR, SH_SR_SR,
+        SH_SR_MACH, SH_SR_MACL, SH_SR_T,
+        SH_SR_COUNT
+};
+
+struct sh_operand {
+        enum sh_operand_kind kind;
+        int reg;                  /* SH_OP_REG, SH_OP_MEM: base/only reg */
+        enum sh_sreg_id sreg;     /* SH_OP_SREG */
+        long imm;                 /* SH_OP_IMM, SH_OP_MEM disp */
+        char *label;              /* SH_OP_LABEL: stringn'd; also for
+                                   *   #LABEL imm */
+        enum sh_mem_mode mem_mode;
+};
+
+struct sh_asm_insn {
+        char *src_text;       /* original line for diagnostics; emit
+                               * does not read this in Stage 2+. */
+        char *mnemonic;       /* canonicalized; NULL on parse failure */
+        int n_operands;
+        struct sh_operand operands[3];
+
+        unsigned reads;       /* GP regs read (bit N = rN) */
+        unsigned writes;      /* GP regs written */
+        unsigned reads_sreg;  /* bitmask indexed by enum sh_sreg_id */
+        unsigned writes_sreg;
+        unsigned char is_branch;
+        unsigned char is_call;
+        unsigned char is_directive;
+        unsigned char is_label;
+        unsigned char is_comment;
+        unsigned char is_unknown;
+        int line_no;
+};
+
+struct sh_asm_body {
+        struct sh_asm_insn *insns;
+        int n_insns;
+        int n_capacity;
+        char *raw_text;
+};
+
+struct sh_asm_body *sh_parse_asm_text(const char *text);
+static void sh_dump_asm_body(const struct sh_asm_body *body,
+                             const char *label);
+static void sh_emit_asm_insn(const struct sh_asm_insn *in);
+int sh_asm_body_n_insns(struct sh_asm_body *body);
+struct sh_asm_insn *sh_asm_body_insn(struct sh_asm_body *body, int i);
+char *sh_asm_insn_src_text(struct sh_asm_insn *in);
 static void sh_drain_ipa_queue(void);
 static void global(Symbol);
 static void import(Symbol);
@@ -115,6 +192,13 @@ static int sh_all_returns_inlined;
 static int sh_uses_macl;
 static int sh_gbr_param;  /* #pragma gbr_param: emit ldc r4,gbr prologue */
 static int sh_word_indexed_after_first;  /* #pragma sh_word_indexed_after_first: see sh_apply_word_indexed_after_first */
+
+/* -d-asm: dump every parsed asm body to stderr at emit time. Used
+ * by Stage 1 regtests in saturn/workstreams/asm_shim_design.md to
+ * verify the parser's destination detection and round-trip
+ * behavior. Stage 1 only invokes the parser when this flag is on;
+ * Stage 2 will invoke it unconditionally at frontend time. */
+static int sh_dflag_asm;
 
 /* Switch-dispatch state recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
@@ -481,6 +565,8 @@ static int sh_disp_cost(Node a, int sz);
 %term JUMPV=584
 
 %term LABELV=600
+
+%term ASM_INSNV=728
 
 %term LOADB=233
 %term LOADF4=4321
@@ -888,6 +974,8 @@ reg:  CVUI2(reg)  "# truncate\n"  1
 
 stmt: LABELV  "#\n"
 
+stmt: ASM_INSNV  "#\n"
+
 jtarget: ADDRGP4  "%a"
 stmt: JUMPV(jtarget)  "\tbra\t%0\n\tnop\n"  2
 
@@ -1002,9 +1090,10 @@ static char *gbr_base_asmname(void) {
         if (!gbr_base_cname)
                 return NULL;
         if (gbr_base_asmbuf[0] == 0) {
-                gbr_base_asmbuf[0] = '_';
-                strncpy(gbr_base_asmbuf + 1, gbr_base_cname,
-                        sizeof(gbr_base_asmbuf) - 2);
+                /* Match defsymbol: bare names, no leading
+                 * underscore (Hitachi SHC convention). */
+                strncpy(gbr_base_asmbuf, gbr_base_cname,
+                        sizeof(gbr_base_asmbuf) - 1);
                 gbr_base_asmbuf[sizeof(gbr_base_asmbuf) - 1] = 0;
         }
         return gbr_base_asmbuf;
@@ -1509,16 +1598,55 @@ static void sh_build_cgraph_and_order(void) {
  * runs in source order (A.1 behavior) so no cross-function state
  * leaks surface. sh_build_cgraph_and_order() has already run and
  * sh_scc_order[] holds indices in reverse-topological order when
- * we're invoked. */
+ * we're invoked.
+ *
+ * asm-shim Stage 3 — saturn/workstreams/asm_shim_design.md §6:
+ * before inheriting from callees, walk the function's captured
+ * Code list for ASM_INSN+V Nodes and OR in their parsed `writes`
+ * masks. An asm instruction that writes r4 (e.g., `mov #X, r4` or
+ * a load-into-r4) makes the enclosing function writes_r4 even if
+ * it has no callees. This is what unlocks the IPA pin's correct
+ * answer on asm-bodied functions like the FUN_06044F30 shim
+ * Stage 4 will bring in. */
 static void sh_analyze_writes_r4(void) {
         int i, j, k;
         for (i = 0; i < sh_scc_order_len; i++) {
                 struct sh_ipa_fn *e = sh_ipa_arr[sh_scc_order[i]];
-                /* Leaf (no direct calls): optimistically preserve r4.
-                 * Non-leaf: inherit "writes" from any callee that
-                 * already writes r4 (which — because we walk in
-                 * reverse-topo order — has already been analyzed). */
+                Code cp;
                 e->writes_r4 = 0;
+
+                /* Direct writes from asm-derived Nodes in this
+                 * function's body. Walk the captured Code list
+                 * for Gen records and inspect each ASM_INSN+V
+                 * Node's parsed writes mask. */
+                for (cp = e->code_head.next; cp && !e->writes_r4;
+                     cp = cp->next) {
+                        Node n;
+                        if (cp->kind != Gen && cp->kind != Jump
+                            && cp->kind != Label)
+                                continue;
+                        for (n = cp->u.forest; n; n = n->link) {
+                                if (specific(n->op) != ASM_INSN+V)
+                                        continue;
+                                if (n->syms[0]
+                                    && n->syms[0]->x.asm_insn
+                                    && (n->syms[0]->x.asm_insn->writes
+                                        & (1u << 4))) {
+                                        e->writes_r4 = 1;
+                                        break;
+                                }
+                        }
+                }
+                if (e->writes_r4)
+                        continue;
+
+                /* Inheritance from callees: leaf (no direct calls)
+                 * optimistically preserves r4; non-leaf inherits
+                 * from any callee that already writes r4 (which —
+                 * because we walk in reverse-topo order — has
+                 * already been analyzed). External callees
+                 * (outside the TU) get the conservative ABI
+                 * default. */
                 for (j = 0; j < e->n_direct_callees; j++) {
                         Symbol tgt = e->direct_callees[j];
                         int found = 0;
@@ -1620,6 +1748,8 @@ static void progbeg(int argc, char *argv[]) {
         for (i = 0; i < argc; i++)
                 if (strncmp(argv[i], "-gbr-base=", 10) == 0)
                         gbr_base_cname = argv[i] + 10;
+                else if (strcmp(argv[i], "-d-asm") == 0)
+                        sh_dflag_asm = 1;
         shc_pragma_hook = sh_pragma;
         flush_deferred_pragmas();
         for (i = 0; i < 16; i++)
@@ -1819,6 +1949,30 @@ static unsigned sh_prealloc_mask(Symbol sym, Node p, unsigned m) {
         int i;
         if (!sym || !p)
                 return m;
+
+        /* asm-shim Stage 5 (saturn/workstreams/asm_shim_design.md §8):
+         * walk backward through the linear Node sequence accumulating
+         * register writes from any ASM_INSN+V Nodes encountered. Stop
+         * at the first CALL going backward — the call's ABI clobber
+         * is presumed to have consumed any prior asm-set values, so
+         * we only care about asm writes since the last call. The
+         * accumulated mask is registers the asm has just written and
+         * a downstream consumer (typically the next call) is expected
+         * to read; allocation onto these registers between asm and
+         * consumer would silently stomp the asm-set value. */
+        {
+                unsigned blocked_by_asm = 0;
+                for (n = p->x.prev; n; n = n->x.prev) {
+                        if (generic(n->op) == CALL)
+                                break;
+                        if (specific(n->op) == ASM_INSN+V
+                            && n->syms[0]
+                            && n->syms[0]->x.asm_insn)
+                                blocked_by_asm |=
+                                        n->syms[0]->x.asm_insn->writes;
+                }
+                m &= ~blocked_by_asm;
+        }
         /* Find p's lastuse by walking the linear forest forward, looking
          * for the last node that references p in its kids. We can't rely
          * on sym->x.lastuse because the symbol here is typically a
@@ -1872,18 +2026,57 @@ static void emit2(Node p) {
         case LABEL+V: {
                 /* Two flavors of LABEL+V reach us: normal labels
                  * (u.l.label >= 1, from genlabel()) emit as `Lnn:`,
-                 * and the __asm("...") intrinsic's pseudo-label
-                 * (u.l.label == 0, from expr.c's asm_intrinsic())
-                 * emits the symbol's name with a single leading
-                 * tab. asm_intrinsic() strips user-provided leading
-                 * whitespace so the user writes just the instruction
-                 * text — `__asm("mov #1, r6")` — without the
-                 * character-escape noise of `"\tmov\t#1,r6"`. */
+                 * and the legacy asm-fallback pseudo-label
+                 * (u.l.label == 0) emits the symbol's name with a
+                 * single leading tab. The asm-shim Stage 2 path
+                 * uses ASM_INSN+V Nodes instead; LABEL+V with
+                 * sentinel only fires when a parsed asm body
+                 * isn't present (e.g., a backend with no parser,
+                 * or a future path that constructs ASMB without
+                 * going through asm_block's hook). */
                 Symbol ls = p->syms[0];
-                if (ls->u.l.label == 0)
+                if (ls->u.l.label == 0) {
+                        /* Legacy fallback: print captured text raw
+                         * with one tab. */
                         print("\t%s\n", ls->name);
-                else
+                } else
                         print("%s:\n", ls->x.name);
+                break;
+                }
+        case ASM_INSN+V: {
+                /* asm-shim Stage 2: canonical re-emit from the parsed
+                 * insn record. One uniform `\t<mn>\t<ops>\n` layout
+                 * for every asm-derived line. Source whitespace is
+                 * discarded; assembled-byte equivalence is preserved
+                 * (same instruction, same operands, same encoding).
+                 * See saturn/workstreams/asm_shim_design.md §5c. */
+                Symbol ls = p->syms[0];
+                struct sh_asm_insn *in = ls->x.asm_insn;
+                if (sh_dflag_asm) {
+                        /* Per-insn dump for regtest greppability.
+                         * Flags: B=branch C=call D=directive L=label
+                         * M=comment U=unknown. */
+                        char flags[16];
+                        int fl = 0;
+                        flags[fl++] = '[';
+                        if (in->is_branch)    flags[fl++] = 'B';
+                        if (in->is_call)      flags[fl++] = 'C';
+                        if (in->is_directive) flags[fl++] = 'D';
+                        if (in->is_label)     flags[fl++] = 'L';
+                        if (in->is_comment)   flags[fl++] = 'M';
+                        if (in->is_unknown)   flags[fl++] = 'U';
+                        flags[fl++] = ']';
+                        flags[fl] = 0;
+                        fprint(stderr,
+                               "[asm-emit] %s mn=%s reads=0x%x writes=0x%x sr_r=0x%x sr_w=0x%x\n",
+                               flags,
+                               in->mnemonic ? in->mnemonic : "(none)",
+                               (unsigned)in->reads,
+                               (unsigned)in->writes,
+                               (unsigned)in->reads_sreg,
+                               (unsigned)in->writes_sreg);
+                }
+                sh_emit_asm_insn(in);
                 break;
                 }
         case CNST+I: case CNST+U: {
@@ -2598,6 +2791,1108 @@ static int sh_reads_reg(const char *line, int rN) {
                 p++;
         }
         return 0;
+}
+
+/* ──────────────────────────────────────────────────────────
+ * Asm-shim parsed IR (Stage 1, foundation for §4 of
+ * saturn/workstreams/asm_shim_design.md)
+ *
+ * sh_parse_asm_text() consumes the raw text of an `asm { ... }`
+ * block and returns a struct sh_asm_body — a list of per-line
+ * sh_asm_insn records with parsed mnemonic, operands, and
+ * reads/writes register masks. Every cross-function analysis
+ * (Stage 3 writes_r4, future clobber narrowing, MAC/GBR tracking)
+ * queries these masks; no analysis re-scans text or carries its
+ * own mnemonic table.
+ *
+ * Stage 1 ships this as a self-contained library: the parser
+ * runs only when -d-asm is on, dumps to stderr, and the result
+ * is discarded. Stage 2 wires the parser into the frontend so
+ * each ASM_INSN Node carries its parsed insn record.
+ *
+ * Conservative-on-unknown: any line the parser can't classify
+ * gets is_unknown=1 and reads/writes set to ~0 — analyses
+ * default to "this line could clobber anything" rather than
+ * silently underreporting and breaking byte-match.
+ * ────────────────────────────────────────────────────────── */
+
+/* ── parser tokenizer helpers ─────────────────────────── */
+
+static const char *sh_p_skip_ws(const char *p) {
+        while (*p == ' ' || *p == '\t') p++;
+        return p;
+}
+
+/* Match `rN` (N in [0,15]). On success, advance *p and set *out. */
+static int sh_p_match_reg(const char **p, int *out) {
+        const char *s = *p;
+        int n;
+        if (*s != 'r' && *s != 'R') return 0;
+        s++;
+        if (*s < '0' || *s > '9') return 0;
+        n = *s++ - '0';
+        if (*s >= '0' && *s <= '9') n = n * 10 + (*s++ - '0');
+        if (n < 0 || n > 15) return 0;
+        /* Don't match `r0pad` as r0 — must be followed by a non-
+         * identifier character. */
+        if ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z')
+            || *s == '_' || *s == '.')
+                return 0;
+        *p = s;
+        *out = n;
+        return 1;
+}
+
+static int sh_p_match_sreg(const char **p, enum sh_sreg_id *out) {
+        static const struct {
+                const char *name;
+                int len;
+                enum sh_sreg_id id;
+        } tab[] = {
+                { "mach", 4, SH_SR_MACH }, { "MACH", 4, SH_SR_MACH },
+                { "macl", 4, SH_SR_MACL }, { "MACL", 4, SH_SR_MACL },
+                { "gbr",  3, SH_SR_GBR  }, { "GBR",  3, SH_SR_GBR  },
+                { "vbr",  3, SH_SR_VBR  }, { "VBR",  3, SH_SR_VBR  },
+                { "pr",   2, SH_SR_PR   }, { "PR",   2, SH_SR_PR   },
+                { "sr",   2, SH_SR_SR   }, { "SR",   2, SH_SR_SR   },
+                { "t",    1, SH_SR_T    }, { "T",    1, SH_SR_T    }
+        };
+        int i;
+        for (i = 0; i < (int)(sizeof tab / sizeof tab[0]); i++) {
+                if (strncmp(*p, tab[i].name, tab[i].len) == 0) {
+                        char nxt = (*p)[tab[i].len];
+                        if (!((nxt >= 'a' && nxt <= 'z')
+                              || (nxt >= 'A' && nxt <= 'Z')
+                              || (nxt >= '0' && nxt <= '9')
+                              || nxt == '_' || nxt == '.')) {
+                                *p += tab[i].len;
+                                *out = tab[i].id;
+                                return 1;
+                        }
+                }
+        }
+        return 0;
+}
+
+/* Numeric immediate: optional sign, optional 0x prefix. Decimal or
+ * hex digits required. */
+static int sh_p_match_num(const char **p, long *out) {
+        const char *s = *p;
+        long sign = 1, val = 0;
+        int saw_digit = 0;
+        if (*s == '-') { sign = -1; s++; }
+        else if (*s == '+') { s++; }
+        if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+                s += 2;
+                while (1) {
+                        int d;
+                        if (*s >= '0' && *s <= '9') d = *s - '0';
+                        else if (*s >= 'a' && *s <= 'f') d = *s - 'a' + 10;
+                        else if (*s >= 'A' && *s <= 'F') d = *s - 'A' + 10;
+                        else break;
+                        val = val * 16 + d;
+                        s++;
+                        saw_digit = 1;
+                }
+        } else {
+                while (*s >= '0' && *s <= '9') {
+                        val = val * 10 + (*s - '0');
+                        s++;
+                        saw_digit = 1;
+                }
+        }
+        if (!saw_digit) return 0;
+        *out = sign * val;
+        *p = s;
+        return 1;
+}
+
+/* Read an identifier (label-like). Returns 1 and a stringn'd copy on
+ * success; otherwise 0. */
+static int sh_p_match_ident(const char **p, char **out) {
+        const char *s = *p;
+        const char *start = s;
+        if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z')
+              || *s == '_' || *s == '.'))
+                return 0;
+        while ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z')
+               || (*s >= '0' && *s <= '9') || *s == '_' || *s == '.')
+                s++;
+        *out = stringn((char *)start, s - start);
+        *p = s;
+        return 1;
+}
+
+/* Parse one operand starting at *p. Sets *op and advances *p. */
+static int sh_p_parse_operand(const char **p, struct sh_operand *op) {
+        const char *s;
+        int reg;
+        enum sh_sreg_id sreg;
+        long imm;
+        char *label;
+
+        memset(op, 0, sizeof(*op));
+        s = sh_p_skip_ws(*p);
+
+        /* SH_OP_IMM: #... */
+        if (*s == '#') {
+                const char *q = s + 1;
+                if (sh_p_match_num(&q, &imm)) {
+                        op->kind = SH_OP_IMM;
+                        op->imm = imm;
+                        *p = q;
+                        return 1;
+                }
+                if (sh_p_match_ident(&q, &label)) {
+                        op->kind = SH_OP_IMM;
+                        op->label = label;
+                        *p = q;
+                        return 1;
+                }
+                return 0;
+        }
+
+        /* SH_OP_MEM: @... */
+        if (*s == '@') {
+                const char *q = s + 1;
+                if (*q == '-') {
+                        q++;
+                        if (sh_p_match_reg(&q, &reg)) {
+                                op->kind = SH_OP_MEM;
+                                op->mem_mode = SH_MEM_PREDEC;
+                                op->reg = reg;
+                                *p = q;
+                                return 1;
+                        }
+                        return 0;
+                }
+                if (*q == '(') {
+                        /* @(disp,X) or @(R0,rN) */
+                        const char *save;
+                        q++;
+                        q = sh_p_skip_ws(q);
+                        save = q;
+                        /* @(R0,rN) form */
+                        {
+                                int r0;
+                                if (sh_p_match_reg(&q, &r0) && r0 == 0) {
+                                        q = sh_p_skip_ws(q);
+                                        if (*q == ',') {
+                                                q++;
+                                                q = sh_p_skip_ws(q);
+                                                if (sh_p_match_reg(&q, &reg)) {
+                                                        q = sh_p_skip_ws(q);
+                                                        if (*q == ')') {
+                                                                q++;
+                                                                op->kind = SH_OP_MEM;
+                                                                op->mem_mode = SH_MEM_R0IDX;
+                                                                op->reg = reg;
+                                                                *p = q;
+                                                                return 1;
+                                                        }
+                                                }
+                                        }
+                                }
+                                q = save;
+                        }
+                        /* @(disp,X) */
+                        if (sh_p_match_num(&q, &imm)) {
+                                q = sh_p_skip_ws(q);
+                                if (*q == ',') {
+                                        q++;
+                                        q = sh_p_skip_ws(q);
+                                        if (sh_p_match_reg(&q, &reg)) {
+                                                q = sh_p_skip_ws(q);
+                                                if (*q == ')') {
+                                                        q++;
+                                                        op->kind = SH_OP_MEM;
+                                                        op->mem_mode = SH_MEM_DISP;
+                                                        op->reg = reg;
+                                                        op->imm = imm;
+                                                        *p = q;
+                                                        return 1;
+                                                }
+                                        } else if (strncmp(q, "GBR", 3) == 0
+                                                   || strncmp(q, "gbr", 3) == 0) {
+                                                q += 3;
+                                                q = sh_p_skip_ws(q);
+                                                if (*q == ')') {
+                                                        q++;
+                                                        op->kind = SH_OP_MEM;
+                                                        op->mem_mode = SH_MEM_GBRDISP;
+                                                        op->imm = imm;
+                                                        *p = q;
+                                                        return 1;
+                                                }
+                                        } else if (strncmp(q, "PC", 2) == 0
+                                                   || strncmp(q, "pc", 2) == 0) {
+                                                q += 2;
+                                                q = sh_p_skip_ws(q);
+                                                if (*q == ')') {
+                                                        q++;
+                                                        op->kind = SH_OP_MEM;
+                                                        op->mem_mode = SH_MEM_PCDISP;
+                                                        op->imm = imm;
+                                                        *p = q;
+                                                        return 1;
+                                                }
+                                        }
+                                }
+                        }
+                        return 0;
+                }
+                /* @rN or @rN+ */
+                if (sh_p_match_reg(&q, &reg)) {
+                        op->kind = SH_OP_MEM;
+                        op->reg = reg;
+                        if (*q == '+') {
+                                op->mem_mode = SH_MEM_POSTINC;
+                                q++;
+                        } else {
+                                op->mem_mode = SH_MEM_INDIR;
+                        }
+                        *p = q;
+                        return 1;
+                }
+                return 0;
+        }
+
+        /* SH_OP_REG: rN */
+        {
+                const char *q = s;
+                if (sh_p_match_reg(&q, &reg)) {
+                        op->kind = SH_OP_REG;
+                        op->reg = reg;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        /* SH_OP_SREG */
+        {
+                const char *q = s;
+                if (sh_p_match_sreg(&q, &sreg)) {
+                        op->kind = SH_OP_SREG;
+                        op->sreg = sreg;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        /* Bare numeric immediate (directive args like `.long 4`) */
+        {
+                const char *q = s;
+                if (sh_p_match_num(&q, &imm)) {
+                        op->kind = SH_OP_IMM;
+                        op->imm = imm;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        /* SH_OP_LABEL: identifier. Branch targets, pool refs. */
+        {
+                const char *q = s;
+                if (sh_p_match_ident(&q, &label)) {
+                        op->kind = SH_OP_LABEL;
+                        op->label = label;
+                        *p = q;
+                        return 1;
+                }
+        }
+
+        op->kind = SH_OP_NONE;
+        return 0;
+}
+
+static int sh_p_parse_operands(const char **p,
+                               struct sh_operand operands[3]) {
+        int n = 0;
+        const char *s = *p;
+        s = sh_p_skip_ws(s);
+        if (*s == 0 || *s == '\n' || *s == '\r' || *s == '!'
+            || *s == ';' || (*s == '/' && s[1] == '*')) {
+                *p = s;
+                return 0;
+        }
+        while (n < 3) {
+                if (!sh_p_parse_operand(&s, &operands[n])) break;
+                n++;
+                s = sh_p_skip_ws(s);
+                if (*s == ',') {
+                        s++;
+                        s = sh_p_skip_ws(s);
+                        continue;
+                }
+                break;
+        }
+        *p = s;
+        return n;
+}
+
+/* ── mnemonic dispatch ────────────────────────────────── */
+
+enum sh_mn_kind {
+        MK_UNKNOWN,
+        MK_NOP,            /* no GP-reg effects */
+        MK_NOP_T,          /* clrt/sett — write T */
+        MK_NOP_MAC,        /* clrmac — write MACH+MACL */
+        MK_BIN_LAST_DEST,  /* `op A,B` — read A, read+write B */
+        MK_UNARY_DEST,     /* `op N` — read+write N */
+        MK_DT,             /* dt rN — read+write rN, write T */
+        MK_MOVT,           /* movt rN — write rN, read T */
+        MK_MOV,            /* mov / mov.b/w/l — refined per operand */
+        MK_CMP,            /* cmp/* rA,rB — read; write T */
+        MK_CMP_UNARY,      /* cmp/pl/pz rN — read; write T */
+        MK_TST,            /* tst rA,rB / tst #imm,r0 — read; write T */
+        MK_BRANCH_LABEL,   /* bra/bsr/bt/bf label */
+        MK_BRANCH_INDIR,   /* jmp/jsr @rN */
+        MK_RTS,            /* rts — read PR */
+        MK_LDS,            /* lds rA,sreg */
+        MK_LDS_L,          /* lds.l @rN+,sreg */
+        MK_STS,            /* sts sreg,rA */
+        MK_STS_L,          /* sts.l sreg,@-rN */
+        MK_LDC,            /* ldc rA,sreg (gbr/vbr/sr) */
+        MK_LDC_L,          /* ldc.l @rN+,sreg */
+        MK_STC,            /* stc sreg,rA */
+        MK_STC_L,          /* stc.l sreg,@-rN */
+        MK_MUL,            /* mul.l rA,rB */
+        MK_DMUL,           /* dmuls.l/dmulu.l */
+        MK_MULSW,          /* muls.w/mulu.w */
+        MK_MAC,            /* mac.l/mac.w @rA+,@rB+ */
+        MK_DIV1,           /* div1 rA,rB */
+        MK_TAS,            /* tas.b @rN */
+        MK_SWAP_XTRCT,     /* swap.X rA,rB / xtrct rA,rB */
+        MK_EXT,            /* extu/exts.X rA,rB */
+        MK_SLEEP_TRAPA     /* opaque, conservative */
+};
+
+static const struct {
+        const char *name;
+        enum sh_mn_kind kind;
+} sh_mnemonic_table[] = {
+        { "nop",     MK_NOP },
+        { "clrt",    MK_NOP_T },
+        { "sett",    MK_NOP_T },
+        { "clrmac",  MK_NOP_MAC },
+        { "shll",    MK_UNARY_DEST }, { "shll2",  MK_UNARY_DEST },
+        { "shll8",   MK_UNARY_DEST }, { "shll16", MK_UNARY_DEST },
+        { "shlr",    MK_UNARY_DEST }, { "shlr2",  MK_UNARY_DEST },
+        { "shlr8",   MK_UNARY_DEST }, { "shlr16", MK_UNARY_DEST },
+        { "shal",    MK_UNARY_DEST }, { "shar",   MK_UNARY_DEST },
+        { "rotl",    MK_UNARY_DEST }, { "rotr",   MK_UNARY_DEST },
+        { "rotcl",   MK_UNARY_DEST }, { "rotcr",  MK_UNARY_DEST },
+        { "movt",    MK_MOVT },
+        { "dt",      MK_DT },
+        { "add",     MK_BIN_LAST_DEST }, { "addc",  MK_BIN_LAST_DEST },
+        { "addv",    MK_BIN_LAST_DEST },
+        { "sub",     MK_BIN_LAST_DEST }, { "subc",  MK_BIN_LAST_DEST },
+        { "subv",    MK_BIN_LAST_DEST },
+        { "and",     MK_BIN_LAST_DEST }, { "or",    MK_BIN_LAST_DEST },
+        { "xor",     MK_BIN_LAST_DEST },
+        { "neg",     MK_BIN_LAST_DEST }, { "negc",  MK_BIN_LAST_DEST },
+        { "not",     MK_BIN_LAST_DEST },
+        { "mov",     MK_MOV }, { "mov.b", MK_MOV },
+        { "mov.w",   MK_MOV }, { "mov.l", MK_MOV },
+        { "cmp/eq",  MK_CMP }, { "cmp/hs", MK_CMP },
+        { "cmp/ge",  MK_CMP }, { "cmp/hi", MK_CMP },
+        { "cmp/gt",  MK_CMP }, { "cmp/str",MK_CMP },
+        { "cmp/pl",  MK_CMP_UNARY }, { "cmp/pz",  MK_CMP_UNARY },
+        { "tst",     MK_TST },
+        { "bra",     MK_BRANCH_LABEL }, { "bsr",   MK_BRANCH_LABEL },
+        { "bsr/s",   MK_BRANCH_LABEL },
+        { "bt",      MK_BRANCH_LABEL }, { "bf",    MK_BRANCH_LABEL },
+        { "bt/s",    MK_BRANCH_LABEL }, { "bf/s",  MK_BRANCH_LABEL },
+        { "jsr",     MK_BRANCH_INDIR }, { "jmp",   MK_BRANCH_INDIR },
+        { "rts",     MK_RTS },
+        { "lds",     MK_LDS },   { "lds.l", MK_LDS_L },
+        { "sts",     MK_STS },   { "sts.l", MK_STS_L },
+        { "ldc",     MK_LDC },   { "ldc.l", MK_LDC_L },
+        { "stc",     MK_STC },   { "stc.l", MK_STC_L },
+        { "mul.l",   MK_MUL },
+        { "dmuls.l", MK_DMUL },  { "dmulu.l", MK_DMUL },
+        { "muls.w",  MK_MULSW }, { "mulu.w",  MK_MULSW },
+        { "mac.l",   MK_MAC },   { "mac.w",   MK_MAC },
+        { "div0s",   MK_CMP }, /* read both, write T (Q) — close enough */
+        { "div0u",   MK_NOP },
+        { "div1",    MK_DIV1 },
+        { "swap.b",  MK_SWAP_XTRCT }, { "swap.w", MK_SWAP_XTRCT },
+        { "xtrct",   MK_SWAP_XTRCT },
+        { "extu.b",  MK_EXT }, { "extu.w", MK_EXT },
+        { "exts.b",  MK_EXT }, { "exts.w", MK_EXT },
+        { "tas.b",   MK_TAS },
+        { "sleep",   MK_SLEEP_TRAPA }, { "trapa", MK_SLEEP_TRAPA }
+};
+
+static enum sh_mn_kind sh_lookup_mnemonic(const char *mn) {
+        int i;
+        int n = (int)(sizeof sh_mnemonic_table
+                      / sizeof sh_mnemonic_table[0]);
+        for (i = 0; i < n; i++)
+                if (strcmp(mn, sh_mnemonic_table[i].name) == 0)
+                        return sh_mnemonic_table[i].kind;
+        return MK_UNKNOWN;
+}
+
+/* Helper: add reg-flow effects of a memory operand.
+ * For a SOURCE memory operand: read base; if post-inc, also write base.
+ * For a DEST memory operand: read base; if pre-dec or post-inc, also
+ * write base. */
+static void sh_p_mem_effects(const struct sh_operand *op,
+                             struct sh_asm_insn *insn,
+                             int as_dest) {
+        if (op->kind != SH_OP_MEM) return;
+        insn->reads |= 1u << op->reg;
+        if (op->mem_mode == SH_MEM_PREDEC
+            || op->mem_mode == SH_MEM_POSTINC)
+                insn->writes |= 1u << op->reg;
+        if (op->mem_mode == SH_MEM_R0IDX) {
+                insn->reads |= 1u << 0;  /* r0 is the index */
+        }
+        if (op->mem_mode == SH_MEM_GBRDISP)
+                insn->reads_sreg |= 1u << SH_SR_GBR;
+        (void)as_dest;
+}
+
+/* Apply read/write semantics for a parsed mnemonic + operands. */
+static void sh_p_apply_kind(struct sh_asm_insn *insn,
+                            enum sh_mn_kind kind) {
+        struct sh_operand *o = insn->operands;
+        int n = insn->n_operands;
+        switch (kind) {
+        case MK_UNKNOWN:
+                /* Conservative: any GP reg / sreg may be touched. */
+                insn->is_unknown = 1;
+                insn->reads = 0xFFFFu;
+                insn->writes = 0xFFFFu;
+                insn->reads_sreg = (1u << SH_SR_COUNT) - 1;
+                insn->writes_sreg = (1u << SH_SR_COUNT) - 1;
+                break;
+        case MK_NOP:
+                break;
+        case MK_NOP_T:
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_NOP_MAC:
+                insn->writes_sreg |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                break;
+        case MK_UNARY_DEST:
+                if (n >= 1 && o[0].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[0].reg;
+                        insn->writes |= 1u << o[0].reg;
+                }
+                break;
+        case MK_DT:
+                if (n >= 1 && o[0].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[0].reg;
+                        insn->writes |= 1u << o[0].reg;
+                }
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_MOVT:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[0].reg;
+                insn->reads_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_BIN_LAST_DEST:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[1].reg;
+                        insn->writes |= 1u << o[1].reg;
+                } else if (n == 1 && o[0].kind == SH_OP_REG) {
+                        /* `neg rN` style — single-operand variant. */
+                        insn->writes |= 1u << o[0].reg;
+                }
+                /* Some forms (addc/subc/negc) read/write T, but we
+                 * only need that for sreg-precise analyses; conservative
+                 * additions as needed. */
+                if (insn->mnemonic
+                    && (strcmp(insn->mnemonic, "addc") == 0
+                        || strcmp(insn->mnemonic, "subc") == 0
+                        || strcmp(insn->mnemonic, "negc") == 0)) {
+                        insn->reads_sreg  |= 1u << SH_SR_T;
+                        insn->writes_sreg |= 1u << SH_SR_T;
+                }
+                if (insn->mnemonic
+                    && (strcmp(insn->mnemonic, "addv") == 0
+                        || strcmp(insn->mnemonic, "subv") == 0))
+                        insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_MOV: {
+                /* Disambiguate by operand kinds:
+                 *   mov rA, rB         → read A, write B
+                 *   mov #imm, rN       → write N
+                 *   mov.X mem, rN      → load:  read mem, write N
+                 *   mov.X rN, mem      → store: read N, mem effects
+                 *   mov.X label, rN    → PC-rel load: write N
+                 */
+                if (n != 2) {
+                        insn->is_unknown = 1;
+                        insn->reads = 0xFFFFu;
+                        insn->writes = 0xFFFFu;
+                        break;
+                }
+                /* Source effects */
+                switch (o[0].kind) {
+                case SH_OP_REG:
+                        insn->reads |= 1u << o[0].reg;
+                        break;
+                case SH_OP_IMM:
+                        break;
+                case SH_OP_MEM:
+                        sh_p_mem_effects(&o[0], insn, 0);
+                        break;
+                case SH_OP_LABEL:
+                        /* PC-rel literal load — no GP-reg read */
+                        break;
+                default:
+                        break;
+                }
+                /* Dest effects */
+                switch (o[1].kind) {
+                case SH_OP_REG:
+                        insn->writes |= 1u << o[1].reg;
+                        break;
+                case SH_OP_MEM:
+                        sh_p_mem_effects(&o[1], insn, 1);
+                        break;
+                default:
+                        insn->is_unknown = 1;
+                        insn->writes = 0xFFFFu;
+                        break;
+                }
+                break;
+        }
+        case MK_CMP:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                if (n >= 1 && o[0].kind == SH_OP_IMM
+                    && n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_CMP_UNARY:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_TST:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                if (n >= 1 && o[0].kind == SH_OP_IMM
+                    && n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_BRANCH_LABEL:
+                insn->is_branch = 1;
+                if (insn->mnemonic
+                    && (insn->mnemonic[0] == 'b'
+                        && insn->mnemonic[1] == 's')) {
+                        insn->is_call = 1;
+                        insn->writes_sreg |= 1u << SH_SR_PR;
+                }
+                if (insn->mnemonic
+                    && (insn->mnemonic[0] == 'b'
+                        && (insn->mnemonic[1] == 't'
+                            || insn->mnemonic[1] == 'f')))
+                        insn->reads_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_BRANCH_INDIR:
+                insn->is_branch = 1;
+                if (n >= 1 && o[0].kind == SH_OP_MEM)
+                        insn->reads |= 1u << o[0].reg;
+                if (insn->mnemonic && insn->mnemonic[0] == 'j'
+                    && insn->mnemonic[1] == 's') {
+                        insn->is_call = 1;
+                        insn->writes_sreg |= 1u << SH_SR_PR;
+                }
+                break;
+        case MK_RTS:
+                insn->is_branch = 1;
+                insn->reads_sreg |= 1u << SH_SR_PR;
+                break;
+        case MK_LDS:
+                /* lds rA, sreg */
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_LDS_L:
+                /* lds.l @rN+, sreg */
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 0);
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_STS:
+                /* sts sreg, rA */
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[1].reg;
+                break;
+        case MK_STS_L:
+                /* sts.l sreg, @-rN */
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2) sh_p_mem_effects(&o[1], insn, 1);
+                break;
+        case MK_LDC:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_LDC_L:
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 0);
+                if (n >= 2 && o[1].kind == SH_OP_SREG)
+                        insn->writes_sreg |= 1u << o[1].sreg;
+                break;
+        case MK_STC:
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[1].reg;
+                break;
+        case MK_STC_L:
+                if (n >= 1 && o[0].kind == SH_OP_SREG)
+                        insn->reads_sreg |= 1u << o[0].sreg;
+                if (n >= 2) sh_p_mem_effects(&o[1], insn, 1);
+                break;
+        case MK_MUL:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_MACL;
+                break;
+        case MK_DMUL:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                break;
+        case MK_MULSW:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[1].reg;
+                insn->writes_sreg |= 1u << SH_SR_MACL;
+                break;
+        case MK_MAC:
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 0);
+                if (n >= 2) sh_p_mem_effects(&o[1], insn, 0);
+                insn->reads_sreg  |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                insn->writes_sreg |= (1u << SH_SR_MACH)
+                                   | (1u << SH_SR_MACL);
+                break;
+        case MK_DIV1:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[1].reg;
+                        insn->writes |= 1u << o[1].reg;
+                }
+                insn->reads_sreg  |= 1u << SH_SR_T;
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_TAS:
+                if (n >= 1) sh_p_mem_effects(&o[0], insn, 1);
+                insn->writes_sreg |= 1u << SH_SR_T;
+                break;
+        case MK_SWAP_XTRCT:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG) {
+                        insn->reads  |= 1u << o[1].reg;
+                        insn->writes |= 1u << o[1].reg;
+                }
+                break;
+        case MK_EXT:
+                if (n >= 1 && o[0].kind == SH_OP_REG)
+                        insn->reads |= 1u << o[0].reg;
+                if (n >= 2 && o[1].kind == SH_OP_REG)
+                        insn->writes |= 1u << o[1].reg;
+                break;
+        case MK_SLEEP_TRAPA:
+                /* Opaque: assume it could clobber anything. */
+                insn->is_unknown = 1;
+                insn->reads = 0xFFFFu;
+                insn->writes = 0xFFFFu;
+                insn->reads_sreg = (1u << SH_SR_COUNT) - 1;
+                insn->writes_sreg = (1u << SH_SR_COUNT) - 1;
+                break;
+        }
+}
+
+/* ── per-line classification ──────────────────────────── */
+
+static int sh_p_line_is_blank_or_comment(const char *p) {
+        p = sh_p_skip_ws(p);
+        if (*p == 0 || *p == '\n' || *p == '\r') return 1;
+        if (*p == '!' || *p == ';') return 1;
+        if (p[0] == '/' && p[1] == '*') return 1;
+        return 0;
+}
+
+/* Classify one line into the insn record. */
+static void sh_parse_one_line(struct sh_asm_insn *insn,
+                              const char *line) {
+        const char *p = line;
+        const char *content;
+        char *mnemonic = NULL;
+
+        if (sh_p_line_is_blank_or_comment(p)) {
+                insn->is_comment = 1;
+                return;
+        }
+
+        p = sh_p_skip_ws(p);
+        content = p;
+
+        /* Label-only line? Use existing helper. */
+        if (sh_is_label_line(content)) {
+                insn->is_label = 1;
+                /* Capture the label name for completeness. */
+                {
+                        const char *e = strchr(content, ':');
+                        if (e)
+                                insn->mnemonic = stringn((char *)content,
+                                                         e - content);
+                }
+                return;
+        }
+
+        /* Directive? */
+        if (*p == '.') {
+                /* Read the directive name (`.long`, `.short`, etc.) */
+                const char *start = p;
+                while ((*p >= 'a' && *p <= 'z')
+                       || (*p >= 'A' && *p <= 'Z')
+                       || *p == '.' || *p == '_'
+                       || (*p >= '0' && *p <= '9')) p++;
+                insn->mnemonic = stringn((char *)start, p - start);
+                insn->is_directive = 1;
+                /* Operands for diagnostic dump only — directives have
+                 * no register effects. */
+                insn->n_operands = sh_p_parse_operands(&p, insn->operands);
+                return;
+        }
+
+        /* Combined `LABEL: instruction` form (e.g. `LP0: .long _x`).
+         * For Stage 1, treat the line as if the instruction part
+         * starts after the colon. */
+        {
+                const char *colon = NULL, *q = content;
+                while (((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+                        || (*q >= '0' && *q <= '9') || *q == '_'
+                        || *q == '.'))
+                        q++;
+                if (*q == ':') {
+                        colon = q;
+                        q++;
+                        q = sh_p_skip_ws(q);
+                        if (*q && *q != '\n' && *q != '\r'
+                            && *q != '!' && *q != ';') {
+                                insn->is_label = 1;
+                                p = q;
+                                content = q;
+                                /* Re-check directive after the colon */
+                                if (*p == '.') {
+                                        const char *start = p;
+                                        while ((*p >= 'a' && *p <= 'z')
+                                               || (*p >= 'A' && *p <= 'Z')
+                                               || *p == '.' || *p == '_'
+                                               || (*p >= '0' && *p <= '9'))
+                                                p++;
+                                        insn->mnemonic = stringn((char *)start,
+                                                                 p - start);
+                                        insn->is_directive = 1;
+                                        insn->n_operands = sh_p_parse_operands(
+                                                &p, insn->operands);
+                                        return;
+                                }
+                        }
+                        (void)colon;
+                }
+        }
+
+        /* Mnemonic — read up to whitespace or end-of-line. */
+        {
+                const char *start = p;
+                while (((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')
+                        || (*p >= '0' && *p <= '9') || *p == '/'
+                        || *p == '.'))
+                        p++;
+                if (p == start) {
+                        insn->is_unknown = 1;
+                        sh_p_apply_kind(insn, MK_UNKNOWN);
+                        return;
+                }
+                mnemonic = stringn((char *)start, p - start);
+                insn->mnemonic = mnemonic;
+        }
+
+        /* Operands */
+        insn->n_operands = sh_p_parse_operands(&p, insn->operands);
+
+        /* Dispatch by mnemonic kind. */
+        sh_p_apply_kind(insn, sh_lookup_mnemonic(mnemonic));
+}
+
+/* ── public API ───────────────────────────────────────── */
+
+/* Accessors for dag.c — let target-agnostic code walk the parsed
+ * body without seeing the opaque struct internals. */
+int sh_asm_body_n_insns(struct sh_asm_body *body) {
+        return body ? body->n_insns : 0;
+}
+
+struct sh_asm_insn *sh_asm_body_insn(struct sh_asm_body *body, int i) {
+        if (!body || i < 0 || i >= body->n_insns) return NULL;
+        return &body->insns[i];
+}
+
+char *sh_asm_insn_src_text(struct sh_asm_insn *in) {
+        return in ? in->src_text : NULL;
+}
+
+struct sh_asm_body *sh_parse_asm_text(const char *text) {
+        struct sh_asm_body *body;
+        const char *p = text;
+        int line_no = 1;
+
+        NEW0(body, PERM);
+        body->raw_text = stringn((char *)text, strlen(text));
+        body->n_capacity = 16;
+        body->insns = allocate(body->n_capacity
+                               * sizeof(struct sh_asm_insn), PERM);
+        body->n_insns = 0;
+
+        while (*p) {
+                const char *line_start = p;
+                const char *line_end;
+                int len;
+                struct sh_asm_insn *insn;
+                char *src_text;
+
+                for (line_end = p; *line_end && *line_end != '\n';
+                     line_end++) ;
+                len = line_end - line_start
+                      + (*line_end == '\n' ? 1 : 0);
+                src_text = stringn((char *)line_start, len);
+
+                if (body->n_insns >= body->n_capacity) {
+                        int new_cap = body->n_capacity * 2;
+                        struct sh_asm_insn *new_arr;
+                        new_arr = allocate(new_cap
+                                           * sizeof(struct sh_asm_insn),
+                                           PERM);
+                        memcpy(new_arr, body->insns,
+                               body->n_insns
+                               * sizeof(struct sh_asm_insn));
+                        body->insns = new_arr;
+                        body->n_capacity = new_cap;
+                }
+
+                insn = &body->insns[body->n_insns++];
+                memset(insn, 0, sizeof(*insn));
+                insn->src_text = src_text;
+                insn->line_no = line_no;
+
+                sh_parse_one_line(insn, src_text);
+
+                p = line_end;
+                if (*p == '\n') {
+                        p++;
+                        line_no++;
+                }
+        }
+        return body;
+}
+
+/* ── canonical emit (Stage 2) ─────────────────────────
+ *
+ * Re-format a parsed instruction in the same `\t<mn>\t<ops>\n`
+ * layout C-derived emit produces. Source whitespace is discarded;
+ * the assembled .o bytes are unchanged because the SH-2 assembler
+ * doesn't care about whitespace within the instruction.
+ *
+ * Operand printers below produce the canonical form for each
+ * operand kind. Comments / blank lines / labels emit their
+ * original src_text (no canonical form for them). Directives emit
+ * `\t<directive>\t<operands>\n`.
+ * ──────────────────────────────────────────────────── */
+
+static const char *sh_sreg_name(enum sh_sreg_id id) {
+        switch (id) {
+        case SH_SR_PR:   return "pr";
+        case SH_SR_GBR:  return "gbr";
+        case SH_SR_VBR:  return "vbr";
+        case SH_SR_SR:   return "sr";
+        case SH_SR_MACH: return "mach";
+        case SH_SR_MACL: return "macl";
+        case SH_SR_T:    return "t";
+        default:         return "?";
+        }
+}
+
+static void sh_emit_operand(const struct sh_operand *op, int as_directive) {
+        switch (op->kind) {
+        case SH_OP_NONE:
+                break;
+        case SH_OP_REG:
+                print("r%d", op->reg);
+                break;
+        case SH_OP_SREG:
+                print("%s", sh_sreg_name(op->sreg));
+                break;
+        case SH_OP_IMM:
+                /* Directive operands (`.byte 0x30`, `.long 4`) print
+                 * as bare values — the SH-2 assembler rejects `#`
+                 * outside instruction immediate context. Instruction
+                 * operands (`mov #1, r3`) keep the `#` prefix. */
+                if (op->label)
+                        print(as_directive ? "%s" : "#%s", op->label);
+                else
+                        print(as_directive ? "%d" : "#%d", (int)op->imm);
+                break;
+        case SH_OP_LABEL:
+                print("%s", op->label ? op->label : "?");
+                break;
+        case SH_OP_MEM:
+                switch (op->mem_mode) {
+                case SH_MEM_INDIR:
+                        print("@r%d", op->reg);
+                        break;
+                case SH_MEM_PREDEC:
+                        print("@-r%d", op->reg);
+                        break;
+                case SH_MEM_POSTINC:
+                        print("@r%d+", op->reg);
+                        break;
+                case SH_MEM_DISP:
+                        print("@(%d,r%d)", (int)op->imm, op->reg);
+                        break;
+                case SH_MEM_R0IDX:
+                        print("@(r0,r%d)", op->reg);
+                        break;
+                case SH_MEM_GBRDISP:
+                        print("@(%d,gbr)", (int)op->imm);
+                        break;
+                case SH_MEM_PCDISP:
+                        print("@(%d,pc)", (int)op->imm);
+                        break;
+                default:
+                        print("@?");
+                        break;
+                }
+                break;
+        }
+}
+
+static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
+        int i;
+        if (!in) return;
+        if (in->is_comment) {
+                /* Blank or comment line — skip emission entirely.
+                 * The assembled output doesn't need decorative
+                 * whitespace from the source. */
+                return;
+        }
+        if (in->is_label && !in->is_directive) {
+                /* Standalone `LABEL:` line. */
+                print("%s:\n", in->mnemonic ? in->mnemonic : "?");
+                return;
+        }
+        if (in->is_directive) {
+                /* Directives don't fit the SH-2 instruction operand
+                 * grammar. Forms like `.type X, @function` and
+                 * `.string "..."` have shapes the per-operand parser
+                 * can't represent without growing in unbounded
+                 * directions. Emit directives verbatim from src_text:
+                 * the assembler is the authority on operand syntax.
+                 *
+                 * Indent: bare directives get a leading tab
+                 * (assembler convention); LABEL-prefixed directive
+                 * lines start at column 0 (the label is its own
+                 * statement). */
+                const char *s = in->src_text;
+                while (*s == ' ' || *s == '\t') s++;
+                if (in->is_label) {
+                        print("%s", s);
+                } else {
+                        print("\t%s", s);
+                }
+                if (s[0] == 0 || s[strlen(s) - 1] != '\n')
+                        print("\n");
+                return;
+        }
+        if (in->is_unknown || !in->mnemonic) {
+                /* Unparseable line — fall back to the original
+                 * src_text so we don't drop content. */
+                const char *s = in->src_text;
+                while (*s == ' ' || *s == '\t') s++;
+                print("\t%s", s);
+                if (s[0] == 0 || s[strlen(s) - 1] != '\n')
+                        print("\n");
+                return;
+        }
+        /* Standard `\t<mn>\t<op1>,<op2>\n` form. */
+        print("\t%s", in->mnemonic);
+        if (in->n_operands > 0) {
+                print("\t");
+                for (i = 0; i < in->n_operands; i++) {
+                        if (i > 0) print(",");
+                        sh_emit_operand(&in->operands[i], 0);
+                }
+        }
+        print("\n");
+}
+
+/* Dump the parsed body to stderr in a stable, grep-friendly format
+ * for the Stage 1 regtests. Each insn is one [asm-dump] line. */
+static void sh_dump_asm_body(const struct sh_asm_body *body,
+                             const char *label) {
+        int i;
+        fprint(stderr, "[asm-dump] BLOCK %s: %d insns\n",
+               label ? label : "(anon)", body->n_insns);
+        for (i = 0; i < body->n_insns; i++) {
+                const struct sh_asm_insn *in = &body->insns[i];
+                char flags[16];
+                int fl = 0;
+                flags[fl++] = '[';
+                if (in->is_branch)    flags[fl++] = 'B';
+                if (in->is_call)      flags[fl++] = 'C';
+                if (in->is_directive) flags[fl++] = 'D';
+                if (in->is_label)     flags[fl++] = 'L';
+                if (in->is_comment)   flags[fl++] = 'M';
+                if (in->is_unknown)   flags[fl++] = 'U';
+                flags[fl++] = ']';
+                flags[fl] = 0;
+                fprint(stderr,
+                       "[asm-dump]   %d %s mn=%s reads=0x%x writes=0x%x sr_r=0x%x sr_w=0x%x\n",
+                       i, flags,
+                       in->mnemonic ? in->mnemonic : "(none)",
+                       (unsigned)in->reads, (unsigned)in->writes,
+                       (unsigned)in->reads_sreg,
+                       (unsigned)in->writes_sreg);
+                fprint(stderr, "[asm-dump]     src: %s",
+                       in->src_text);
+                if (in->src_text[0]
+                    && in->src_text[strlen(in->src_text) - 1] != '\n')
+                        fprint(stderr, "\n");
+        }
 }
 
 /* Return 1 if register `rN` is dead immediately after sh_lines[start]
@@ -6645,6 +7940,33 @@ static void sh_ipa_apply_mutation_rewrite(struct sh_ipa_fn *e,
 /* The full per-function codegen pipeline, formerly the body of
  * function(). Restores codehead from the captured snapshot so
  * gencode()/emitcode() iterate this function's Code list. */
+/* asm-shim Stage 4 (saturn/workstreams/asm_shim_design.md §7):
+ * a "naked shim" is a function whose body is nothing but
+ * ASM_INSN+V Nodes — no C-derived RET, JUMP, ASGN, etc. We emit
+ * such functions as just their body lines (canonical form) with
+ * the function label and section directives, no prologue/epilogue
+ * wrapping. The asm body's own `rts` terminates flow.
+ *
+ * Detection: walk the captured Code list; any Gen forest carrying
+ * a non-ASM_INSN Node fails the check. Framing records
+ * (Blockbeg/Blockend/Defpoint/Label) are skipped — they don't
+ * represent emitted code. */
+static int sh_function_is_naked_shim(struct sh_ipa_fn *e) {
+        Code cp;
+        int saw_asm_insn = 0;
+        for (cp = e->code_head.next; cp; cp = cp->next) {
+                Node n;
+                if (cp->kind != Gen)
+                        continue;
+                for (n = cp->u.forest; n; n = n->link) {
+                        if (specific(n->op) != ASM_INSN+V)
+                                return 0;
+                        saw_asm_insn = 1;
+                }
+        }
+        return saw_asm_insn;
+}
+
 static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         Symbol f = e->f;
         Symbol *caller = e->caller;
@@ -6683,6 +8005,47 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         if (f->sclass != STATIC)
                 print("\t.global %s\n", f->x.name);
         segment(CODE);
+
+        /* asm-shim Stage 4: naked-shim fast path. Skip
+         * prologue/epilogue/pool-flush/peephole/allocator entirely
+         * and emit just the body's ASM_INSN Nodes in canonical
+         * form. The body's own `rts` terminates flow; the function
+         * exit label (cfunc->u.f.label) is unused for an all-asm
+         * body — defined-but-not-emitted is fine. The result
+         * round-trips a prod-derived shim's bytes (modulo canonical
+         * whitespace, which asm_normalize.py strips). */
+        if (sh_function_is_naked_shim(e)) {
+                Code cp;
+                /* `.align 1` = 2-byte alignment (the SH-2 instruction
+                 * minimum) rather than `.align 2` = 4-byte. Prod
+                 * function entries can sit at 2-mod-4 offsets (e.g.
+                 * FUN_0604DF12 ends in 0x12, not 0x10 or 0x14). A
+                 * 4-byte align between adjacent asm-bodied functions
+                 * would round up by 2 bytes, shifting all subsequent
+                 * code/pool offsets and breaking PC-relative loads
+                 * downstream. The asm body's own `.byte` padding
+                 * handles any explicit alignment prod requires. */
+                print("\t.align 1\n");
+                print("%s:\n", f->x.name);
+                for (cp = e->code_head.next; cp; cp = cp->next) {
+                        Node n;
+                        if (cp->kind != Gen)
+                                continue;
+                        for (n = cp->u.forest; n; n = n->link) {
+                                if (specific(n->op) != ASM_INSN+V)
+                                        continue;
+                                sh_emit_asm_insn(n->syms[0]
+                                                 ? n->syms[0]->x.asm_insn
+                                                 : NULL);
+                        }
+                }
+                /* Restore Phase E state so the next function's
+                 * processing starts clean. tmask/vmask and the
+                 * wildcard priority array were not touched on this
+                 * path. */
+                sh_ipa_current = NULL;
+                return;
+        }
 
         nshlit = 0;
         sh_all_returns_inlined = 0;
@@ -7401,6 +8764,13 @@ static void export(Symbol p) {
 static void import(Symbol p) {}
 
 static void defsymbol(Symbol p) {
+        /* Hitachi SHC didn't prepend a leading underscore to C
+         * identifiers (unlike a.out / Mach-O conventions). For
+         * the unity-build bring-in this matters: shim .c files
+         * carry prod assembly verbatim, where `bsr FUN_X` and
+         * `bra FUN_X` reference bare names. If we mangled to
+         * _FUN_X here, every cross-TU branch would fail to
+         * resolve. Match prod's convention — bare names. */
         if (p->scope >= LOCAL && p->sclass == STATIC)
                 p->x.name = stringf("L%d", genlabel(1));
         else if (p->generated)
@@ -7408,7 +8778,7 @@ static void defsymbol(Symbol p) {
         else if (p->scope == CONSTANTS)
                 p->x.name = p->name;
         else
-                p->x.name = stringf("_%s", p->name);
+                p->x.name = p->name;
 }
 
 static void address(Symbol q, Symbol p, long n) {
@@ -7554,5 +8924,7 @@ Interface shIR = {
                 1,  /* retain_func_arena: IPA Phase A.0 — keeps FUNC
                      * arena alive across functions so the defer queue
                      * can still reach Code lists at progend drain. */
+                sh_parse_asm_text,  /* parse_asm: Stage 2 of asm-shim
+                     * — see saturn/workstreams/asm_shim_design.md §5. */
         }
 };

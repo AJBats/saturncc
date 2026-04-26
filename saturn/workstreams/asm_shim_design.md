@@ -1,816 +1,848 @@
-# asm-shim design — `asm { ... }` for unity-build IPA
+# asm-shim design — `asm { ... }` as a first-class IR participant
 
-Design doc for the next major workstream: extend the SH-2 frontend with
-a unified `asm { ... }` construct so prod functions can be brought into
-our TUs as asm shims that participate in IPA analysis. This unblocks
-the per-TU "unity build" needed to make the IPA r4 mechanism (Phase
-E.1b, landed) actually fire on real corpus functions.
+Design doc for the asm-shim workstream: extend the SH-2 backend so
+that `asm { ... }` blocks parse into the same Node-list intermediate
+that C lowers to, with each asm instruction becoming an analyzable
+record alongside C-derived Nodes. This is **not** a "stash text and
+emit verbatim" scheme — it's a unification of asm and C in a single
+intermediate so register flow, write-set analysis, and call-site
+lowering all see one truth.
+
+The faithful-byte-reproduction requirement is preserved: each parsed
+asm record carries its source text, and emit replays that text
+unchanged. Analysis sees structure; emit sees bytes.
 
 ## Handoff for next session
 
-**Status:** design landed, no implementation yet. IPA Phase E.1b
-infrastructure is on master (commits `943a487` + `a33e79e`); the
-asm-shim work is the bridge from "infrastructure exists" to
-"infrastructure fires on the corpus."
+**Status: closed.** Stages 1–5 landed on branch
+`asm-shim/session-1-lexer-parser`:
 
-**If you're picking this up now, your task is Session 1 of the
-asm-shim plan: implement the `asm { ... }` lexer + parser.** See the
-TODO checklist in section 12 below for concrete items.
+  - Stage 1 (`57e771a`) — parser + IR struct.
+  - Stage 2 (`4cc621f`) — IR end-to-end, canonical emit,
+    `__asm("...")` retired, FUN_06044060.c migrated to `asm { ... }`.
+  - Stage 3 (`142dc6e`) — Phase C reads ASM_INSN writes mask.
+  - Stage 4 (`40f3b71`) — naked emit for whole-function shims.
+  - Stage 5 (`b427ae9`) — allocator awareness for adjacent
+    ASM_INSN; FUN_06044060 call sites use threaded object-pointer
+    signatures; TU baseline re-pinned 21 → 29 (8-line cost from
+    redundant r4 setups, recoverable via Phase C's writes_r4
+    consulted at the C call site — see "next" below).
+  - **Stage 6 deferred.** Pool isolation for shims with internal
+    `.long` pools coexisting with the compiler's shlit pool. Only
+    matters for mixed C+asm with embedded pool entries; no current
+    TU exercises this. Defer until a real prod-imported shim
+    surfaces the failure case, then design against the actual
+    constraint rather than speculating.
+
+50/50 tests pass. Standalone byte-match 10/10 ok, TU
+`race_FUN_06044060` 190 ok with the re-pinned baseline,
+broad-corpus stable (183 pass, 0 crash).
+
+**Next workstreams** (separately scoped, not part of this doc):
+
+  - **Unity-build bring-in.** Mechanical generation of naked asm
+    shims for every prod function in
+    `D:/Projects/DaytonaCCEReverse/src/race/*.s`. ~850 functions
+    per the 2026-04-24 race-module census. Stages 1–5 give the
+    infrastructure; the bring-in is a generation-tooling project
+    plus the surface-the-laundry-list integration work that
+    follows. Fresh design pass needed.
+  - **Phase C writes_r4 → C call site** codegen extension. The
+    8-line cost in FUN_06044060 (and the same pattern in any
+    function with multiple calls to preserves-r4 callees) is
+    recoverable: when Phase C says `writes_r4 == 0` for a callee,
+    skip the C-side `mov rN, r4` setup if r4 is already known to
+    hold the same value from the previous call. Strictly
+    derived from existing analysis — no new pragma. Parallel to
+    Phase E.1b's pin engagement; same shape of change.
+  - The two are independent; either can land first.
+
+**The earlier scanner-based plan was retired in conversation.** A
+text-only `sh_asm_writes_reg` scanner would have answered one
+question (writes_r4) by re-scanning text every time, leaving every
+future analysis to invent its own scanner. Worse, it would not have
+addressed the actual smell in the corpus: call sites in
+`FUN_06044060.c` lines 75-83 that lie about callee signatures and
+rely on adjacent `__asm("...")` blocks to set up registers manually.
+The compiler has no way to know those registers carry meaningful
+values. Replacing the scanner with a parsed-IR foundation is the
+work.
 
 ### Starting points before writing code
 
-1. **Read this doc end to end.** Decisions in section 1 are locked.
-   Open questions in section 14 are still open and need to be settled
-   in conversation with the user, not inferred.
-2. **Read the race-module SHC-annotation census** at
+1. **Read this doc end to end.** The 7-stage plan in section 12 is
+   the contract — each stage gets a design pass with the user
+   before code lands.
+2. **Read `src/sh.md`'s line-level helpers** — `sh_regs_used()`,
+   `sh_parse_regmov()`, `sh_branch_target_reg()`, `sh_is_delay_safe()`.
+   The Stage 1 parser shares conventions with these (SH-2 mnemonic
+   matching, operand parsing).
+3. **Read [FUN_06044060.c lines 70-98]
+   (saturn/experiments/daytona_byte_match/race_FUN_06044060/FUN_06044060.c)**
+   — the "filthy" pattern this work eliminates. `FUN_06044F30()` is
+   declared no-args; the call site lies; `__asm` blocks set up r5,
+   r6, r7 manually; the compiler doesn't model any of this. Stage 5
+   is what makes that pattern unnecessary.
+4. **Read the race-module SHC-annotation census** at
    `D:\Projects\DaytonaCCEReverse\docs\shc_annotation_census_race.md`
-   for empirical context on how this work fits into the broader project.
-3. **Read `src/expr.c:411`** (`asm_intrinsic()`) — the existing
-   `__asm("...")` parser. Your `asm { ... }` work will reuse the
-   downstream machinery (the `ASMB+V` tree node, the Symbol-with-text
-   pattern). This is the closest existing template.
-4. **Read `src/lex.c`** to understand the tokenizer. Section 4 of this
-   doc spec'd a "raw-text mode" mode-switch — that's where it lives.
-5. **Read `src/decl.c`** for function-definition parsing. File-scope
-   `int FOO(int p) asm { ... }` as a function body needs a hookup
-   there.
-6. **Validate with `wsl bash saturn/tools/validate_build.sh`** every
-   iteration. 42/42 must keep passing plus any new asm-shim regtests.
-7. **Talk to the user before coding.** Section 14's open questions —
-   inferred-naked vs `#pragma naked`, statement-level placement
-   rules, empty-block handling — should be settled in conversation.
+   for empirical scope (~850 race functions, 5-10% are permanent
+   shims).
+5. **Validate with `wsl bash saturn/tools/validate_build.sh`** every
+   iteration. New regtests added per stage; existing tests stay
+   green.
+6. **Discuss before coding at every stage.** The temptation is to
+   take shortcuts that re-introduce the scanner shape (text-level
+   special-case branches). Don't.
 
 ### What NOT to do
 
-- Don't try to do all three sessions in one go. Each has its own
-  validation gate; ship them independently.
-- Don't touch the IPA backend (Phases A through E.1b). It's done and
-  validated. The asm-shim work feeds it new data; it doesn't modify
-  it.
-- Don't touch other backends (alpha.md, mips.md, sparc.md, x86.md,
-  x86linux.md). Lexer changes in `src/lex.c` are shared, so be
-  careful: the `asm` keyword recognition has to be SH-only or
-  guarded by an Xinterface flag so the other targets see no
-  behavior change.
-- Don't auto-generate shims from prod yet (out-of-scope per
-  section 13).
-- Don't implement multi-entry-point support (out-of-scope; will
-  come later as a separate workstream).
-- Don't recommend prod-.s sidecar strategies (per
+- **Don't introduce a parallel mnemonic table.** The destination-
+  detection rules live in one place — the Stage 1 parser — and
+  every analysis queries `insn->writes` / `insn->reads`. New
+  analyses do not get their own scanners.
+- **Don't take shortcuts at stage boundaries.** Each stage has a
+  validation gate that pins behavior. Skipping a stage to land a
+  visible win sooner just defers the unification cost.
+- **Don't touch other backends.** Lexer changes from Session 1 are
+  already gated on `IR == &shIR`. The Stage 1 parser is sh.md-
+  internal; no risk.
+- **Don't recommend prod-.s sidecar strategies** (per
   `feedback_no_prod_sidecar_strategies.md` in user memory).
+- **Don't auto-generate shims yet.** Hand-extraction of the guinea
+  pig (FUN_06044F30) is fine for Stage 5. A generation script
+  comes later, separately.
+- **Don't pursue idiom-recognition codegen as part of asm-shim.**
+  SHC-faithful arg setup (`mov #1; shll16` for 0x10000) is a
+  related but separate Phase E.x workstream. Stage 5 only requires
+  that proper-signature calls *work* — not that they byte-match
+  prod.
 
 ## 0. Position in one paragraph
 
-Add a single new C-level construct `asm { ... }` that captures a block
-of raw text as a function body (or as a statement-level instruction
-sequence inside a C function). The lexer enters a raw-text mode on
-seeing `asm{`, slurps characters until the matching `}`, and emits the
-captured bytes verbatim at code-emit time (no prologue/epilogue
-wrapping for whole-function shims). Phase C's `writes_r4` analysis
-gains an asm-body scanner that reads the captured text and answers
-the same question it answers for DAG-bodied functions. The result:
-prod functions become first-class participants in the IPA cgraph
-without requiring C decompilation, the round-trip is bytes-in =
-bytes-out for shim bodies, and the catch-22 that today gates IPA on
-FUN_06044060 dissolves.
+`asm { ... }` is parsed at the frontend into a list of per-
+instruction records (`sh_asm_insn`), each carrying its source text
+plus parsed mnemonic, operands, and reads/writes register masks.
+These records become Nodes in the same Node-list intermediate where
+gencoded C lowers — one Node per asm instruction, indistinguishable
+in shape from C-derived Nodes for every analysis pass. The allocator
+sees fixed-register usage in asm bodies and routes around it.
+Phase C and future cross-function analyses (clobber narrowing, MAC,
+GBR pinning) walk the Node list uniformly. At emit time, asm-derived
+Nodes print their source text verbatim; C-derived Nodes go through
+the normal `IR->emit2`. The result: prod functions become first-class
+IR participants without C decompilation, mixed C+asm functions stop
+needing call-site lies, and the IPA mechanism fires on real corpus
+functions.
 
 ## 1. Decisions locked in
 
 **D1 (syntax surface):** `asm { ... }`. Replaces the existing
 `__asm("...")` one-liner. Single unified construct for both one-line
-inline asm and multi-line whole-function bodies. Rationale: per-line
-quoting tax on string-literal forms doesn't scale to 900-function
-mass import; one syntax avoids "messy room" coexistence; raw block
-content gives bytes-in = bytes-out by construction (no
-lexer-unescape-then-reescape round-trip risk).
+inline asm and multi-line whole-function bodies. Landed in Session 1.
 
 **D2 (source ownership):** prod-derived asm shims are checked in as
-owned source code in the appropriate TU's `.c` file. Mass conversion
-from prod is one-time translation (manual or one-off script);
-results live in our tree. NOT a sidecar / manifest / runtime-loaded
-artifact (per `feedback_no_prod_sidecar_strategies.md`).
+owned source code in the appropriate TU's `.c` file. NOT a sidecar
+artifact. (Per `feedback_no_prod_sidecar_strategies.md`.)
 
-**D3 (guinea pig):** FUN_06044F30, brought into the
-`race_FUN_06044060` TU. This is the one extern callee blocking
-Phase E.1b's IPA pin from engaging on FUN_06044060. FUN_06044F30
-is a secondary entry into FUN_06044E3C (offset +0xF4); the shim
-body is the prod byte slice from that offset down to the rts/nop.
-End-to-end success criterion: the IPA pin engages on FUN_06044060
-and its diff vs prod drops materially.
+**D3 (guinea pig):** FUN_06044F30 in the `race_FUN_06044060` TU. End-
+to-end success criterion: Stage 5 lands, the call site at
+FUN_06044060.c:73-84 stops using `__asm("...")` setups, the call
+becomes `FUN_06044F30(p1+0x30, ...)` with proper args, the IPA pin
+engages, FUN_06044060's diff drops materially, and byte-match holds.
+
+**D4 (foundation, not scanner):** asm parses to a structured IR shared
+with C. No parallel text scanners; one source of truth per analysis.
+This is the substance of the redesign.
+
+**D5 (normalization round-trip):** the contract is **assembled-byte
+equivalence**, not source-text equivalence. The parser tokenizes the
+asm body and discards presentational whitespace (alignment, leading
+indent, trailing spaces). The emitter re-formats every asm
+instruction in the same canonical layout the C-derived emit already
+uses (`\t<mnemonic>\t<operands>\n`). Result: one uniform whitespace
+style across the entire `.s` file; downstream `asm_normalize.py`
+strips whitespace anyway; what matters is the assembled `.o` bytes
+match prod, which they do because the canonical form contains
+exactly the same instructions and operands as the input.
+
+`src_text` survives in `sh_asm_insn` as a **diagnostic field**
+(used by `-d-asm` dumps and for source-line context in error
+messages). Emit does not read it.
+
+**D6 (memory is not a constraint):** the host machine is not memory-
+bound. If denormalizing data (carrying both raw text and parsed
+records) simplifies architecture, do it.
 
 ## 2. Why we need this
 
-### 2a. The catch-22 today
+### 2a. The lines-75-83 problem
 
-Phase C's writes_r4 cache is populated by walking each in-queue
-function's captured DAG. Functions outside the TU (`extern`) get
-the conservative ABI default (`writes_r4 = 1`). For FUN_06044060
-specifically: 4 of 5 callees correctly answer `preserves r4`; the
-fifth (FUN_06044F30) is extern and vetoes the predicate. The IPA
-pin therefore never engages, and the 15-line behavioral cluster
-the IPA design predicted closing stays closed.
-
-The naive fix is "compile all 900 functions in one TU so everyone
-is in-queue." But that requires every function to be decompiled
-to C — which would mean the IPA mechanism only helps after the
-project is essentially done. Catch-22.
-
-### 2b. The asm-shim cut
-
-Don't require C. Bring uncompleted functions into the TU as
-asm-bodied shims defined in `asm { ... }` blocks. Each shim:
-
-  - Creates a Symbol (so the cgraph has the edge).
-  - Has a body the compiler can analyze (Phase C scans the asm
-    text instead of walking a DAG).
-  - Emits as the prod bytes verbatim at drain time.
-
-When a shim eventually graduates to a real C decomp, the C version
-replaces the shim in the same `.c` file. Phase C transparently
-switches from asm-text scanning to DAG walking. No call-graph
-rewiring needed.
-
-### 2c. Beyond IPA
-
-The unity-build asm-shim mechanism is the foundation for any
-future analysis that needs cross-function visibility:
-register-clobber narrowing for non-r4 registers, MAC-state
-tracking, GBR-pinning analysis, ... All of those today face the
-same extern-veto problem. Solving it once, generally, is worth
-more than another per-pragma workaround.
-
-### 2d. Scope of the asm-shim era — what the census tells us
-
-`D:\Projects\DaytonaCCEReverse\docs\shc_annotation_census_race.md`
-(2026-04-24, 850-function census across all 39 race-module TUs)
-gives concrete shape to how long the asm-shim era lasts and which
-functions stay shimmed permanently:
-
-  - **~33% of race-module functions decomp to ordinary C with
-    zero SHC-specific annotations.** These graduate from asm-shim
-    to real C decomp first; the shim is purely a temporary
-    scaffold for them.
-  - **~33% need a single annotation** — usually `__entry_alias__`
-    for a Cat 1 multi-entry pair. Mechanism set we already have
-    or are about to build covers them. Also temporary scaffold.
-  - **~35% need 2+ annotations.** These are the painful cases,
-    and they are NOT uniformly distributed: they cluster in four
-    specific TUs (FUN_060351CC.s, FUN_0603C304.s, FUN_0604D380.s,
-    and the FUN_0604C76C.s software-pipelined chain). Most of
-    those 35% are still decomp-able with effort; a small subset
-    may not be economical.
-  - **A small permanent-shim minority (~5-10%, anchor case:
-    FUN_0604C76C's 7-entry software-pipelined chain) are
-    legitimately uneconomical to express in C.** The asm-shim is
-    their permanent home, not a scaffold.
-
-The single biggest annotation burden is **Cat 3 (gbr /
-unsaved-callee-save) at ~36% of all functions**. Our existing
-`#pragma global_register` mechanism is gating more than a third
-of the corpus — it has to be robust at scale. The asm-shim work
-doesn't change this directly, but the census makes it the
-top-priority pragma to harden as decomp ramps up.
-
-**Strategic implication for asm-shim:** the work is genuinely a
-scaffold for ~90% of the corpus and a permanent answer for ~5-10%.
-That ratio is healthier than the worry suggested — most of the
-asm-shim infrastructure pays off across the project lifetime, not
-just during a brief bring-in window. The permanent-shim minority
-also justifies investing in good asm-shim ergonomics (the
-`asm { ... }` syntax, round-trip preservation guarantees) rather
-than treating it as a throwaway intermediate format.
-
-## 3. The `asm { ... }` syntax
-
-### 3a. Two contexts
-
-**Statement-level (inside a C function body):**
-```c
-void foo(void) {
-    int x = 1;
-    asm { mov r1, r2 }
-    asm {
-        mov #16, r3
-        add r3, r4
-    }
-    return;
-}
-```
-Replaces every existing `__asm("...")` site. Same semantics: emit
-the captured text into the surrounding function's body at the
-point of the asm block.
-
-**File-scope (whole-function body):**
-```c
-#pragma naked(FUN_06044F30)
-void FUN_06044F30(int p1) asm {
-    sts.l   pr,@-r15
-    mov.l   LP0,r3
-    jsr     @r3
-    nop
-    /* ...the rest of the prod body verbatim... */
-    rts
-    nop
-LP0:    .long   _func_0x06044d80
-}
-```
-The function's body IS the asm block. No prologue/epilogue, no
-register homing for params, no body codegen at all — drain emits
-exactly the captured bytes.
-
-### 3b. Block-content rules
-
-Inside `{ ... }`:
-
-  - All characters between the opening `{` and matching `}` are
-    captured verbatim, including newlines, tabs, and comments.
-  - Brace counting: `{` increments depth, `}` decrements. The
-    block ends at depth-0 `}`. (SH-2 asm doesn't use `{`/`}`, so
-    in practice the first `}` ends it. Brace counting just makes
-    a defensive over-promise.)
-  - The captured text is stored as a single string. Leading and
-    trailing whitespace are NOT stripped (round-trip preservation).
-
-### 3c. Preprocessor interaction
-
-The build pipeline runs `cpp -P` before rcc (per
-`saturn/tools/build.sh`). cpp will preprocess inside the asm
-block too. For prod asm this is fine in practice:
-
-  - `mov #0x10, r4` — `#` mid-line is not a directive trigger.
-  - `mov.l #FOO, r5` — if FOO is `#define`d as a constant, it
-    gets expanded. Acceptable.
-  - `# comment` — `#` at start of line IS a directive trigger.
-    Mitigation: write asm comments as `! comment` or `; comment`
-    (both legal SH-2 asm comment chars), or `/* comment */`.
-
-A regtest will lock down the cpp behavior we depend on.
-
-### 3d. What `asm` is
-
-The `asm` keyword is a new reserved identifier handled at parse
-time. Not a macro. Not preprocessed away. Recognised at:
-
-  - Statement position inside a function body.
-  - As the right-hand side of a function definition (file scope,
-    for whole-function shims).
-
-## 4. Lexer: raw-text mode
-
-### 4a. The mode switch
-
-When the lexer sees the identifier `asm` followed (after optional
-whitespace) by `{`, it:
-
-  1. Returns an `ASM` token to the parser for the `asm` identifier.
-  2. Returns a `{` token (or however the existing lexer represents
-     it).
-  3. Switches to raw-text mode for the next read.
-
-In raw-text mode the lexer reads characters into a buffer until it
-sees a `}` at depth 0. The buffer becomes a single string-token
-(one Symbol with the text in `->name`).
-
-### 4b. Why a mode switch (vs slurping until `}` at the parser)
-
-Doing it at the parser level means tokenizing the asm body as if
-it were C — the lexer would emit MOV-as-identifier, `r1`-as-
-identifier, `,` as comma, etc. We'd then have to reconstruct the
-text from the token stream. Lossy and slow. The mode switch keeps
-the original characters intact.
-
-### 4c. Existing lexer
-
-`src/lex.c` is the only file that needs to learn the mode. The
-parser's only contact is the new `ASM` token and the string-
-typed argument the lexer hands it. Keep the change scoped to
-~50 lines.
-
-## 5. AST representation
-
-### 5a. The `asm { ... }` node
-
-Same as today's `__asm("...")` — an `ASMB+V` tree with `u.sym`
-carrying the raw text in `->name`. Reuse the existing constant
-and the existing emit path. The only change is who builds the
-node: `expr.c`'s `asm_intrinsic()` becomes the parser's `asm`-
-keyword handler.
-
-### 5b. Whole-function asm-bodied definitions
-
-A function whose body is a single `asm { ... }`:
-
-  - The Symbol gets `sclass = EXTERN` (or STATIC, per the C
-    declaration).
-  - The body is a single Code-list entry (kind=Gen) containing
-    one ASMB node.
-  - The `naked` pragma (or per-function attribute, see 6a)
-    suppresses prologue/epilogue.
-
-For the captured-DAG / IPA queue: same machinery as a C function.
-The function gets a queue entry, gets drained, emits its asm body
-unwrapped.
-
-### 5c. Statement-level asm in a C function
-
-Same as today's __asm — a Code-list Gen entry with one ASMB node.
-Mixed C-and-asm functions stay as they are; the new syntax is
-just a nicer way to write them.
-
-## 6. Backend: naked function emission
-
-### 6a. Naked attribute mechanism
-
-Three options for how to mark an asm-bodied function as naked:
-
-  - **`#pragma naked(NAME)`**, modeled on the existing
-    `noregsave` / `noregalloc` / `gbr_param` pragmas. Simple
-    extension of `sh_func_has_attr`.
-  - **Inferred** — detect that the function's body is a single
-    ASMB Code entry and skip the wrapping automatically. No
-    pragma needed. Cleaner UX.
-  - **Both** — the inference handles asm-only bodies; the pragma
-    is the explicit override for unusual cases.
-
-I lean inferred. The pragma is one more thing to forget. Inferred
-also makes the C source self-documenting: if the body is asm,
-that's WHY there's no prologue.
-
-### 6b. The drain change
-
-In `sh_process_deferred_fn`, after capturing the function's body
-into `sh_lines[]`, check: is the body a single ASMB-emitted line
-(or chain thereof) and nothing else? If so, skip the prologue
-emit, the param-homing moves, the usedmask save/restore, and the
-epilogue. Just emit the body lines and the function's terminating
-label-region.
-
-### 6c. The label
-
-Whole-function asm shims need their own function label. Today the
-backend emits the label as part of the prologue. For naked
-functions, emit just the label (`_FUN_06044F30:`) and then the
-asm body. The body is responsible for its own rts (it's prod
-asm — it already has one).
-
-### 6d. Pool emission
-
-Prod asm shims include their own constant pool (`.long ...`
-following the body). The backend's pool emission for a naked
-function should be a no-op — the asm shim manages its own pool.
-
-## 7. Phase C: asm-body writes_r4 scanner
-
-### 7a. Detection
-
-In `sh_analyze_writes_r4`, when iterating the function's captured
-forest, detect "this body is asm-only" via the same check the
-naked-emit logic uses. Branch to the scanner.
-
-### 7b. The scanner
-
-`int sh_asm_writes_reg(const char *text, int rN)`:
-
-Walks the asm text line by line. For each line:
-
-  - Skip empty lines, comment-only lines, label lines, directive
-    lines (`.long`, `.align`, `.global`, etc.), and pool entries.
-  - For instruction lines, parse the destination operand and
-    check if it's `r<rN>`.
-
-Destination operand cases that count as a write to `r<N>`:
-
-  - `mov ...,rN` (and `mov.b/w/l` variants)
-  - `add #imm,rN` / `add rX,rN`
-  - `sub`, `and`, `or`, `xor`, `not`, `neg` with `,rN` dest
-  - `extu.b/w`, `exts.b/w` with `,rN` dest
-  - `swap.b/w` with `,rN` dest
-  - `xtrct rX,rN`
-  - `mov.l @rX+,rN` (post-increment load)
-  - `mov.b/w/l @(disp,rX),rN`
-  - `mov.b/w/l @(R0,rX),rN`
-  - `mov.b/w/l @(disp,GBR),rN` (when N == 0)
-  - `mov.b/w/l @(disp,PC),rN` — PC-rel load
-  - `lds @rX+,...` / `lds rX,...` — these write SR/GBR/VBR/MACH/MACL/PR, not GP regs
-  - `sts ...,rN` — writes from SR/GBR/etc. INTO rN
-  - `movt rN`
-  - `dt rN`
-  - `shll/shlr/shal/shar/rotl/rotr/rotcl/rotcr rN` — shift-in-place writes rN
-
-The scanner is conservative: when uncertain (unparseable line,
-unknown mnemonic), assume it writes rN. Over-reporting means more
-pins don't engage — graceful degradation, NOT miscompilation.
-
-### 7c. Why text scanning, not assemble-then-disassemble
-
-A real disassembler would be more correct but pulls in
-significant code (or shells out to `sh-elf-objdump`). Text
-scanning is bounded, in-process, and SH-2's syntax is regular
-enough that the conservative scanner gets us most of the value
-with negligible code.
-
-### 7d. Where it lives
-
-A new function in `src/sh.md` (alongside the other sh_*
-helpers). Maybe ~80 lines of code plus a small unit-test
-regtest.
-
-## 8. Round-trip preservation guarantee
-
-The bytes-in = bytes-out invariant is a first-class design goal:
-for an asm-shim function whose body is captured from prod, the
-emitted asm must match prod byte for byte (modulo
-genuinely-equivalent whitespace per the asm_normalize tooling).
-
-Sources of potential drift to head off:
-
-  - **Lexer escape processing** — block content is captured raw,
-    no `\n` / `\t` interpretation. (This is a key reason
-    `asm { ... }` is better than the string-literal form.)
-  - **Trailing-whitespace stripping** — don't.
-  - **Tab vs space normalization** — don't normalize at capture
-    time. The asm_normalize.py pipeline handles cosmetic
-    differences for diff purposes; the raw emit must be faithful.
-  - **Pool-label rewrites** — we do label-renumbering across the
-    output for our own emitted code. For asm-shim bodies, leave
-    pool labels alone (they're inside the shim, not part of our
-    label space).
-
-A regtest will assert: a representative asm shim, when compiled
-and emitted, produces output bytewise identical to the input
-block content.
-
-## 9. Failure modes
-
-### 9a. Asm-scanner false negatives
-
-The scanner reports `preserves r4` when the body actually writes
-r4. Result: the IPA pin engages on a caller that shouldn't have
-engaged it; the synthesized `add #K, r4` mutation gets stomped
-mid-function by the callee's r4 write; byte-match fails (or worse,
-runtime miscompile if the bytes happen to match by accident).
-
-Mitigation: the scanner is conservative-by-default; uncertain
-mnemonics report `writes`. The known-write list in 7b is
-deliberately broad. New mnemonics encountered in the corpus get
-added to the list.
-
-### 9b. Asm-scanner false positives
-
-The scanner reports `writes r4` when the body doesn't. Result:
-IPA pin never engages on the caller; no IPA wins for that path.
-Acceptable — same as today's status quo.
-
-### 9c. Multi-entry functions in shims
-
-FUN_06044F30 is a secondary entry into FUN_06044E3C (offset
-+0xF4). If we shim FUN_06044F30 as its own function, those bytes
-appear twice in the output (once when FUN_06044E3C is compiled,
-once when FUN_06044F30 is shimmed). Total binary size grows by
-the slice size.
-
-For the guinea pig: acceptable. The mission is to prove the IPA
-mechanism, not to byte-match the full binary. Multi-entry support
-is a separate workstream; once it lands, the shim folds back into
-the parent function's body.
-
-### 9d. cpp expansion inside asm
-
-If a prod asm body happens to contain text that cpp interprets
-(e.g., a `#define` macro name), it gets expanded. Mitigation:
-prod asm doesn't have such constructs in practice. If we hit one,
-the workaround is to escape it, or to bypass cpp for the asm
-file. A regtest will surface the breakage if it ever happens.
-
-### 9e. Naked-function semantics
-
-A naked function with a non-shim body (e.g., a C body marked
-`#pragma naked`) would emit no prologue/epilogue around real
-codegen, producing broken output. Mitigation: only the inferred
-"body is single ASMB" path enables naked emission. A C body
-never triggers it.
-
-## 10. Migration of existing __asm() one-liners
-
-`FUN_06044060.c` has 8 `__asm("...")` calls in the existing
-`__asm` form. Mass-convert mechanically to `asm { ... }`:
+`FUN_06044060.c` today has this pattern:
 
 ```c
 __asm("mov #1, r6");
 __asm("shll16 r6");
+__asm("neg r6, r5");
+__asm("mov r6, r7");
+FUN_06044F30();   // declared no-args. lies.
 ```
 
-becomes:
+The C call says no args. The `__asm` setups happen to leave r5, r6,
+r7 in the right state. The compiler has no model of this — the
+asm sites are opaque and the call site is bare. It works because:
+
+  - The allocator doesn't know to allocate r5/r6/r7 between the asm
+    setups and the call.
+  - Nothing in the IR encodes "this asm produced an arg for the call
+    below."
+  - The delay-slot filler happens not to move anything that would
+    clobber r5/r6/r7 into the gap.
+
+Any one of those held coincidences breaks → silent miscompile. The
+fix is to give the IR a model of asm register flow so the call site
+can stop lying.
+
+### 2b. The catch-22 today (still relevant)
+
+Phase C's writes_r4 cache walks each in-queue function's captured
+DAG. Externs default to conservative `writes_r4 = 1`. For
+FUN_06044060 specifically, 4 of 5 callees correctly answer
+"preserves r4"; the fifth (FUN_06044F30) is extern and vetoes the
+predicate. The IPA pin therefore never engages.
+
+The asm-shim cut: bring uncompleted callees into the TU as asm-
+bodied functions. Each shim's parsed IR participates in Phase C's
+analysis. When the analysis can answer "writes_r4=0" from the
+parsed body, the pin engages. When the call site stops lying about
+its signature (Stage 5), the surrounding C also gets the right
+codegen.
+
+### 2c. Beyond IPA — the foundation argument
+
+Once asm parses into the same IR as C, every cross-function
+analysis the project will eventually need works the same way:
+
+  - **Register-clobber narrowing for non-r4 regs.** Same pattern as
+    writes_r4 — query each function's parsed body for "does any
+    instruction write rN?". One walk, all registers, all functions.
+  - **MAC-state tracking.** Does this callee touch MACL/MACH? The
+    asm Node's `writes_sreg` mask answers it.
+  - **GBR-pinning analysis.** Does this callee preserve GBR? Same.
+  - **Cross-call liveness for non-IPA cases.** The allocator's
+    awareness of asm-side register usage (Stage 5) generalizes to
+    any future "what's live across this call?" question.
+
+Each of those analyses is a function over the parsed IR, not a new
+scanner. That's the payoff.
+
+### 2d. Scope of the asm-shim era — what the census tells us
+
+`D:\Projects\DaytonaCCEReverse\docs\shc_annotation_census_race.md`
+(2026-04-24, 850-function census across all 39 race-module TUs):
+
+  - **~33% of race-module functions decomp to ordinary C.** Asm
+    shims are temporary scaffolding for these.
+  - **~33% need a single annotation.** Same — shim is a scaffold.
+  - **~35% need 2+ annotations**, concentrated in 4 specific TUs.
+    Most still decomp-able with effort.
+  - **~5-10% legitimately uneconomical to express in C** (anchor:
+    FUN_0604C76C's 7-entry software-pipelined chain). The shim is
+    their permanent home.
+
+Single biggest annotation burden: **Cat 3 (gbr / unsaved-callee-
+save) at ~36% of all functions.** Hardening `#pragma global_register`
+at scale is parallel to the asm-shim work; the parsed-IR foundation
+also helps it (clobber analysis sees gbr writes via `writes_sreg`).
+
+The 5-10% permanent-shim minority is part of why round-trip
+preservation is a first-class design goal, not a transitional one.
+
+## 3. The `asm { ... }` syntax (Session 1, landed)
+
+Already implemented. See commit `7975c40` and tests 4ad–4ag in
+validate_build.sh. Recap:
+
+  - **Statement-level**: `asm { mov r1, r2 }` inside a C function.
+    Captures the body verbatim, builds an ASMB tree node carrying
+    raw text. Replaces `__asm("...")`.
+  - **File-scope**: `int FUN_06044F30(int p1) asm { ... }` declares
+    a function whose body is asm. Currently emits with prologue/
+    epilogue wrap; Stage 4's naked emit will skip the wrap.
+  - **Round-trip preservation through the lexer**: bytes between
+    `{` and `}` are captured exactly; leading whitespace not
+    stripped, escape sequences not interpreted.
+  - **Empty `asm{}`** allowed, emits nothing.
+  - **Gated to SH target** (`IR == &shIR`); other backends see
+    `asm` as ID.
+
+What Session 1 did **not** do: parse the captured text. That's
+Stage 1.
+
+## 4. Stage 1: parsed-asm IR + parser
+
+The Stage 1 deliverable is the parser as a self-contained library —
+data structures + parsing function + regtests. **No frontend
+integration**, **no analysis hookup**, **no emit changes**. Output
+of every existing test is byte-identical to before.
+
+### 4a. Data structures (lives in `src/sh.md`)
 
 ```c
-asm { mov #1, r6 }
-asm { shll16 r6 }
+enum sh_operand_kind {
+    SH_OP_NONE,
+    SH_OP_REG,        /* r0..r15 */
+    SH_OP_SREG,       /* pr, gbr, vbr, sr, mach, macl, t */
+    SH_OP_IMM,        /* #imm */
+    SH_OP_MEM,        /* @rN, @-rN, @rN+, @(disp,rN), @(R0,rN),
+                       *   @(disp,GBR), @(disp,PC) */
+    SH_OP_LABEL,      /* bare identifier — branch target, pool sym */
+};
+
+enum sh_mem_mode {
+    SH_MEM_INDIR,     /* @rN */
+    SH_MEM_PREDEC,    /* @-rN */
+    SH_MEM_POSTINC,   /* @rN+ */
+    SH_MEM_DISP,      /* @(disp,rN) */
+    SH_MEM_R0IDX,     /* @(R0,rN) */
+    SH_MEM_GBRDISP,   /* @(disp,GBR) */
+    SH_MEM_PCDISP,    /* @(disp,PC) — PC-relative loads */
+};
+
+enum sh_sreg {
+    SH_SR_PR=0, SH_SR_GBR, SH_SR_VBR, SH_SR_SR,
+    SH_SR_MACH, SH_SR_MACL, SH_SR_T,
+    SH_SR_COUNT,
+};
+
+struct sh_operand {
+    enum sh_operand_kind kind;
+    int reg;              /* SH_OP_REG, SH_OP_MEM: base/only reg */
+    enum sh_sreg sreg;    /* SH_OP_SREG */
+    long imm;             /* SH_OP_IMM, SH_OP_MEM disp */
+    char *label;          /* SH_OP_LABEL: label name */
+    enum sh_mem_mode mem_mode;  /* meaningful for SH_OP_MEM */
+};
+
+struct sh_asm_insn {
+    char *src_text;       /* original source line — round-trip
+                           * handle. Trailing newline included. */
+    char *mnemonic;       /* canonicalized: "mov.l", "add",
+                           * "jsr", ".long", ... NULL on
+                           * unparseable lines (is_unknown=1). */
+    int n_operands;       /* 0..3 */
+    struct sh_operand operands[3];
+
+    unsigned reads;       /* GP reg bitmask (bit N = rN read) */
+    unsigned writes;      /* GP reg bitmask (bit N = rN written) */
+    unsigned reads_sreg;  /* bitmask indexed by enum sh_sreg */
+    unsigned writes_sreg; /* same */
+    unsigned char is_branch;
+    unsigned char is_call;     /* bsr/jsr — implicit pr write */
+    unsigned char is_directive;
+    unsigned char is_label;    /* whole line is a label def */
+    unsigned char is_comment;  /* whole line comment / blank */
+    unsigned char is_unknown;  /* parse failed; conservative masks */
+    int line_no;
+};
+
+struct sh_asm_body {
+    struct sh_asm_insn *insns;
+    int n_insns;
+    int n_capacity;
+    char *raw_text;       /* original whole-block content */
+};
 ```
 
-Or, if the user prefers to consolidate adjacent one-liners:
+Per [discussion]: per-operand `src_text` fields are dropped —
+`insn->src_text` round-trips the whole line, that's enough.
+Memory is not a constraint, but unused fields are still noise.
+
+### 4b. Parser scope
+
+The parser handles SH-2 instruction syntax actually present in the
+race-module corpus:
+
+  - **Mnemonics**: full SH-2 instruction set + size suffixes
+    (`mov`, `mov.b/w/l`, `add`, `add.l`, `cmp/eq`, `cmp/hs`, ...,
+    `bt`, `bt/s`, `bf`, `bf/s`, `bsr`, `bsr/s`, `jsr`, `rts`, `nop`,
+    `dt`, `swap.b/w`, `xtrct`, `extu.b/w`, `exts.b/w`, `mac.l`,
+    `mac.w`, `mul.l`, `dmuls.l`, `dmulu.l`, `muls.w`, `mulu.w`,
+    `lds`, `lds.l`, `sts`, `sts.l`, `ldc`, `ldc.l`, `stc`, `stc.l`,
+    `clrt`, `sett`, `clrmac`, `tst`, `tas.b`, `trapa`, `rotl`,
+    `rotr`, `rotcl`, `rotcr`, `shll`, `shll2`, `shll8`, `shll16`,
+    `shlr`, `shlr2`, `shlr8`, `shlr16`, `shal`, `shar`, `not`,
+    `neg`, `negc`, `addc`, `addv`, `subc`, `subv`, `div0s`, `div0u`,
+    `div1`, `and`, `or`, `xor`, ...).
+  - **Register operands**: `r0`–`r15`. Special: `pr`, `sr`, `gbr`,
+    `vbr`, `mach`, `macl`, `t`. `R0` and `r0` both accepted.
+  - **Immediates**: `#1`, `#0x10`, `#-16`, `#FOO` (label-as-imm).
+  - **Memory addressing**: full set in `sh_mem_mode`.
+  - **Labels**: bare identifiers at operand position; `^label:`
+    lines.
+  - **Directives**: `.long N`, `.short N`, `.word N`, `.byte N`,
+    `.align N`. Pool entries inside shims.
+  - **Comments**: trailing `! ...`, trailing `; ...`, whole-line
+    `/* ... */`.
+
+**Conservative on parse failure**: any line the parser can't classify
+gets `is_unknown=1`; `reads = writes = 0xFFFF` (all GP regs);
+`reads_sreg = writes_sreg = ~0u`. Asm-shim work doesn't fail; analyses
+just lose precision for that line.
+
+### 4c. Destination detection (the rule that matters)
+
+For each parsed mnemonic, the parser knows which operand slot is the
+destination, plus any implicit register effects:
+
+  - `mov rA, rB` → write rB.
+  - `mov.X @rN+, rM` → write rM AND write rN (post-inc).
+  - `mov.X rM, @-rN` → write rN (pre-dec); no GP-reg write target.
+  - `add #imm, rN` → write rN.
+  - `add rA, rB` → write rB.
+  - `dt rN` → write rN, write t.
+  - `shll{,2,8,16} rN`, `shlr*`, `swap.X rN` → write rN.
+  - `cmp/eq rA, rB` → reads only; write t.
+  - `jsr @rN` / `bsr label` → write pr.
+  - `lds rA, pr` → write pr; reads rA.
+  - `sts pr, rA` → write rA; reads pr.
+  - `mul.l rA, rB` / `dmuls.l rA, rB` → write macl (and mach for
+    `dmuls.l`/`dmulu.l`).
+  - ...
+
+The full table lives in the parser. Adding a mnemonic = adding one
+table entry. No analysis-side rule duplication.
+
+### 4d. The parsing function
 
 ```c
-asm {
-    mov #1, r6
-    shll16 r6
-    neg r6, r5
-    mov r6, r7
-}
+struct sh_asm_body *sh_parse_asm_text(const char *text);
 ```
 
-The old `__asm("...")` form is retired once the conversion lands.
-A grace period where both forms work is fine but not necessary —
-the conversion is mechanical, one PR.
+Walks `text` line-by-line, splits each line on `\n`, runs each
+through a tokenizer + per-mnemonic dispatch, accumulates into a
+freshly-allocated `sh_asm_body`. PERM-allocated so it lives across
+function-emit boundaries.
 
-## 11. Guinea pig: FUN_06044F30 in race_FUN_06044060
+### 4e. `-d-asm` dump flag
 
-### 11a. The shim
+Compiler flag `-d-asm` causes the parser, when invoked, to print a
+human-readable dump of the parsed structure for each block:
 
-Add a file-scope asm-bodied function definition for FUN_06044F30
-to `FUN_06044060.c`:
+```
+[asm] FUN_06044F30 body, 6 insns:
+  [0] sts.l   pr,@-r15      reads={r15} writes={r15} writes_sreg={pr}
+  [1] mov.l   LP0,r3        reads={pc} writes={r3}
+  [2] jsr     @r3           reads={r3} writes={pr} branch=yes call=yes
+  [3] nop                   reads={} writes={}
+  [4] rts                   reads={pr} writes={} branch=yes
+  [5] LP0:    .long _func   directive=yes label=yes
+```
+
+This is what regtests grep against — Stage 1 has no other observable
+behavior.
+
+### 4f. Wire the parser in (Stage 1 minimum)
+
+To exercise the parser without committing to integration: in
+`emit2`'s `LABEL+V` case (the existing ASMB-lowered Node), if the
+sentinel matches AND `-d-asm` is on, run `sh_parse_asm_text(name)`
+and print the dump. Discard the result. No other compiler behavior
+changes.
+
+This keeps Stage 1's blast radius zero — every existing `.s` file
+output is byte-identical to before.
+
+### 4g. Stage 1 validation gate
+
+Three new regtests in validate_build.sh + the existing tests stay
+green:
+
+1. **Round-trip**: a representative asm slice is run through
+   `sh_parse_asm_text` (via `-d-asm` dump), the dump's `src_text`
+   fields are concatenated, and the result is compared to the
+   original input. Byte-identical.
+2. **Destination detection**: a hand-written corpus exercising every
+   write-category from §4c. The dump's `writes` masks match the
+   expected register set.
+3. **Conservative-on-unknown**: a deliberately bad mnemonic produces
+   `is_unknown=1` and `writes=0xFFFF` in the dump.
+
+**Validation gate:** all 46 existing tests pass; 3 new regtests
+pass; output `.s` byte-identical to HEAD on the whole corpus.
+
+## 5. Stage 2: frontend wiring + canonical emit + retire `__asm`
+
+Stage 2 absorbs the work that v1 deferred to Stage 7. By the end of
+this stage: `__asm("...")` is gone, all sites in FUN_06044060.c are
+rewritten to `asm { ... }`, and the IR carries parsed asm Nodes
+through to a canonical re-emission.
+
+### 5a. Frontend wiring
+
+The `Interface` struct (c.h) gains a backend-specific hook:
 
 ```c
-extern int FUN_06044F30(int p1);   /* signature now takes p1 — see 11b */
-
-int FUN_06044F30(int p1) asm {
-    /* prod bytes from FUN_06044E3C+0xF4 down to its rts/nop */
-    sts.l   pr,@-r15
-    /* ... */
-    rts
-    nop
-}
+struct Xinterface {
+    ...
+    struct sh_asm_body *(*parse_asm)(const char *text);  /* nullable */
+};
 ```
 
-The shim body is the literal byte slice from prod
-(`/mnt/d/Projects/DaytonaCCEReverse/src/race/FUN_06044060.s` —
-secondary-entry slice of FUN_06044E3C). Hand-extract once for the
-guinea pig; future shims get a script.
+SH backend fills it in with `sh_parse_asm_text`; other backends
+leave it null.
 
-### 11b. C-source change for FUN_06044060
+`asm_block(text)` in expr.c calls `IR->x.parse_asm(text)` if non-
+null and stashes the result via `Xsymbol` on the ASMB tree node's
+Symbol. Other backends keep the legacy text-only path.
 
-Currently FUN_06044F30 is declared no-args and called no-args:
-the r4/r5/r6/r7 setup is done via `__asm` lines. For the IPA pin
-to actually rewrite anything, FUN_06044F30's call needs an ARG
-node.
+### 5b. New op code + Node lowering
 
-Change the declaration to take p1, and the call site to pass
-`p1 + 0x30`:
+  - `ASM_INSN+V` added to `ops.h`, parallel to `LABEL+V`.
+  - `listnodes()` ASMB lowering checks for an attached
+    `sh_asm_body`. If present, it walks the parsed insn list and
+    emits **one ASM_INSN Node per parsed instruction**, each with
+    `syms[0]` carrying that instruction's `sh_asm_insn` record (via
+    `Xsymbol`) plus `src_text` for diagnostic use.
+  - If no parsed body is attached (e.g., non-SH backend, or future
+    fallback), legacy LABEL+V emit still works.
+
+### 5c. Canonical emit
+
+`emit2`'s ASM_INSN+V case formats the parsed instruction in the
+**same canonical layout C-derived emit produces**:
+
+  - `\t<mnemonic>\t<operands>\n`
+  - Operands joined by `,` with no surrounding whitespace.
+  - Memory operands re-emitted in canonical form: `@rN`, `@-rN`,
+    `@rN+`, `@(N,rN)`, `@(R0,rN)`, `@(N,GBR)`, `@(N,PC)`.
+  - Immediates: `#N` (decimal) or `#0xN` (hex) — match what existing
+    C-derived emit chooses for a given value.
+  - Labels: bare label name, no decoration.
+  - Directives (`.long _foo`): `\t.long\t_foo\n`.
+  - Standalone label lines (`LP0:`): `LP0:\n`.
+
+Result: every line in the output `.s` uses the same whitespace
+convention regardless of whether it came from C codegen or asm
+parsing. Easier to string-match against prod `.s` (after both go
+through `asm_normalize.py`); downstream byte-match against `.o`
+is unaffected because the assembled bytes only depend on the
+instruction + operands, not the whitespace.
+
+**Why this is safe**: the SH-2 assembler treats
+`sts.l\tpr,@-r15`, `sts.l   pr, @-r15`, and `sts.l pr,@-r15` as the
+same instruction. The user-visible goal (byte-matching `.o` files)
+is invariant under this normalization.
+
+### 5d. Retire `__asm("...")` + migrate FUN_06044060.c
+
+  - Mechanically convert every `__asm("text")` call site in
+    `FUN_06044060.c` to `asm { text }`.
+  - Delete `asm_intrinsic()` from `src/expr.c` and its dispatch
+    from `primary()`.
+  - Delete the `__asm` regtest (4ac); replacement coverage is
+    already provided by 4ad–4ag.
+  - Update Session 1 regtests 4ad–4ag: their expected output
+    changes from "user's original whitespace verbatim" to
+    "canonical `\t<mn>\t<ops>\n`." Same content, different
+    formatting expectation.
+
+The bare-signature call pattern at FUN_06044060.c lines 73-95
+(`__asm` register setups followed by `FUN_06044F30()` with no args)
+**stays as-is** for Stage 2 — it just uses the new syntax. The
+structural fix (proper-signature calls + allocator awareness)
+lands in Stage 5.
+
+### 5e. Stage 2 validation gate
+
+  - All 49 existing tests still pass after regtest updates for
+    canonical-emit expectations.
+  - `__asm` symbol gone from the codebase (`grep __asm src/*.c
+    src/*.md` returns nothing functional).
+  - `FUN_06044060.c` builds clean and the TU byte-match metric is
+    stable (re-pin if canonical emit changes diff counts —
+    documented in the commit, not ignored).
+  - The IR pipeline plumbs parsed asm bodies end-to-end: Tree →
+    Node list (N ASM_INSN Nodes) → emit (N canonical lines).
+
+## 6. Stage 3: Phase C writes_r4 from IR
+
+`sh_analyze_writes_r4` walks `e->code_head`'s Node list. For each
+ASM_INSN Node, query the attached `sh_asm_insn->writes & (1u << 4)`.
+For every other Node kind, fall back to the existing DAG-walking
+logic.
+
+End-to-end test: a synthetic TU with an asm-bodied callee that
+visibly does or doesn't touch r4 — `-d ipa` shows writes_r4
+correctly.
+
+The same mechanism extends to other registers / clobbers /
+sregs without changing the analysis frame. New analysis = new
+function over Nodes; no new scanner.
+
+**Stage 3 validation gate:** synthetic regtest proves writes_r4
+correct for asm-bodied callees. All other behavior unchanged.
+
+## 7. Stage 4: naked emit
+
+When a function's body is **entirely** asm-derived (the IPA queue
+entry's Gen Code has only ASM_INSN Nodes plus framing Code records,
+no C-derived Nodes), `sh_process_deferred_fn` takes a fast path:
+
+  1. Emit `.global` + `.text` + `.align` + `func_label:`.
+  2. Emit each ASM_INSN's `src_text` verbatim.
+  3. Skip prologue, epilogue, param homing, callee-saved push/pop,
+     pool flush.
+  4. Restore allocator masks, clear `sh_ipa_current`.
+
+A whole-function shim with proper signature (file-scope `int
+foo(int p1) asm { ... }`) emits its body bytewise unchanged.
+
+**Stage 4 validation gate:** a 1-function naked asm-shim test file
+emits exactly the input bytes. No prologue, no epilogue, no synthetic
+return.
+
+## 8. Stage 5: mixed C+asm — allocator visibility
+
+The big one — the lines-75-83 fix.
+
+For statement-level `asm { ... }` inside a C function, the parsed
+ASM_INSN Nodes sit alongside C-derived Nodes in the same Gen Code.
+The register allocator's freemask tracking honors each ASM_INSN's
+`reads`/`writes` masks: registers used by asm are unavailable to the
+allocator within the asm's live range.
+
+This unlocks proper-signature calls. `FUN_06044060.c` lines 75-83
+become:
 
 ```c
-extern int FUN_06044F30(int p1);
-...
-FUN_06044F30(p1 + 0x30);
+FUN_06044F30(p1 + 0x30, /* args set up by C codegen */);
 ```
 
-(The prod-asm pre-r5/r6/r7 setup via __asm stays — those args
-aren't covered by IPA Phase E.1b, only the r4/p1 pin is.)
+with no `__asm` setup blocks. The compiler picks register sequences
+that satisfy the call ABI; if those don't byte-match prod's
+SHC-faithful idioms (e.g., `mov #1; shll16` vs pool load), the
+existing per-call-site `__asm` pinpoint mechanism still works for
+that gap. But the *signature is honest* and the allocator is
+*aware*.
 
-### 11c. Success criteria
+**Stage 5 validation gate:** FUN_06044060.c with proper signatures
+for the `__asm`-setup-then-call cluster. `__asm` blocks for
+register-arg setup are **deleted**; the call sites carry the args.
+TU byte-match holds (ideally improves once IPA fires).
 
-  1. `asm { ... }` parses and emits FUN_06044F30 verbatim. Byte-
-     match the standalone shim against prod's FUN_06044F30 slice.
-  2. Phase C's asm-scanner reports `writes_r4 = 0` for the shim.
-  3. Phase E.1b's pin engages on FUN_06044060 (verifiable via the
-     `-d` IPA diagnostic).
-  4. FUN_06044060's diff vs prod drops materially from 70 lines
-     toward the IPA design's predicted ≤6.
-  5. No previously byte-matched function regresses.
-  6. The synthetic IPA Phase E.1b regtest still passes (it should
-     — the regtest doesn't depend on this work).
+## 9. Stage 6: pool isolation
+
+A whole-function asm shim's internal `.long _func_0x06044d80` pool
+entries must NOT merge with the compiler's `shlit` pool. The
+ASM_INSN-Node structure tags directives (`is_directive=1`) — naked
+emit (Stage 4) already skips `shlit_flush`, so the shim's pool
+entries print as part of its own ASM_INSN sequence.
+
+For mixed C+asm functions where the C body uses the `shlit` pool and
+the asm block also has directives, two pool sources coexist in
+sh_lines but never collide because the asm-derived directives have
+their own labels (`LP0:`, etc.) and the compiler's pool uses
+genlabel'd `Lnnn:` labels in a different namespace.
+
+**Stage 6 validation gate:** an asm-bodied shim with internal pool
+entries emits with no merge / collision. A mixed C+asm function with
+both pool sources emits both correctly.
+
+## 10. Stage 7: (absorbed into Stage 2)
+
+The mechanical migration of `__asm("...")` sites to `asm { ... }`
+and deletion of `asm_intrinsic()` was originally Stage 7. Folded
+into Stage 2 (§5d) per design v3 conversation: doing it later means
+two emission paths coexist during transition (legacy raw-print for
+`__asm`, canonical for `asm{}`) — pulling the migration forward
+keeps the pipeline single-path from Stage 2 onward.
+
+The structural follow-up — converting bare-signature call patterns
+(`__asm("mov X, rN"); FUN_X();`) to proper-signature calls
+(`FUN_X(arg);`) — depends on Stage 5's allocator awareness and
+stays in Stage 5.
+
+## 11. Normalization round-trip invariant
+
+The contract is **assembled-byte equivalence**, not source-text
+equivalence:
+
+  - For an asm-derived instruction with mnemonic M and operand
+    list (op1, ..., opN), the emitted line assembles to the same
+    bytes as the user-written input would have assembled to.
+  - Whitespace is canonicalized to the project's standard layout.
+    `asm_normalize.py` strips whitespace differences anyway; the
+    `.o` byte-match (the actual project goal) is whitespace-blind.
+
+Sources of potential drift to head off:
+
+  - **Operand-form drift**: `mov.l @r4, r3` and `mov.l @(0,r4), r3`
+    assemble to different bytes (different addressing modes). The
+    parser preserves the user's choice; the emitter prints the
+    SAME form. Don't auto-canonicalize `@(0,r4)` → `@r4` or vice
+    versa.
+  - **Immediate base drift**: `#16` and `#0x10` assemble to the
+    same byte; pick one form per emitted line. Default: print
+    decimal for small values, hex for typical-mask values
+    (mirroring how existing C-derived emit chooses).
+  - **Label rewrites**: don't rewrite labels embedded in asm bodies.
+    `LP0:` defined inside an `asm { ... }` is part of that block's
+    addressable contents; renumbering it (as the compiler's own
+    `genlabel` machinery does for C-derived labels) breaks
+    references inside the same block.
+  - **Peephole rewrites of `sh_lines[]`** — asm-derived sh_lines
+    entries are tagged immutable in Stage 5+. Peephole passes
+    already test `sh_lines[j][0] == 0` for killed lines; we add a
+    parallel "is from asm" mask that peephole respects.
+
+A regtest at every stage asserts this for a representative asm slice
+(parse + emit → run through `sh-elf-as` → compare assembled bytes
+to a reference).
 
 ## 12. Sequencing & TODOs
 
-Three sessions, each with its own validation gate. Tick boxes as
-items land. Don't combine sessions — each has independent
-risk to surface and independent rollback if something goes
-sideways.
+Each stage is a session with its own design-pass-then-implementation
+gate. **The user is in the loop at each design pass — no shortcut
+to "next stage" without explicit agreement.**
 
-### Session 1 — lexer + parser
+### Stage 1 — parsed-asm IR + parser (active)
 
-Goal: `asm { ... }` parses everywhere it should and the captured
-text round-trips bytes-in = bytes-out. Existing `__asm("...")`
-intrinsic stays working in parallel for the migration window.
+  - [ ] Define `sh_asm_insn`, `sh_asm_body`, `sh_operand`, enum
+        types in `src/sh.md`.
+  - [ ] Implement `sh_parse_asm_text(text)`: tokenize, mnemonic
+        dispatch, operand parsing, reads/writes mask computation,
+        directive/label/comment classification, conservative-on-
+        unknown.
+  - [ ] Add `-d-asm` flag handling in progbeg argv loop.
+  - [ ] Wire parser invocation into `emit2`'s LABEL+V case under
+        `-d-asm` (dump-only; result discarded).
+  - [ ] Regtest: round-trip preservation (src_text concat == input).
+  - [ ] Regtest: destination detection per write-category.
+  - [ ] Regtest: conservative-on-unknown.
+  - [ ] **Validation gate:** `validate_build.sh` 46/46, plus 3 new
+        Stage 1 regtests, output `.s` byte-identical to HEAD.
 
-- [ ] Settle open question: statement-level `asm { ... }` placement
-      — anywhere a statement can appear (recommended) vs only in
-      specific contexts. Confirm with user before coding.
-- [ ] Settle open question: empty `asm { }` block behavior — emit
-      nothing, no error (recommended). Confirm.
-- [ ] Add `ASM` token recognition in `src/lex.c` for the bare
-      identifier `asm` at statement-start or declarator-tail
-      position. Gate behind SH-only Xinterface flag so other
-      backends see zero change.
-- [ ] Implement raw-text mode in `src/lex.c`: on seeing `asm`
-      followed (after whitespace) by `{`, slurp characters until
-      matching `}` (depth-1 brace counting per section 3b). Return
-      the captured text as a single string-typed Symbol.
-- [ ] Statement-level parser hookup in `src/expr.c` — build an
-      `ASMB+V` tree node carrying the text on `u.sym->name`. Reuse
-      the existing emit path that `__asm("...")` uses today.
-- [ ] File-scope hookup in `src/decl.c` — recognize
-      `<type> <name>(<params>) asm { ... }` as a function
-      definition where the body is the asm block (single Code-list
-      Gen entry containing the ASMB node).
-- [ ] Regtest: `asm { mov r1, r2 }` inside a C function emits
-      literally `\tmov\tr1,r2\n` in the output (after
-      `asm_normalize.py`).
-- [ ] Regtest: round-trip preservation — capture a representative
-      asm slice with labels, comments, pool entries, multiple
-      instructions per line; assert bytes-out == bytes-in.
-- [ ] Regtest: `asm { }` (empty block) emits nothing.
+### Stage 2 — frontend wiring + canonical emit + retire `__asm`
 
-**Validation gate:** `wsl bash saturn/tools/validate_build.sh`
-passes; both new regtests pass; existing `FUN_06044060.c` (with
-its 8 `__asm("...")` calls) compiles unchanged.
+  - [ ] Add `IR->x.parse_asm` hook in c.h's `Xinterface`. SH fills
+        it in with `sh_parse_asm_text`; other backends leave it
+        null.
+  - [ ] `asm_block()` in expr.c calls the hook (if non-null) and
+        attaches the parsed body via `Xsymbol` on the ASMB tree
+        node's Symbol.
+  - [ ] New `ASM_INSN+V` op code in `ops.h`.
+  - [ ] `listnodes()` ASMB lowering: produces N ASM_INSN Nodes
+        when a parsed body is attached, one per insn. Each Node's
+        `syms[0]` carries the `sh_asm_insn` record (Xsymbol) +
+        diagnostic `src_text`.
+  - [ ] `emit2` ASM_INSN+V case: re-formats from the parsed insn
+        in canonical `\t<mn>\t<ops>\n` layout. Operand printers
+        for REG / SREG / IMM / MEM / LABEL.
+  - [ ] Delete `asm_intrinsic()` and its dispatch from `primary()`.
+  - [ ] Mechanical migration: convert all `__asm("...")` sites in
+        `FUN_06044060.c` to `asm { ... }` (one-to-one syntax swap).
+  - [ ] Update Session 1 regtests 4ad–4ag to expect canonical-
+        format output instead of user-original whitespace.
+  - [ ] Delete regtest 4ac (the `__asm` regtest) — replaced by
+        4ad–4ag.
+  - [ ] **Validation gate:** all tests pass post-update; `__asm`
+        symbol gone from the codebase; FUN_06044060 TU byte-match
+        re-pinned with documented diff (canonical emit may shift
+        whitespace-driven counts; the metric stays trustworthy
+        because both prod and ours go through `asm_normalize.py`).
 
-### Session 2 — naked emit + asm-body scanner
+### Stage 3 — Phase C writes_r4 from IR
 
-Goal: a function whose body is a single `asm { ... }` block emits
-as the bare bytes (no prologue/epilogue), and Phase C can answer
-`writes_r4` for it via text scanning.
+  - [ ] `sh_analyze_writes_r4` walks Nodes; ASM_INSN Nodes query
+        attached `insn->writes & (1<<4)`.
+  - [ ] Synthetic regtest: asm-bodied callees with/without r4
+        writes — `-d ipa` shows writes_r4 correctly.
+  - [ ] **Validation gate:** synthetic regtest passes; all other
+        tests unchanged.
 
-- [ ] Settle open question: inferred-naked vs `#pragma naked` —
-      lean inferred (per section 6a). Confirm with user before
-      coding.
-- [ ] In `src/sh.md`: detect "this function's body is asm-only" —
-      single ASMB Code entry, no other Gen statements. Add a
-      helper like `sh_function_is_naked_shim(struct sh_ipa_fn *)`
-      called early in `sh_process_deferred_fn`.
-- [ ] In `sh_process_deferred_fn`: when naked, skip the prologue
-      emit (sts.l pr, mov.l rN saves, fp setup, localsize), skip
-      the param-homing moves, skip the epilogue (lds.l pr, rts).
-      Just emit the function label + the asm body.
-- [ ] Pool-emission no-op for naked functions (asm shim manages
-      its own `.long` pool entries — see section 6d).
-- [ ] Implement `int sh_asm_writes_reg(const char *text, int rN)`
-      per section 7b. Conservative — over-report on parse failure
-      or unknown mnemonic. Lives in `src/sh.md` near the existing
-      `sh_is_delay_safe` mnemonic family.
-- [ ] In `sh_analyze_writes_r4` (Phase C pre-pass): branch to the
-      asm-scanner when the body is asm-only; cache result in
-      `writes_r4`. DAG-walking path stays as-is for C-bodied
-      functions.
-- [ ] Unit-test regtests for `sh_asm_writes_reg`: handwritten
-      fragments exercising each write category from section 7b
-      (`mov`, `add`, `sub`, post-incr load, displaced load,
-      `swap`, `xtrct`, `extu/exts`, `movt`, `dt`, shift-in-place).
-- [ ] Regtest: a naked asm-bodied function compiled standalone
-      emits exactly its body bytes (no prologue/epilogue
-      wrapping).
+### Stage 4 — naked emit
 
-**Validation gate:** `validate_build.sh` passes; asm-scanner
-unit tests pass; a 1-function naked asm-shim test file compiles
-to a known prod slice byte-for-byte.
+  - [ ] `sh_function_is_naked_shim(e)` helper: returns 1 iff the
+        function body's Gen Code contains only ASM_INSN Nodes.
+  - [ ] `sh_process_deferred_fn` fast-path: skip prologue/epilogue/
+        pool flush; emit ASM_INSN nodes' `src_text` directly.
+  - [ ] Regtest: naked function emits exact input bytes (no wrap).
+  - [ ] **Validation gate:** existing tests green; naked-emit
+        regtest passes.
 
-### Session 3 — guinea pig + migration
+### Stage 5 — mixed C+asm allocator awareness
 
-Goal: FUN_06044F30 lives in the FUN_06044060 TU as a shim, the
-IPA pin engages, FUN_06044060's diff drops materially, and the
-old `__asm("...")` form is retired.
+  - [ ] Allocator's freemask honors ASM_INSN Nodes' reads/writes
+        masks within their live range.
+  - [ ] FUN_06044060.c: replace `__asm` register-arg-setup blocks
+        with proper-signature C calls. Old `__asm("mov X, rN")`
+        sites for arg setup go away.
+  - [ ] **Validation gate:** TU byte-match holds; IPA pin engages;
+        FUN_06044060 diff drops materially.
 
-- [ ] Hand-extract FUN_06044F30's prod byte slice
-      (`FUN_06044E3C + 0xF4` down to its `rts`/`nop`) from
-      `/mnt/d/Projects/DaytonaCCEReverse/src/race/FUN_06044060.s`.
-      That source file's prod label `FUN_06044E3C:` is at
-      line 1965 (verified during this session).
-- [ ] Add the FUN_06044F30 asm shim to
-      `saturn/experiments/daytona_byte_match/race_FUN_06044060/FUN_06044060.c`.
-- [ ] Change FUN_06044F30's C-side declaration to take `int p1`
-      (currently no-args); change the call site at line 83 to
-      pass `p1 + 0x30`.
-- [ ] Verify Phase C reports `writes_r4 = 0` for the shim. Use
-      the `-d` IPA diagnostic.
-- [ ] Verify Phase E.1b's pin engages on FUN_06044060. Use the
-      `-d` IPA diagnostic; confirm `sh_ipa_current->pinned_param`
-      is set and `sh_ipa_apply_mutation_rewrite` runs.
-- [ ] Measure FUN_06044060's diff vs prod — should drop
-      materially from the current 70 toward the IPA design's
-      predicted ≤6. Update `byte_match_001_blockers.md` with the
-      new number.
-- [ ] Mechanical conversion of all remaining `__asm("...")` calls
-      in `FUN_06044060.c` to `asm { ... }` form (8 sites today,
-      see section 10).
-- [ ] Retire the `__asm("...")` intrinsic in `src/expr.c` —
-      delete `asm_intrinsic()` and its dispatch from `primary()`.
-      Update the existing
-      `regtest: __asm("...") emits raw text` test to use the new
-      form.
-- [ ] Final `validate_build.sh` pass — all 42 existing regtests
-      + the new asm-shim regtests + IPA Phase E.1b end-to-end
-      regtest, no byte-matched function regressions.
+### Stage 6 — pool isolation
 
-**Validation gate:** FUN_06044060 closer to byte-match than HEAD;
-IPA pin verifiably engaged via `-d` diagnostic; existing tests
-still green; old `__asm("...")` form gone from the codebase.
+  - [ ] Mixed C+asm: shim pool labels coexist with `shlit` pool
+        without collision.
+  - [ ] Regtest: a representative shim with internal pool emits
+        cleanly inside a TU that also has C-derived pool entries.
+  - [ ] **Validation gate:** new regtest passes; existing pool-
+        emission regtests unchanged.
 
-## 13. Out of scope
+### Stage 7 — (absorbed into Stage 2)
 
-  - **Auto-generation of shims from prod.** A script that reads
-    a prod .s and emits a `.c` shim is useful but separate. For
-    the guinea pig, hand-extraction of one function is fine.
-    Census numbers (~850 functions in race) suggest a generation
-    script will eventually be worth building, but not yet.
+The mechanical `__asm("...")` retirement and FUN_06044060.c
+syntax migration are now part of Stage 2 (§5d). The structural
+follow-up — converting bare-signature call patterns to proper-
+signature calls — depends on Stage 5's allocator awareness and
+remains in Stage 5.
+
+## 13. Out of scope (stays out)
+
+  - **Auto-generation of shims from prod.** Hand-extraction of one
+    function (FUN_06044F30 for Stage 5) is the bring-up. A
+    generation script comes later as its own workstream.
   - **Multi-entry-point support.** FUN_06044F30 ↔ FUN_06044E3C
     body sharing. The shim duplicates bytes for now; collapse
-    happens in a separate workstream. Census places Cat 1
-    multi-entry at ~27% of race-module functions, so this
-    workstream IS coming — just not gating asm-shim itself.
+    happens in a separate workstream.
   - **Asm globals / file-scope data via asm.** `asm { .long X }`
-    at file scope outside a function definition. Not needed for
-    the IPA mission. Defer.
-  - **Inline expression substitution.** GCC's `asm("..." :
-    outputs : inputs : clobbers)` syntax. Powerful but a much
-    bigger surface. Stay with bare text capture.
-  - **Asm-aware register allocation.** The scanner determines
-    `writes_r4` by text matching — it doesn't model the asm's
-    register usage in the allocator's freemask. Asm bodies are
-    opaque to the allocator (which is fine for naked shims —
-    they don't go through the allocator at all).
-  - **Promoting permanent-shim functions to C.** Census flags
-    ~5-10% of race functions (anchor: FUN_0604C76C's 7-entry
-    software-pipelined chain) as legitimately uneconomical to
-    express in C. These stay as asm shims forever. We don't
-    pursue C decomps for them; the shim ergonomics in this
-    design ARE their permanent representation.
+    at file scope outside a function definition. Not needed.
+  - **GCC-style `asm("..." : outputs : inputs : clobbers)` syntax.**
+    Powerful but a much bigger surface; the parsed `sh_asm_insn`
+    masks are sufficient for our use case.
+  - **SHC-faithful idiom recognition in arg setup** (`mov #1;
+    shll16` for 0x10000 vs pool load). A separate codegen workstream
+    enabled by but not part of asm-shim.
+  - **Promoting permanent-shim functions to C.** The 5-10% that
+    are uneconomical to express in C stay as asm shims forever.
 
 ## 14. Open questions for implementation
 
-  - **Inferred-naked vs `#pragma naked`.** Lean inferred.
-    Confirm during implementation.
-  - **Statement-level `asm { ... }` placement rules.** Allowed
-    anywhere a statement can appear? Inside expressions? (Today's
-    __asm is an expression; statement-level uses it as an
-    expression-statement. Likely keep that.)
-  - **Empty asm block.** `asm { }` — probably emit nothing,
-    no error. Confirm.
-  - **Asm scanner mnemonic table — where does it live?** Probably
-    a static table in sh.md alongside the existing
-    `sh_is_delay_safe` mnemonic family. Rebuild when SH-2 ISA
-    additions arise (rare).
-  - **Round-trip regtest concretely tests what?** A handwritten
-    asm slice that exercises labels, comments, pool entries, and
-    multiple instructions per line. Bytes-in compared to bytes-
-    out post-emit.
+  - **`-d-asm` dump format**: human-readable for grep regtests, or
+    structured (JSON / TSV) for tooling? Default: human-readable
+    until tooling demands change.
+  - **ASM_INSN Node Symbol payload**: extend Symbol's union with
+    a new struct, or use Xsymbol to attach the parsed insn? Lean
+    Xsymbol — keeps Symbol clean.
+  - **Mnemonic table location**: static struct array in sh.md, or
+    pulled into a header? Default: static in sh.md, near the
+    line-level helpers (`sh_regs_used`, `sh_parse_regmov`, etc.).
 
-## 15. What this enables downstream
-
-Beyond the IPA r4 mission:
-
-  - Any future analysis that needs cross-TU visibility (clobber
-    narrowing for non-r4 regs, MAC-state tracking, GBR pinning,
-    cross-call liveness for non-IPA cases) gets to assume "the
-    answer for this callee can be computed" instead of "extern,
-    fall back to ABI."
-  - Mass-import of prod TUs without paying the C-decompilation
-    cost upfront. C decomps land function-by-function; until
-    they do, the asm shims keep the TU compilable AND
-    analyzable.
-  - The "byte-matched functions are the oracle" principle scales:
-    each new asm shim is a candidate for graduation to a real C
-    decomp once we understand its shape. The shim provides a
-    byte-exact baseline against which any C-decomp attempt is
-    measured.
-  - A bounded permanent home for the ~5-10% of functions the
-    census flagged as uneconomical to decomp. Software-pipelined
-    chains and other dense SHC-specific patterns get to live as
-    first-class asm shims forever, with proper round-trip
-    guarantees, instead of being treated as second-class
-    intermediate state.
-
-## 16. Strategic context — race-module census
+## 15. Strategic context — race-module census (unchanged)
 
 `D:\Projects\DaytonaCCEReverse\docs\shc_annotation_census_race.md`
-(2026-04-24) is the empirical baseline for how this work fits
-into the broader project. Headline numbers, repeated here for
-locality:
+(2026-04-24) — the empirical baseline. Headlines:
 
-  - **850 functions** across 39 race-module TUs.
-  - **~33% completely clean** (no SHC-specific annotations).
-  - **~33% need exactly one annotation** (mostly Cat 1
-    `__entry_alias__`).
-  - **~35% need 2+ annotations**, concentrated in 4 specific
-    TUs: FUN_060351CC.s, FUN_0603C304.s, FUN_0604D380.s,
-    FUN_0604C76C.s.
-  - **Avg 1.1 annotations per function.**
+  - 850 functions across 39 race-module TUs.
+  - ~33% completely clean.
+  - ~33% one annotation.
+  - ~35% 2+ annotations, concentrated in 4 specific TUs.
+  - ~5-10% legitimately permanent shims.
 
-Single biggest annotation burden: **Cat 3 (gbr /
-unsaved-callee-save) at ~36% of all functions.** Our existing
-`#pragma global_register` mechanism is gating more than a third
-of the corpus. Hardening it at scale is parallel to the asm-shim
-work and similarly load-bearing for the project's overall
-viability.
-
-Smallest categories: **Cat 5 (low-first allocation) at ~2%** and
-**Cat 7 (R0-shim calling convention) at ~3%**. Both small enough
-to handle case-by-case (existing `#pragma sh_alloc_lowfirst` for
-Cat 5; inline `asm { ... }` blocks for Cat 7) without a
-generalized mechanism.
-
-The census also surfaced an honest concession: **FUN_0604C76C's
-software-pipelined chain (7 progressive entry points sharing one
-prologue) may genuinely never decomp economically.** It is the
-anchor case for permanent-shim functions, and one reason the
-asm-shim design treats round-trip preservation as a first-class
-goal rather than a transitional convenience.
+Cat 3 (gbr / unsaved-callee-save) at ~36% of all functions remains
+the single biggest annotation burden. The parsed-IR foundation also
+helps `#pragma global_register` hardening — clobber analysis sees
+gbr writes via `writes_sreg`, eliminating a class of false-positives
+where extern callees are conservatively assumed to clobber gbr.
 
 End of design.

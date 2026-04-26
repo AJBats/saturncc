@@ -113,13 +113,50 @@ Node listnodes(Tree tp, int tlab, int flab) {
 	else
 		op = tp->op + sizeop(tp->type->size);
 	switch (generic(tp->op)) {
-	case ASMB:  /* __asm("...") intrinsic: emit as a pseudo-LABEL+V
-		     * carrying the raw asm text on its symbol's name. The
-		     * symbol has u.l.label == 0 as a sentinel (real labels
-		     * start at 1). Backend emit detects the sentinel and
-		     * prints the name as raw instruction text. See
-		     * expr.c's asm_intrinsic() for the parser side. */
-		    list(newnode(LABEL+V, NULL, NULL, tp->u.sym));
+	case ASMB:
+		    /* asm-shim Stage 2 (saturn/workstreams/asm_shim_design.md
+		     * §5b): if the backend's parser populated a structured
+		     * body on the Symbol, fan out into one ASM_INSN+V Node
+		     * per parsed instruction so analyses can query each
+		     * instruction's reads/writes uniformly. Each ASM_INSN
+		     * Node's Symbol carries a pointer into the parent body's
+		     * insn array via x.asm_insn; emit2's ASM_INSN+V case
+		     * canonically re-formats from that record.
+		     *
+		     * Fallback: if no parsed body is attached (non-SH
+		     * backend, or any future code path that bypasses the
+		     * parser), emit the legacy LABEL+V Node carrying the
+		     * full raw text. Backend emit detects u.l.label == 0
+		     * and prints the name as raw text. */
+		    {
+		    	extern int sh_asm_body_n_insns(struct sh_asm_body *);
+		    	extern struct sh_asm_insn *sh_asm_body_insn(
+		    		struct sh_asm_body *, int);
+		    	extern char *sh_asm_insn_src_text(
+		    		struct sh_asm_insn *);
+		    	if (tp->u.sym && tp->u.sym->x.asm_body) {
+		    		struct sh_asm_body *body =
+		    			tp->u.sym->x.asm_body;
+		    		int n = sh_asm_body_n_insns(body);
+		    		int i;
+		    		for (i = 0; i < n; i++) {
+		    			Symbol s;
+		    			struct sh_asm_insn *in =
+		    				sh_asm_body_insn(body, i);
+		    			NEW0(s, FUNC);
+		    			s->name = sh_asm_insn_src_text(in);
+		    			s->u.l.label = 0;
+		    			s->scope = LABELS;
+		    			s->generated = 1;
+		    			s->x.asm_insn = in;
+		    			list(newnode(ASM_INSN+V,
+		    			             NULL, NULL, s));
+		    		}
+		    	} else {
+		    		list(newnode(LABEL+V, NULL, NULL,
+		    		             tp->u.sym));
+		    	}
+		    }
 		    break;
 	case AND:   { if (depth++ == 0) reset();
 		      if (flab) {

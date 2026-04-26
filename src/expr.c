@@ -402,53 +402,28 @@ static Tree postfix(Tree p) {
 			return p;
 		}
 }
-/* Parse `__asm("literal-string")`. Entry: t == ID, token == "__asm".
- * We bypass the regular identifier/call pipeline entirely — no Symbol
- * for __asm is created, no string symbol (.rodata) is emitted, no
- * CALL/ARG nodes are built. The result is a Tree with op ASMB+V
- * whose u.sym carries the raw asm text in its ->name. See
- * dag.c's listnodes() ASMB case for the downstream handling. */
-static Tree asm_intrinsic(void) {
-	char *text;
+/* Build an ASMB+V tree node carrying TEXT as its raw asm body. The
+ * Symbol uses u.l.label == 0 as a sentinel (real labels from
+ * genlabel() start at 1); dag.c's listnodes() ASMB case decomposes
+ * this to either N ASM_INSN+V Nodes (when a backend parser produced
+ * a structured body) or one legacy LABEL+V Node (raw text fallback).
+ *
+ * asm-shim Stage 2 (saturn/workstreams/asm_shim_design.md §5): if
+ * the backend exposes IR->x.parse_asm, run it now and stash the
+ * parsed body on the Symbol's Xsymbol so dag.c's lowering can fan
+ * it out into per-instruction Nodes. Other backends leave parse_asm
+ * null and stay on the legacy text-blob path. */
+Tree asm_block(char *text) {
 	Symbol s;
 	Tree p;
 
-	t = gettok();  /* consume __asm identifier */
-	if (t != '(') {
-		error("__asm expects '(' after name\n");
-		return cnsttree(inttype, 0L);
-	}
-	t = gettok();  /* consume ( */
-	if (t != SCON || !ischar(tsym->type->type)) {
-		error("__asm expects a character string literal argument\n");
-		return cnsttree(inttype, 0L);
-	}
-	/* The lexer has placed the raw bytes (null-terminated) in
-	 * tsym->u.c.v.p. Strip any leading whitespace (so the user can
-	 * write `__asm("mov #1, r6")` without needing to prefix a `\t`
-	 * — the backend always adds a single tab). Clone via stringn so
-	 * the Symbol we build below owns its own copy in the permanent
-	 * string table. */
-	{
-		char *raw = tsym->u.c.v.p;
-		int len = tsym->type->size - 1;
-		while (len > 0 && (*raw == ' ' || *raw == '\t')) {
-			raw++;
-			len--;
-		}
-		text = stringn(raw, len);
-	}
-	t = gettok();  /* consume the string literal */
-	if (t != ')') {
-		error("__asm expects ')' after string\n");
-		return cnsttree(inttype, 0L);
-	}
-	t = gettok();  /* consume ) -- leave t at the token after */
 	NEW0(s, FUNC);
 	s->name = text;
-	s->u.l.label = 0;  /* sentinel: real labels from genlabel() start at 1 */
+	s->u.l.label = 0;
 	s->scope = LABELS;
 	s->generated = 1;
+	if (IR && IR->x.parse_asm)
+		s->x.asm_body = (*IR->x.parse_asm)(text);
 	p = tree(ASMB + V, voidtype, NULL, NULL);
 	p->u.sym = s;
 	return p;
@@ -458,12 +433,6 @@ static Tree primary(void) {
 	Tree p;
 
 	assert(t != '(');
-	/* __asm intrinsic: recognise the name at the identifier site,
-	 * parse the whole construct, and return the special tree. Must
-	 * run BEFORE the normal ID-handling path so we never install a
-	 * symbol for __asm or see its argument as a regular expression. */
-	if (t == ID && strcmp(token, "__asm") == 0)
-		return asm_intrinsic();
 	switch (t) {
 	case ICON:
 	case FCON: p = tree(mkop(CNST,tsym->type), tsym->type, NULL, NULL);

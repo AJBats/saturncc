@@ -156,7 +156,7 @@ static void decl(Symbol (*dcl)(int, char *, Type, Coordinate *)) {
 			Symbol *params = NULL;
 			ty1 = dclr(ty, &id, &params, 0);
 			if (params && id && isfunc(ty1)
-			    && (t == '{' || istypename(t, tsym)
+			    && (t == '{' || t == ASM || istypename(t, tsym)
 			    || (kind[t] == STATIC && t != TYPEDEF))) {
 				if (sclass == TYPEDEF) {
 					error("invalid use of `typedef'\n");
@@ -776,7 +776,41 @@ static void funcdefn(int sclass, char *id, Type ty, Symbol params[], Coordinate 
 	codelist->next = NULL;
 	if (!IR->wants_callb && isstruct(rty))
 		retv = genident(AUTO, ptr(unqual(rty)), PARAM);
-	compound(0, NULL, 0);
+	if (t == ASM) {
+		/* asm-bodied function: emit the captured asm block as a
+		 * single Gen entry with Blockbeg/Blockend framing.
+		 * lex_asm_body() consumes `{...}` and advances cp past the
+		 * closing `}`; we drive the trailing gettok() ourselves
+		 * below (skipping the compound-form `expect('}')` since
+		 * there's nothing left to consume).
+		 *
+		 * Stage 4 (saturn/workstreams/asm_shim_design.md §7): no
+		 * synthetic retcode for asm-bodied functions. The body's
+		 * own `rts` terminates flow; the backend detects "naked
+		 * shim" and emits just the body lines without the standard
+		 * prologue/epilogue wrap. Without a synthetic retcode in
+		 * the captured code list, the naked detector cleanly sees
+		 * "every Gen forest is ASM_INSN-only." */
+		Code blk;
+		char *text;
+		Tree e;
+		walk(NULL, 0, 0);
+		blk = code(Blockbeg);
+		enterscope();
+		definept(NULL);
+		blk->u.block.locals = newarray(1, sizeof *blk->u.block.locals, FUNC);
+		blk->u.block.locals[0] = NULL;
+		text = lex_asm_body();
+		e = asm_block(text);
+		listnodes(e, 0, 0);
+		walk(NULL, 0, 0);
+		blk->u.block.level = level;
+		blk->u.block.identifiers = identifiers;
+		blk->u.block.types = types;
+		code(Blockend)->u.begin = blk;
+	} else {
+		compound(0, NULL, 0);
+	}
 
 	definelab(cfunc->u.f.label);
 	if (events.exit)
@@ -821,7 +855,14 @@ static void funcdefn(int sclass, char *id, Type ty, Symbol params[], Coordinate 
 	 * cfunc != NULL, which would false-positive on a file-scope
 	 * #pragma immediately following a function body. */
 	cfunc = NULL;
-	expect('}');
+	if (t == ASM) {
+		/* asm-bodied function: lex_asm_body() already consumed
+		 * the closing `}` from the input stream. Advance to the
+		 * next token directly — there's no `}` left to expect. */
+		t = gettok();
+	} else {
+		expect('}');
+	}
 	labels = stmtlabs = NULL;
 	retv  = NULL;
 }

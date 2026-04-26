@@ -1,7 +1,7 @@
-	.global _FUN_0602A664
+	.global FUN_0602A664
 	.text
 	.align 2
-_FUN_0602A664:
+FUN_0602A664:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15

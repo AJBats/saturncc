@@ -1,7 +1,7 @@
-	.global _FUN_00280710
+	.global FUN_00280710
 	.text
 	.align 2
-_FUN_00280710:
+FUN_00280710:
 	mov.l	r14,@-r15
 	mov.l	L5,r0
 	mov.w	@r0,r0
@@ -18,4 +18,4 @@ Lm4:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L5:	.long	_dat_0028072C
+L5:	.long	dat_0028072C
