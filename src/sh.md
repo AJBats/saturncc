@@ -8016,7 +8016,16 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
          * whitespace, which asm_normalize.py strips). */
         if (sh_function_is_naked_shim(e)) {
                 Code cp;
-                print("\t.align 2\n");
+                /* `.align 1` = 2-byte alignment (the SH-2 instruction
+                 * minimum) rather than `.align 2` = 4-byte. Prod
+                 * function entries can sit at 2-mod-4 offsets (e.g.
+                 * FUN_0604DF12 ends in 0x12, not 0x10 or 0x14). A
+                 * 4-byte align between adjacent asm-bodied functions
+                 * would round up by 2 bytes, shifting all subsequent
+                 * code/pool offsets and breaking PC-relative loads
+                 * downstream. The asm body's own `.byte` padding
+                 * handles any explicit alignment prod requires. */
+                print("\t.align 1\n");
                 print("%s:\n", f->x.name);
                 for (cp = e->code_head.next; cp; cp = cp->next) {
                         Node n;
