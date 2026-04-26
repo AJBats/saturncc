@@ -1,7 +1,7 @@
-	.global _FUN_06044BCC
+	.global FUN_06044BCC
 	.text
 	.align 2
-_FUN_06044BCC:
+FUN_06044BCC:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15

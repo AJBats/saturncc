@@ -1090,9 +1090,10 @@ static char *gbr_base_asmname(void) {
         if (!gbr_base_cname)
                 return NULL;
         if (gbr_base_asmbuf[0] == 0) {
-                gbr_base_asmbuf[0] = '_';
-                strncpy(gbr_base_asmbuf + 1, gbr_base_cname,
-                        sizeof(gbr_base_asmbuf) - 2);
+                /* Match defsymbol: bare names, no leading
+                 * underscore (Hitachi SHC convention). */
+                strncpy(gbr_base_asmbuf, gbr_base_cname,
+                        sizeof(gbr_base_asmbuf) - 1);
                 gbr_base_asmbuf[sizeof(gbr_base_asmbuf) - 1] = 0;
         }
         return gbr_base_asmbuf;
@@ -8754,6 +8755,13 @@ static void export(Symbol p) {
 static void import(Symbol p) {}
 
 static void defsymbol(Symbol p) {
+        /* Hitachi SHC didn't prepend a leading underscore to C
+         * identifiers (unlike a.out / Mach-O conventions). For
+         * the unity-build bring-in this matters: shim .c files
+         * carry prod assembly verbatim, where `bsr FUN_X` and
+         * `bra FUN_X` reference bare names. If we mangled to
+         * _FUN_X here, every cross-TU branch would fail to
+         * resolve. Match prod's convention — bare names. */
         if (p->scope >= LOCAL && p->sclass == STATIC)
                 p->x.name = stringf("L%d", genlabel(1));
         else if (p->generated)
@@ -8761,7 +8769,7 @@ static void defsymbol(Symbol p) {
         else if (p->scope == CONSTANTS)
                 p->x.name = p->name;
         else
-                p->x.name = stringf("_%s", p->name);
+                p->x.name = p->name;
 }
 
 static void address(Symbol q, Symbol p, long n) {

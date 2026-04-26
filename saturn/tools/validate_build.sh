@@ -553,7 +553,7 @@ asm_out="$(mktemp)"
 asm_err="$(mktemp)"
 if "$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>"$asm_err"; then
     ok=1
-    grep -q '^_FUN_test:' "$asm_out" || ok=0      # function label emitted
+    grep -q '^FUN_test:' "$asm_out" || ok=0       # function label emitted (bare; Hitachi SHC convention)
     grep -qE '^[[:space:]]+sts\.l' "$asm_out" || ok=0   # body content present
     [ ! -s "$asm_err" ] || ok=0                   # no diagnostics
     if [ "$ok" = "1" ]; then
@@ -714,15 +714,13 @@ ipa_out="$(mktemp)"
 if ! "$RCC" -target=sh/hitachi /tmp/regtest.c "$ipa_out" 2>/dev/null; then
     fail "regtest: IPA Phase E.1b mechanism end-to-end (compiler crash)"
 else
-    # Extract the caller's body: from _caller: until the next label.
-    # Note: helpers _helper_a / _helper_b emit before _caller in source-
-    # order drain, so the awk must arm `flag` only at _caller and stop
-    # at the next top-level `_<name>:` label. The earlier shorthand
-    # `flag; /^_[a-zA-Z]/{if(seen)exit; seen=1}` exited at _helper_b
-    # before flag was ever set, returning empty body.
+    # Extract the caller's body: from caller: until the next label.
+    # Note: helpers helper_a / helper_b emit before caller in source-
+    # order drain, so the awk must arm `flag` only at caller: and stop
+    # at the next top-level `<name>:` label.
     caller_body="$(awk '
-        /^_caller:/ {flag=1; print; next}
-        flag && /^_[a-zA-Z][a-zA-Z0-9_]*:/ {exit}
+        /^caller:/ {flag=1; print; next}
+        flag && /^[a-zA-Z][a-zA-Z0-9_]*:/ {exit}
         flag {print}
     ' "$ipa_out")"
     # Count `add #16,r4` occurrences — CSE should collapse to one.
@@ -823,7 +821,7 @@ naked_out="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c "$naked_out" 2>/dev/null
 ok=1
 # Function label present.
-grep -qE '^_FUN_naked_shim:' "$naked_out" || ok=0
+grep -qE '^FUN_naked_shim:' "$naked_out" || ok=0
 # Body lines present in canonical form.
 grep -qE $'^\tsts\\.l\tpr,@-r15$' "$naked_out" || ok=0
 grep -qE $'^\tmov\\.l\tLP0,r3$' "$naked_out" || ok=0

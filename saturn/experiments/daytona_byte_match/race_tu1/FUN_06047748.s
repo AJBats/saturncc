@@ -1,7 +1,7 @@
-	.global _FUN_06047748
+	.global FUN_06047748
 	.text
 	.align 2
-_FUN_06047748:
+FUN_06047748:
 	mov.l	L7,r7
 L2:
 	mov.w	@r5,r0

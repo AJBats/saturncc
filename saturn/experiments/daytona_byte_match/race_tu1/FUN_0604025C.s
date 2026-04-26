@@ -1,7 +1,7 @@
-	.global _FUN_0604025C
+	.global FUN_0604025C
 	.text
 	.align 2
-_FUN_0604025C:
+FUN_0604025C:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	mov.l	L2,r3

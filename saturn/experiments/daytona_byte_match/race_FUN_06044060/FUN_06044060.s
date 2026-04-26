@@ -1,7 +1,7 @@
-	.global _FUN_06044060
+	.global FUN_06044060
 	.text
 	.align 2
-_FUN_06044060:
+FUN_06044060:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -58,17 +58,17 @@ L2:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L2344:	.long	_FUN_06044D80
+L2344:	.long	FUN_06044D80
 L2345:	.long	101009701
-L2346:	.long	_FUN_06044F30
-L2347:	.long	_FUN_06044E3C
-L2348:	.long	_FUN_060450F2
-L2349:	.long	_FUN_06045006
+L2346:	.long	FUN_06044F30
+L2347:	.long	FUN_06044E3C
+L2348:	.long	FUN_060450F2
+L2349:	.long	FUN_06045006
 L2350:	.long	101018036
-L2351:	.long	_FUN_060457DC
-	.global _FUN_060440e0
+L2351:	.long	FUN_060457DC
+	.global FUN_060440e0
 	.align 2
-_FUN_060440e0:
+FUN_060440e0:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -107,12 +107,12 @@ L5:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L2352:	.long	_pcRam06044128
-L2353:	.long	_pcRam0604412c
-L2354:	.long	_pcRam06044134
-	.global _FUN_06044138
+L2352:	.long	pcRam06044128
+L2353:	.long	pcRam0604412c
+L2354:	.long	pcRam06044134
+	.global FUN_06044138
 	.align 2
-_FUN_06044138:
+FUN_06044138:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -553,39 +553,39 @@ L12:
 	.align 2
 L2379:	.short	3072
 	.align 2
-L2355:	.long	_DAT_060443b0
-L2356:	.long	_DAT_060443b4
-L2357:	.long	_DAT_060443b8
-L2358:	.long	_DAT_060443bc
-L2359:	.long	_DAT_060443dc
-L2360:	.long	_DAT_060443c4
-L2361:	.long	_DAT_060443c0
-L2362:	.long	_DAT_060443d8
-L2363:	.long	_DAT_060443d4
-L2364:	.long	_DAT_060443d0
-L2365:	.long	_DAT_060443c8
-L2366:	.long	_DAT_060443cc
-L2367:	.long	_DAT_060443e0
-L2368:	.long	_DAT_060443e8
-L2369:	.long	_DAT_060443e4
-L2370:	.long	_DAT_060443ec
-L2371:	.long	_DAT_060443f0
-L2372:	.long	_DAT_060443f4
-L2373:	.long	_DAT_060443f8
-L2374:	.long	_DAT_060443fc
-L2375:	.long	_DAT_06044400
-L2376:	.long	_DAT_06044404
-L2377:	.long	_DAT_06044410
-L2378:	.long	_DAT_0604440c
-L2380:	.long	_DAT_06044408
-L2381:	.long	_DAT_06044414
-L2382:	.long	_DAT_06044418
-L2383:	.long	_DAT_0604441c
-L2384:	.long	_DAT_060443c0
-L2385:	.long	_DAT_060443ec
-	.global _FUN_06044344
+L2355:	.long	DAT_060443b0
+L2356:	.long	DAT_060443b4
+L2357:	.long	DAT_060443b8
+L2358:	.long	DAT_060443bc
+L2359:	.long	DAT_060443dc
+L2360:	.long	DAT_060443c4
+L2361:	.long	DAT_060443c0
+L2362:	.long	DAT_060443d8
+L2363:	.long	DAT_060443d4
+L2364:	.long	DAT_060443d0
+L2365:	.long	DAT_060443c8
+L2366:	.long	DAT_060443cc
+L2367:	.long	DAT_060443e0
+L2368:	.long	DAT_060443e8
+L2369:	.long	DAT_060443e4
+L2370:	.long	DAT_060443ec
+L2371:	.long	DAT_060443f0
+L2372:	.long	DAT_060443f4
+L2373:	.long	DAT_060443f8
+L2374:	.long	DAT_060443fc
+L2375:	.long	DAT_06044400
+L2376:	.long	DAT_06044404
+L2377:	.long	DAT_06044410
+L2378:	.long	DAT_0604440c
+L2380:	.long	DAT_06044408
+L2381:	.long	DAT_06044414
+L2382:	.long	DAT_06044418
+L2383:	.long	DAT_0604441c
+L2384:	.long	DAT_060443c0
+L2385:	.long	DAT_060443ec
+	.global FUN_06044344
 	.align 2
-_FUN_06044344:
+FUN_06044344:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -1026,28 +1026,28 @@ L25:
 	.align 2
 L2398:	.short	255
 L2400:	.short	128
-L2386:	.long	_DAT_0604462c
-L2387:	.long	_DAT_060443e0
-L2388:	.long	_DAT_060443b4
-L2389:	.long	_DAT_060443e8
-L2390:	.long	_DAT_060443f0
-L2391:	.long	_DAT_06044638
-L2392:	.long	_DAT_060443f4
-L2393:	.long	_DAT_06044424
-L2394:	.long	_DAT_06044620
-L2395:	.long	_DAT_06044624
-L2396:	.long	_DAT_06044628
-L2397:	.long	_DAT_06044420
+L2386:	.long	DAT_0604462c
+L2387:	.long	DAT_060443e0
+L2388:	.long	DAT_060443b4
+L2389:	.long	DAT_060443e8
+L2390:	.long	DAT_060443f0
+L2391:	.long	DAT_06044638
+L2392:	.long	DAT_060443f4
+L2393:	.long	DAT_06044424
+L2394:	.long	DAT_06044620
+L2395:	.long	DAT_06044624
+L2396:	.long	DAT_06044628
+L2397:	.long	DAT_06044420
 L2399:	.long	0
-L2401:	.long	_DAT_06044634
-L2402:	.long	_DAT_06044630
-L2403:	.long	_DAT_06044640
-L2404:	.long	_DAT_0604463c
-L2405:	.long	_DAT_06044644
-L2406:	.long	_DAT_06044638
-	.global _FUN_06044588
+L2401:	.long	DAT_06044634
+L2402:	.long	DAT_06044630
+L2403:	.long	DAT_06044640
+L2404:	.long	DAT_0604463c
+L2405:	.long	DAT_06044644
+L2406:	.long	DAT_06044638
+	.global FUN_06044588
 	.align 2
-_FUN_06044588:
+FUN_06044588:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -1181,15 +1181,15 @@ L72:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L2407:	.long	_DAT_06044648
-L2408:	.long	_DAT_0604464c
-L2409:	.long	_DAT_06044650
-L2410:	.long	_DAT_06044654
-L2411:	.long	_DAT_06044658
-L2412:	.long	_DAT_0604465c
-	.global _FUN_060446f4
+L2407:	.long	DAT_06044648
+L2408:	.long	DAT_0604464c
+L2409:	.long	DAT_06044650
+L2410:	.long	DAT_06044654
+L2411:	.long	DAT_06044658
+L2412:	.long	DAT_0604465c
+	.global FUN_060446f4
 	.align 2
-_FUN_060446f4:
+FUN_060446f4:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -1270,21 +1270,21 @@ L89:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L2413:	.long	_DAT_06044768
-L2414:	.long	_DAT_06044762
-L2415:	.long	_DAT_06044784
-L2416:	.long	_DAT_06044780
-L2417:	.long	_FUN_06044834
-L2418:	.long	_DAT_0604476c
-L2419:	.long	_DAT_06044770
-L2420:	.long	_FUN_06044788
-L2421:	.long	_DAT_06044764
-L2422:	.long	_DAT_06044774
-L2423:	.long	_DAT_06044778
-L2424:	.long	_DAT_0604477c
-	.global _FUN_06044788
+L2413:	.long	DAT_06044768
+L2414:	.long	DAT_06044762
+L2415:	.long	DAT_06044784
+L2416:	.long	DAT_06044780
+L2417:	.long	FUN_06044834
+L2418:	.long	DAT_0604476c
+L2419:	.long	DAT_06044770
+L2420:	.long	FUN_06044788
+L2421:	.long	DAT_06044764
+L2422:	.long	DAT_06044774
+L2423:	.long	DAT_06044778
+L2424:	.long	DAT_0604477c
+	.global FUN_06044788
 	.align 2
-_FUN_06044788:
+FUN_06044788:
 	sts.l	pr,@-r15
 	add	#-8,r15
 	mov	r4,r14
@@ -1404,20 +1404,20 @@ L96:
 	rts
 	mov	r12,r0
 	.align 2
-L2425:	.long	_DAT_06044814
-L2426:	.long	_FUN_06044834
-L2427:	.long	_PTR_FUN_06044818
-L2428:	.long	_DAT_0604481c
-L2429:	.long	_DAT_06044828
-L2430:	.long	_DAT_0604480c
-L2431:	.long	_DAT_06044830
-L2432:	.long	_DAT_06044820
-L2433:	.long	_DAT_06044824
-L2434:	.long	_DAT_0604480e
-L2435:	.long	_DAT_06044810
-	.global _FUN_06044834
+L2425:	.long	DAT_06044814
+L2426:	.long	FUN_06044834
+L2427:	.long	PTR_FUN_06044818
+L2428:	.long	DAT_0604481c
+L2429:	.long	DAT_06044828
+L2430:	.long	DAT_0604480c
+L2431:	.long	DAT_06044830
+L2432:	.long	DAT_06044820
+L2433:	.long	DAT_06044824
+L2434:	.long	DAT_0604480e
+L2435:	.long	DAT_06044810
+	.global FUN_06044834
 	.align 2
-_FUN_06044834:
+FUN_06044834:
 	mov.w	@(14,r4),r0
 	mov	r0,r1
 	mov	#26,r0
@@ -1428,9 +1428,9 @@ _FUN_06044834:
 	add	r0,r1
 	rts
 	neg	r1,r0
-	.global _FUN_06044848
+	.global FUN_06044848
 	.align 2
-_FUN_06044848:
+FUN_06044848:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -1564,27 +1564,27 @@ L105:
 	.align 2
 L2450:	.short	100944200
 	.align 2
-L2436:	.long	_puRam060448d0
-L2437:	.long	_pcRam060448d8
-L2438:	.long	_pcRam060448dc
-L2439:	.long	_pcRam060448e0
-L2440:	.long	_uRam060448ec
-L2441:	.long	_pcRam060448f0
-L2442:	.long	_uRam060448f4
-L2443:	.long	_iRam060448e8
-L2444:	.long	_pcRam060448e4
-L2445:	.long	_FUN_060449ac
-L2446:	.long	_pcRam060448f8
-L2447:	.long	_uRam060448fc
-L2448:	.long	_uRam06044900
-L2449:	.long	_sRam060448ce
-L2451:	.long	_sRam0604493e
-L2452:	.long	_iRam06044940
-L2453:	.long	_iRam06044944
-L2454:	.long	_FUN_060449a0
-	.global _FUN_060449a0
+L2436:	.long	puRam060448d0
+L2437:	.long	pcRam060448d8
+L2438:	.long	pcRam060448dc
+L2439:	.long	pcRam060448e0
+L2440:	.long	uRam060448ec
+L2441:	.long	pcRam060448f0
+L2442:	.long	uRam060448f4
+L2443:	.long	iRam060448e8
+L2444:	.long	pcRam060448e4
+L2445:	.long	FUN_060449ac
+L2446:	.long	pcRam060448f8
+L2447:	.long	uRam060448fc
+L2448:	.long	uRam06044900
+L2449:	.long	sRam060448ce
+L2451:	.long	sRam0604493e
+L2452:	.long	iRam06044940
+L2453:	.long	iRam06044944
+L2454:	.long	FUN_060449a0
+	.global FUN_060449a0
 	.align 2
-_FUN_060449a0:
+FUN_060449a0:
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
 	add	#-12,r15
@@ -1767,22 +1767,22 @@ L117:
 	.align 2
 L2467:	.short	100944529
 L2469:	.short	100944531
-L2455:	.long	_pcRam06044a70
-L2456:	.long	_FUN_06044834
-L2457:	.long	_sRam06044a68
-L2458:	.long	_pcRam06044a74
-L2459:	.long	_sRam06044a6a
-L2460:	.long	_uRam06044a6c
-L2461:	.long	_uRam06044a78
+L2455:	.long	pcRam06044a70
+L2456:	.long	FUN_06044834
+L2457:	.long	sRam06044a68
+L2458:	.long	pcRam06044a74
+L2459:	.long	sRam06044a6a
+L2460:	.long	uRam06044a6c
+L2461:	.long	uRam06044a78
 L2462:	.long	100944524
 L2463:	.long	100944525
 L2464:	.long	100944526
 L2465:	.long	100944527
 L2466:	.long	100944528
 L2468:	.long	100944530
-	.global _FUN_060449ac
+	.global FUN_060449ac
 	.align 2
-_FUN_060449ac:
+FUN_060449ac:
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
 	add	#-12,r15
@@ -1965,22 +1965,22 @@ L120:
 	.align 2
 L2482:	.short	100944513
 L2484:	.short	100944515
-L2470:	.long	_pcRam06044a70
-L2471:	.long	_FUN_06044834
-L2472:	.long	_sRam06044a68
-L2473:	.long	_pcRam06044a74
-L2474:	.long	_sRam06044a6a
-L2475:	.long	_uRam06044a6c
-L2476:	.long	_uRam06044a78
+L2470:	.long	pcRam06044a70
+L2471:	.long	FUN_06044834
+L2472:	.long	sRam06044a68
+L2473:	.long	pcRam06044a74
+L2474:	.long	sRam06044a6a
+L2475:	.long	uRam06044a6c
+L2476:	.long	uRam06044a78
 L2477:	.long	100944508
 L2478:	.long	100944509
 L2479:	.long	100944510
 L2480:	.long	100944511
 L2481:	.long	100944512
 L2483:	.long	100944514
-	.global _FUN_060449b6
+	.global FUN_060449b6
 	.align 2
-_FUN_060449b6:
+FUN_060449b6:
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
 	add	#-20,r15
@@ -2148,16 +2148,16 @@ L123:
 	rts
 	mov.w	r0,@(26,r1)
 	.align 2
-L2485:	.long	_pcRam06044a70
-L2486:	.long	_FUN_06044834
-L2487:	.long	_sRam06044a68
-L2488:	.long	_pcRam06044a74
-L2489:	.long	_sRam06044a6a
-L2490:	.long	_uRam06044a6c
-L2491:	.long	_uRam06044a78
-	.global _FUN_06044a9a
+L2485:	.long	pcRam06044a70
+L2486:	.long	FUN_06044834
+L2487:	.long	sRam06044a68
+L2488:	.long	pcRam06044a74
+L2489:	.long	sRam06044a6a
+L2490:	.long	uRam06044a6c
+L2491:	.long	uRam06044a78
+	.global FUN_06044a9a
 	.align 2
-_FUN_06044a9a:
+FUN_06044a9a:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -2214,19 +2214,19 @@ _FUN_06044a9a:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L2492:	.long	_DAT_06044b04
-L2493:	.long	_DAT_06044afe
-L2494:	.long	_DAT_06044b14
-L2495:	.long	_DAT_06044b10
-L2496:	.long	_DAT_06044b08
-L2497:	.long	_FUN_06044834
-L2498:	.long	_DAT_06044b0c
-L2499:	.long	_FUN_06044b20
-L2500:	.long	_DAT_06044b1c
-L2501:	.long	_DAT_06044b18
-	.global _FUN_06044ada
+L2492:	.long	DAT_06044b04
+L2493:	.long	DAT_06044afe
+L2494:	.long	DAT_06044b14
+L2495:	.long	DAT_06044b10
+L2496:	.long	DAT_06044b08
+L2497:	.long	FUN_06044834
+L2498:	.long	DAT_06044b0c
+L2499:	.long	FUN_06044b20
+L2500:	.long	DAT_06044b1c
+L2501:	.long	DAT_06044b18
+	.global FUN_06044ada
 	.align 2
-_FUN_06044ada:
+FUN_06044ada:
 	sts.l	pr,@-r15
 	mov.l	L2502,r4
 	mov.l	L2503,r3
@@ -2240,13 +2240,13 @@ _FUN_06044ada:
 	rts
 	mov.l	r13,@r14
 	.align 2
-L2502:	.long	_DAT_06044b0c
-L2503:	.long	_FUN_06044834
-L2504:	.long	_DAT_06044b08
-L2505:	.long	_FUN_06044b20
-	.global _FUN_06044b20
+L2502:	.long	DAT_06044b0c
+L2503:	.long	FUN_06044834
+L2504:	.long	DAT_06044b08
+L2505:	.long	FUN_06044b20
+	.global FUN_06044b20
 	.align 2
-_FUN_06044b20:
+FUN_06044b20:
 	sts.l	pr,@-r15
 	add	#-12,r15
 	mov	r4,r14
@@ -2367,19 +2367,19 @@ L130:
 	rts
 	mov	r12,r0
 	.align 2
-L2506:	.long	_DAT_06044bac
-L2507:	.long	_FUN_06044834
-L2508:	.long	_PTR_FUN_06044bb0
-L2509:	.long	_DAT_06044bb4
-L2510:	.long	_DAT_06044bc0
-L2511:	.long	_DAT_06044ba8
-L2512:	.long	_DAT_06044bc8
-L2513:	.long	_DAT_06044bb8
-L2514:	.long	_DAT_06044bbc
-L2515:	.long	_DAT_06044baa
-	.global _FUN_06044bcc
+L2506:	.long	DAT_06044bac
+L2507:	.long	FUN_06044834
+L2508:	.long	PTR_FUN_06044bb0
+L2509:	.long	DAT_06044bb4
+L2510:	.long	DAT_06044bc0
+L2511:	.long	DAT_06044ba8
+L2512:	.long	DAT_06044bc8
+L2513:	.long	DAT_06044bb8
+L2514:	.long	DAT_06044bbc
+L2515:	.long	DAT_06044baa
+	.global FUN_06044bcc
 	.align 2
-_FUN_06044bcc:
+FUN_06044bcc:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -2667,20 +2667,20 @@ L148:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L2516:	.long	_DAT_06044d50
-L2517:	.long	_DAT_06044c64
-L2518:	.long	_DAT_06044c60
-L2519:	.long	_DAT_06044c5c
-L2520:	.long	_DAT_06044c58
-L2521:	.long	_DAT_06044c54
-L2522:	.long	_DAT_06044c52
-L2523:	.long	_DAT_06044d5c
-L2524:	.long	_DAT_06044d58
-L2525:	.long	_DAT_06044d54
-L2526:	.long	_DAT_06044d60
-	.global _FUN_06044d64
+L2516:	.long	DAT_06044d50
+L2517:	.long	DAT_06044c64
+L2518:	.long	DAT_06044c60
+L2519:	.long	DAT_06044c5c
+L2520:	.long	DAT_06044c58
+L2521:	.long	DAT_06044c54
+L2522:	.long	DAT_06044c52
+L2523:	.long	DAT_06044d5c
+L2524:	.long	DAT_06044d58
+L2525:	.long	DAT_06044d54
+L2526:	.long	DAT_06044d60
+	.global FUN_06044d64
 	.align 2
-_FUN_06044d64:
+FUN_06044d64:
 	sts.l	pr,@-r15
 	mov.l	L2527,r3
 	jsr	@r3
@@ -2689,10 +2689,10 @@ _FUN_06044d64:
 	rts
 	mov.l	@(4,r15),r0
 	.align 2
-L2527:	.long	_FUN_06044d74
-	.global _FUN_06044d74
+L2527:	.long	FUN_06044d74
+	.global FUN_06044d74
 	.align 2
-_FUN_06044d74:
+FUN_06044d74:
 	mov.l	L2528,r0
 	mov.l	@r0,r7
 	mov.l	L2529,r0
@@ -2729,13 +2729,13 @@ L153:
 	rts
 	mov.l	r0,@(44,r14)
 	.align 2
-L2528:	.long	_DAT_06044da0
-L2529:	.long	__DAT_ffffffe2
-L2530:	.long	_DAT_06044da4
+L2528:	.long	DAT_06044da0
+L2529:	.long	_DAT_ffffffe2
+L2530:	.long	DAT_06044da4
 L2531:	.long	65536
-	.global _FUN_06044d80
+	.global FUN_06044d80
 	.align 2
-_FUN_06044d80:
+FUN_06044d80:
 	mov.l	L2532,r0
 	mov.l	r0,@r4
 	mov	#0,r0
@@ -2763,9 +2763,9 @@ _FUN_06044d80:
 	mov.l	r0,@(44,r4)
 	.align 2
 L2532:	.long	65536
-	.global _FUN_06044da8
+	.global FUN_06044da8
 	.align 2
-_FUN_06044da8:
+FUN_06044da8:
 	sts.l	pr,@-r15
 	mov.l	L2533,r3
 	jsr	@r3
@@ -2774,10 +2774,10 @@ _FUN_06044da8:
 	rts
 	mov.l	@(4,r15),r0
 	.align 2
-L2533:	.long	_FUN_06044db8
-	.global _FUN_06044db8
+L2533:	.long	FUN_06044db8
+	.global FUN_06044db8
 	.align 2
-_FUN_06044db8:
+FUN_06044db8:
 	mov.l	@r4,r0
 	mov.l	r0,@(48,r4)
 	mov.l	@(4,r4),r0
@@ -2819,9 +2819,9 @@ _FUN_06044db8:
 	mov.l	@(44,r4),r1
 	rts
 	mov.l	r1,@r0
-	.global _FUN_06044e28
+	.global FUN_06044e28
 	.align 2
-_FUN_06044e28:
+FUN_06044e28:
 	sts.l	pr,@-r15
 	add	#-4,r15
 	mov	r5,r13
@@ -2838,10 +2838,10 @@ _FUN_06044e28:
 	rts
 	add	#0,r5
 	.align 2
-L2534:	.long	_FUN_06044e3c
-	.global _FUN_06044e3c
+L2534:	.long	FUN_06044e3c
+	.global FUN_06044e3c
 	.align 2
-_FUN_06044e3c:
+FUN_06044e3c:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-20,r15
@@ -3356,9 +3356,9 @@ L2546:	.short	-1
 	.align 2
 L2535:	.long	65536
 L2540:	.long	65536
-	.global _FUN_06045006
+	.global FUN_06045006
 	.align 2
-_FUN_06045006:
+FUN_06045006:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-44,r15
@@ -3378,7 +3378,7 @@ _FUN_06045006:
 	rts
 	nop
 	.align 2
-L2547:	.long	_DAT_06045070
+L2547:	.long	DAT_06045070
 L242:
 	mov.l	L2548,r0
 	mov.l	@r0,r0
@@ -4074,11 +4074,11 @@ L2562:	.short	-32768
 L2563:	.short	32767
 L2564:	.short	-1
 	.align 2
-L2554:	.long	_PTR_DAT_06045074
+L2554:	.long	PTR_DAT_06045074
 L2555:	.long	65536
-	.global _FUN_06045008
+	.global FUN_06045008
 	.align 2
-_FUN_06045008:
+FUN_06045008:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-40,r15
@@ -4792,11 +4792,11 @@ L2580:	.short	-32768
 L2581:	.short	32767
 L2582:	.short	-1
 	.align 2
-L2572:	.long	_PTR_DAT_06045074
+L2572:	.long	PTR_DAT_06045074
 L2573:	.long	65536
-	.global _FUN_06045020
+	.global FUN_06045020
 	.align 2
-_FUN_06045020:
+FUN_06045020:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-24,r15
@@ -5458,9 +5458,9 @@ L2596:	.short	65536
 L2597:	.short	-32768
 L2598:	.short	32767
 L2599:	.short	-1
-	.global _FUN_0604507e
+	.global FUN_0604507e
 	.align 2
-_FUN_0604507e:
+FUN_0604507e:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-44,r15
@@ -6172,12 +6172,12 @@ L2614:	.short	-1
 L2616:	.short	65536
 L2617:	.short	32767
 L2618:	.short	-1
-L2606:	.long	_DAT_060450e4
-L2615:	.long	_PTR_DAT_060450e8
-L2619:	.long	_PTR_DAT_060450e8
-	.global _FUN_06045080
+L2606:	.long	DAT_060450e4
+L2615:	.long	PTR_DAT_060450e8
+L2619:	.long	PTR_DAT_060450e8
+	.global FUN_06045080
 	.align 2
-_FUN_06045080:
+FUN_06045080:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-40,r15
@@ -6889,10 +6889,10 @@ L2636:	.short	65536
 L2637:	.short	-32768
 L2638:	.short	32767
 L2639:	.short	-1
-L2627:	.long	_PTR_DAT_060450e8
-	.global _FUN_06045098
+L2627:	.long	PTR_DAT_060450e8
+	.global FUN_06045098
 	.align 2
-_FUN_06045098:
+FUN_06045098:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-24,r15
@@ -7550,9 +7550,9 @@ L2653:	.short	65536
 L2654:	.short	-32768
 L2655:	.short	32767
 L2656:	.short	-1
-	.global _FUN_060450f2
+	.global FUN_060450f2
 	.align 2
-_FUN_060450f2:
+FUN_060450f2:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-44,r15
@@ -8264,12 +8264,12 @@ L2671:	.short	-1
 L2673:	.short	65536
 L2674:	.short	32767
 L2675:	.short	-1
-L2663:	.long	_DAT_0604514c
-L2672:	.long	_PTR_DAT_06045150
-L2676:	.long	_PTR_DAT_06045150
-	.global _FUN_060450f4
+L2663:	.long	DAT_0604514c
+L2672:	.long	PTR_DAT_06045150
+L2676:	.long	PTR_DAT_06045150
+	.global FUN_060450f4
 	.align 2
-_FUN_060450f4:
+FUN_060450f4:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-40,r15
@@ -8981,10 +8981,10 @@ L2693:	.short	65536
 L2694:	.short	-32768
 L2695:	.short	32767
 L2696:	.short	-1
-L2684:	.long	_PTR_DAT_06045150
-	.global _FUN_0604510c
+L2684:	.long	PTR_DAT_06045150
+	.global FUN_0604510c
 	.align 2
-_FUN_0604510c:
+FUN_0604510c:
 	mov.l	r14,@-r15
 	sts.l	macl,@-r15
 	add	#-24,r15
@@ -9642,9 +9642,9 @@ L2710:	.short	65536
 L2711:	.short	-32768
 L2712:	.short	32767
 L2713:	.short	-1
-	.global _FUN_06045198
+	.global FUN_06045198
 	.align 2
-_FUN_06045198:
+FUN_06045198:
 	sts.l	pr,@-r15
 	mov.l	L2714,r3
 	jsr	@r3
@@ -9653,10 +9653,10 @@ _FUN_06045198:
 	rts
 	mov	r8,r0
 	.align 2
-L2714:	.long	_FUN_060451bc
-	.global _FUN_060451aa
+L2714:	.long	FUN_060451bc
+	.global FUN_060451aa
 	.align 2
-_FUN_060451aa:
+FUN_060451aa:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	mov.l	L2715,r3
@@ -9667,10 +9667,10 @@ _FUN_060451aa:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L2715:	.long	_FUN_060451be
-	.global _FUN_060451bc
+L2715:	.long	FUN_060451be
+	.global FUN_060451bc
 	.align 2
-_FUN_060451bc:
+FUN_060451bc:
 	sts.l	pr,@-r15
 	mov.l	L2716,r4
 	mov.l	L2717,r3
@@ -9692,15 +9692,15 @@ _FUN_060451bc:
 	rts
 	nop
 	.align 2
-L2716:	.long	_uRam060451f4
-L2717:	.long	_func_0x06044d80
-L2718:	.long	_func_0x060450f2
-L2719:	.long	_func_0x06045006
-L2720:	.long	_func_0x0604507e
-L2721:	.long	_func_0x06044e3c
-	.global _FUN_060451be
+L2716:	.long	uRam060451f4
+L2717:	.long	func_0x06044d80
+L2718:	.long	func_0x060450f2
+L2719:	.long	func_0x06045006
+L2720:	.long	func_0x0604507e
+L2721:	.long	func_0x06044e3c
+	.global FUN_060451be
 	.align 2
-_FUN_060451be:
+FUN_060451be:
 	sts.l	pr,@-r15
 	mov	r15,r14
 	add	#-4,r15
@@ -9731,14 +9731,14 @@ _FUN_060451be:
 	rts
 	add	#0,r5
 	.align 2
-L2722:	.long	_FUN_06044d80
-L2723:	.long	_FUN_060450f2
-L2724:	.long	_FUN_06045006
-L2725:	.long	_FUN_0604507e
-L2726:	.long	_FUN_06044e3c
-	.global _FUN_060451fa
+L2722:	.long	FUN_06044d80
+L2723:	.long	FUN_060450f2
+L2724:	.long	FUN_06045006
+L2725:	.long	FUN_0604507e
+L2726:	.long	FUN_06044e3c
+	.global FUN_060451fa
 	.align 2
-_FUN_060451fa:
+FUN_060451fa:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
@@ -10425,12 +10425,12 @@ L2742:	.short	65536
 L2743:	.short	32767
 L2744:	.short	-1
 	.align 2
-L2732:	.long	_pcRam06045258
-L2741:	.long	_pcRam0604525c
-L2745:	.long	_pcRam0604525c
-	.global _FUN_0604521a
+L2732:	.long	pcRam06045258
+L2741:	.long	pcRam0604525c
+L2745:	.long	pcRam0604525c
+	.global FUN_0604521a
 	.align 2
-_FUN_0604521a:
+FUN_0604521a:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
@@ -11113,12 +11113,12 @@ L2761:	.short	65536
 L2762:	.short	-32768
 L2763:	.short	-1
 	.align 2
-L2751:	.long	_pcRam06045258
-L2760:	.long	_pcRam0604525c
-L2764:	.long	_pcRam0604525c
-	.global _FUN_0604523a
+L2751:	.long	pcRam06045258
+L2760:	.long	pcRam0604525c
+L2764:	.long	pcRam0604525c
+	.global FUN_0604523a
 	.align 2
-_FUN_0604523a:
+FUN_0604523a:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
@@ -11801,12 +11801,12 @@ L2780:	.short	65536
 L2781:	.short	32767
 L2782:	.short	-1
 	.align 2
-L2770:	.long	_pcRam06045258
-L2779:	.long	_pcRam0604525c
-L2783:	.long	_pcRam0604525c
-	.global _FUN_060452f0
+L2770:	.long	pcRam06045258
+L2779:	.long	pcRam0604525c
+L2783:	.long	pcRam0604525c
+	.global FUN_060452f0
 	.align 2
-_FUN_060452f0:
+FUN_060452f0:
 	sts.l	pr,@-r15
 	mov.l	L2784,r3
 	jsr	@r3
@@ -11815,10 +11815,10 @@ _FUN_060452f0:
 	rts
 	nop
 	.align 2
-L2784:	.long	_FUN_06045368
-	.global _FUN_06045318
+L2784:	.long	FUN_06045368
+	.global FUN_06045318
 	.align 2
-_FUN_06045318:
+FUN_06045318:
 	sts.l	pr,@-r15
 	mov.l	L2785,r3
 	jsr	@r3
@@ -11827,10 +11827,10 @@ _FUN_06045318:
 	rts
 	nop
 	.align 2
-L2785:	.long	_FUN_060453c8
-	.global _FUN_06045340
+L2785:	.long	FUN_060453c8
+	.global FUN_06045340
 	.align 2
-_FUN_06045340:
+FUN_06045340:
 	sts.l	pr,@-r15
 	mov.l	L2786,r3
 	jsr	@r3
@@ -11839,10 +11839,10 @@ _FUN_06045340:
 	rts
 	nop
 	.align 2
-L2786:	.long	_FUN_060453b8
-	.global _FUN_06045368
+L2786:	.long	FUN_060453b8
+	.global FUN_06045368
 	.align 2
-_FUN_06045368:
+FUN_06045368:
 	sts.l	pr,@-r15
 	mov.l	L2787,r3
 	jsr	@r3
@@ -11867,17 +11867,17 @@ _FUN_06045368:
 	rts
 	mov	#0,r4
 	.align 2
-L2787:	.long	_PTR_FUN_0604539c
-L2788:	.long	_PTR_SUB_060453a0
-L2789:	.long	_PTR_DAT_060453a4
-L2790:	.long	_FUN_060453c8
-L2791:	.long	_PTR_DAT_060453ac
-L2792:	.long	_func_0x060453cc
-L2793:	.long	_PTR_FUN_060453b4
-L2794:	.long	_FUN_06045ccc
-	.global _FUN_06045378
+L2787:	.long	PTR_FUN_0604539c
+L2788:	.long	PTR_SUB_060453a0
+L2789:	.long	PTR_DAT_060453a4
+L2790:	.long	FUN_060453c8
+L2791:	.long	PTR_DAT_060453ac
+L2792:	.long	func_0x060453cc
+L2793:	.long	PTR_FUN_060453b4
+L2794:	.long	FUN_06045ccc
+	.global FUN_06045378
 	.align 2
-_FUN_06045378:
+FUN_06045378:
 	sts.l	pr,@-r15
 	mov.l	L2795,r4
 	mov.l	L2796,r3
@@ -11896,14 +11896,14 @@ _FUN_06045378:
 	rts
 	mov	#0,r4
 	.align 2
-L2795:	.long	_PTR_DAT_060453a4
-L2796:	.long	_FUN_060453cc
-L2797:	.long	_PTR_DAT_060453ac
-L2798:	.long	_PTR_FUN_060453b4
-L2799:	.long	_FUN_06045ccc
-	.global _FUN_060453b8
+L2795:	.long	PTR_DAT_060453a4
+L2796:	.long	FUN_060453cc
+L2797:	.long	PTR_DAT_060453ac
+L2798:	.long	PTR_FUN_060453b4
+L2799:	.long	FUN_06045ccc
+	.global FUN_060453b8
 	.align 2
-_FUN_060453b8:
+FUN_060453b8:
 	sts.l	pr,@-r15
 	mov	#48,r11
 	mov.l	L2800,r0
@@ -11925,13 +11925,13 @@ L1511:
 	rts
 	mov	#0,r4
 	.align 2
-L2800:	.long	_puRam060453c4
-L2801:	.long	_puRam060453c0
-L2802:	.long	_func_0x060456cc
-L2803:	.long	_FUN_06045ccc
-	.global _FUN_060453c8
+L2800:	.long	puRam060453c4
+L2801:	.long	puRam060453c0
+L2802:	.long	func_0x060456cc
+L2803:	.long	FUN_06045ccc
+	.global FUN_060453c8
 	.align 2
-_FUN_060453c8:
+FUN_060453c8:
 	sts.l	pr,@-r15
 	mov	#48,r11
 	mov.l	L2804,r0
@@ -11953,13 +11953,13 @@ L1515:
 	rts
 	mov	#0,r4
 	.align 2
-L2804:	.long	_puRam06045598
-L2805:	.long	_puRam06045594
-L2806:	.long	_func_0x060456cc
-L2807:	.long	_FUN_06045ccc
-	.global _FUN_060453cc
+L2804:	.long	puRam06045598
+L2805:	.long	puRam06045594
+L2806:	.long	func_0x060456cc
+L2807:	.long	FUN_06045ccc
+	.global FUN_060453cc
 	.align 2
-_FUN_060453cc:
+FUN_060453cc:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov	#48,r12
@@ -11978,11 +11978,11 @@ L1519:
 	rts
 	mov	#0,r4
 	.align 2
-L2808:	.long	_FUN_060456cc
-L2809:	.long	_FUN_06045ccc
-	.global _FUN_0604556c
+L2808:	.long	FUN_060456cc
+L2809:	.long	FUN_06045ccc
+	.global FUN_0604556c
 	.align 2
-_FUN_0604556c:
+FUN_0604556c:
 	sts.l	pr,@-r15
 	mov.l	L2810,r3
 	jsr	@r3
@@ -11991,10 +11991,10 @@ _FUN_0604556c:
 	rts
 	nop
 	.align 2
-L2810:	.long	_FUN_0604559c
-	.global _FUN_0604559c
+L2810:	.long	FUN_0604559c
+	.global FUN_0604559c
 	.align 2
-_FUN_0604559c:
+FUN_0604559c:
 	sts.l	pr,@-r15
 	mov.l	L2811,r3
 	jsr	@r3
@@ -12035,20 +12035,20 @@ _FUN_0604559c:
 	.align 2
 L2820:	.short	140
 	.align 2
-L2811:	.long	_PTR_FUN_060455f4
-L2812:	.long	_PTR_FUN_060455f8
-L2813:	.long	_func_0x06045378
-L2814:	.long	_DAT_060455ee
-L2815:	.long	_DAT_060455fc
-L2816:	.long	_DAT_06045600
-L2817:	.long	_PTR_LAB_06045604
-L2818:	.long	_DAT_06045608
-L2819:	.long	_DAT_0604560c
-L2821:	.long	_DAT_060455f0
-L2822:	.long	_func_0x060456cc
-	.global _FUN_060455d0
+L2811:	.long	PTR_FUN_060455f4
+L2812:	.long	PTR_FUN_060455f8
+L2813:	.long	func_0x06045378
+L2814:	.long	DAT_060455ee
+L2815:	.long	DAT_060455fc
+L2816:	.long	DAT_06045600
+L2817:	.long	PTR_LAB_06045604
+L2818:	.long	DAT_06045608
+L2819:	.long	DAT_0604560c
+L2821:	.long	DAT_060455f0
+L2822:	.long	func_0x060456cc
+	.global FUN_060455d0
 	.align 2
-_FUN_060455d0:
+FUN_060455d0:
 	sts.l	pr,@-r15
 	mov.l	L2823,r0
 	mov.l	@r0,r0
@@ -12064,12 +12064,12 @@ _FUN_060455d0:
 	.align 2
 L2824:	.short	140
 	.align 2
-L2823:	.long	_DAT_06045610
-L2825:	.long	_DAT_060455f0
-L2826:	.long	_FUN_060456cc
-	.global _FUN_060455e2
+L2823:	.long	DAT_06045610
+L2825:	.long	DAT_060455f0
+L2826:	.long	FUN_060456cc
+	.global FUN_060455e2
 	.align 2
-_FUN_060455e2:
+FUN_060455e2:
 	sts.l	pr,@-r15
 	mov.l	L2827,r3
 	jsr	@r3
@@ -12078,10 +12078,10 @@ _FUN_060455e2:
 	rts
 	nop
 	.align 2
-L2827:	.long	_FUN_0604562c
-	.global _FUN_06045614
+L2827:	.long	FUN_0604562c
+	.global FUN_06045614
 	.align 2
-_FUN_06045614:
+FUN_06045614:
 	sts.l	pr,@-r15
 	mov.l	L2828,r3
 	jsr	@r3
@@ -12090,10 +12090,10 @@ _FUN_06045614:
 	rts
 	nop
 	.align 2
-L2828:	.long	_FUN_06045650
-	.global _FUN_06045620
+L2828:	.long	FUN_06045650
+	.global FUN_06045620
 	.align 2
-_FUN_06045620:
+FUN_06045620:
 	sts.l	pr,@-r15
 	mov.l	L2829,r3
 	jsr	@r3
@@ -12102,10 +12102,10 @@ _FUN_06045620:
 	rts
 	nop
 	.align 2
-L2829:	.long	_func_0x06045664
-	.global _FUN_0604562c
+L2829:	.long	func_0x06045664
+	.global FUN_0604562c
 	.align 2
-_FUN_0604562c:
+FUN_0604562c:
 	sts.l	pr,@-r15
 	mov.l	L2830,r4
 	mov.l	L2831,r0
@@ -12121,12 +12121,12 @@ _FUN_0604562c:
 	rts
 	nop
 	.align 2
-L2830:	.long	_uRam06045644
-L2831:	.long	_pcRam06045648
-L2832:	.long	_pcRam0604564c
-	.global _FUN_06045650
+L2830:	.long	uRam06045644
+L2831:	.long	pcRam06045648
+L2832:	.long	pcRam0604564c
+	.global FUN_06045650
 	.align 2
-_FUN_06045650:
+FUN_06045650:
 	mov.l	L2833,r0
 	mov.l	@r0,r0
 	mov	r0,r7
@@ -12154,12 +12154,12 @@ L2834:	.short	136
 L2836:	.short	144
 L2838:	.short	132
 L2839:	.short	168
-L2833:	.long	_iRam06045690
-L2835:	.long	_uRam06045688
-L2837:	.long	_uRam0604568a
-	.global _FUN_06045664
+L2833:	.long	iRam06045690
+L2835:	.long	uRam06045688
+L2837:	.long	uRam0604568a
+	.global FUN_06045664
 	.align 2
-_FUN_06045664:
+FUN_06045664:
 	mov.l	L2840,r0
 	mov.l	@r0,r0
 	mov	r0,r7
@@ -12187,12 +12187,12 @@ L2841:	.short	136
 L2843:	.short	144
 L2845:	.short	132
 L2846:	.short	168
-L2840:	.long	_iRam06045694
-L2842:	.long	_uRam0604568c
-L2844:	.long	_uRam0604568e
-	.global _FUN_06045678
+L2840:	.long	iRam06045694
+L2842:	.long	uRam0604568c
+L2844:	.long	uRam0604568e
+	.global FUN_06045678
 	.align 2
-_FUN_06045678:
+FUN_06045678:
 	sts.l	pr,@-r15
 	mov.l	L2847,r3
 	jsr	@r3
@@ -12201,15 +12201,15 @@ _FUN_06045678:
 	rts
 	nop
 	.align 2
-L2847:	.long	_FUN_06045698
-	.global _FUN_06045698
+L2847:	.long	FUN_06045698
+	.global FUN_06045698
 	.align 2
-_FUN_06045698:
+FUN_06045698:
 	rts
 	nop
-	.global _FUN_060456aa
+	.global FUN_060456aa
 	.align 2
-_FUN_060456aa:
+FUN_060456aa:
 	sts.l	pr,@-r15
 	mov.l	L2848,r3
 	jsr	@r3
@@ -12221,10 +12221,10 @@ _FUN_060456aa:
 	rts
 	nop
 	.align 2
-L2848:	.long	_FUN_060456c2
-	.global _FUN_060456ac
+L2848:	.long	FUN_060456c2
+	.global FUN_060456ac
 	.align 2
-_FUN_060456ac:
+FUN_060456ac:
 	sts.l	pr,@-r15
 	mov.l	L2849,r3
 	jsr	@r3
@@ -12236,10 +12236,10 @@ _FUN_060456ac:
 	rts
 	nop
 	.align 2
-L2849:	.long	_FUN_060456c2
-	.global _FUN_060456c2
+L2849:	.long	FUN_060456c2
+	.global FUN_060456c2
 	.align 2
-_FUN_060456c2:
+FUN_060456c2:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov.w	L2850,r1
@@ -12252,10 +12252,10 @@ _FUN_060456c2:
 	.align 2
 L2850:	.short	140
 	.align 2
-L2851:	.long	_FUN_060456cc
-	.global _FUN_060456cc
+L2851:	.long	FUN_060456cc
+	.global FUN_060456cc
 	.align 2
-_FUN_060456cc:
+FUN_060456cc:
 	mov.l	L2852,r0
 	mov.l	@r7,r1
 	mov.l	r1,@r0
@@ -12272,13 +12272,13 @@ _FUN_060456cc:
 	rts
 	mov.l	r0,@(12,r14)
 	.align 2
-L2852:	.long	__DAT_ffffff00
-L2853:	.long	__DAT_ffffff10
-L2854:	.long	__DAT_ffffff14
-L2855:	.long	__DAT_ffffff1c
-	.global _FUN_060456ec
+L2852:	.long	_DAT_ffffff00
+L2853:	.long	_DAT_ffffff10
+L2854:	.long	_DAT_ffffff14
+L2855:	.long	_DAT_ffffff1c
+	.global FUN_060456ec
 	.align 2
-_FUN_060456ec:
+FUN_060456ec:
 	mov.w	L2856,r0
 	add	r7,r0
 	mov.l	L2857,r1
@@ -12288,10 +12288,10 @@ _FUN_060456ec:
 	.align 2
 L2856:	.short	146
 	.align 2
-L2857:	.long	_uRam060456f8
-	.global _FUN_060456f2
+L2857:	.long	uRam060456f8
+	.global FUN_060456f2
 	.align 2
-_FUN_060456f2:
+FUN_060456f2:
 	mov.w	L2858,r0
 	add	r7,r0
 	mov.l	L2859,r1
@@ -12301,10 +12301,10 @@ _FUN_060456f2:
 	.align 2
 L2858:	.short	146
 	.align 2
-L2859:	.long	_uRam060456fa
-	.global _FUN_060456fc
+L2859:	.long	uRam060456fa
+	.global FUN_060456fc
 	.align 2
-_FUN_060456fc:
+FUN_060456fc:
 	mov.l	L2860,r0
 	mov.l	@r0,r7
 	mov.l	L2861,r0
@@ -12318,12 +12318,12 @@ L1540:
 	rts
 	mov.l	r4,@r7
 	.align 2
-L2860:	.long	_puRam0604570c
-L2861:	.long	__DAT_ffffffe2
-L2862:	.long	_puRam06045710
-	.global _FUN_06045714
+L2860:	.long	puRam0604570c
+L2861:	.long	_DAT_ffffffe2
+L2862:	.long	puRam06045710
+	.global FUN_06045714
 	.align 2
-_FUN_06045714:
+FUN_06045714:
 	sts.l	pr,@-r15
 	mov.l	L2863,r3
 	jsr	@r3
@@ -12332,10 +12332,10 @@ _FUN_06045714:
 	rts
 	nop
 	.align 2
-L2863:	.long	_FUN_06045738
-	.global _FUN_06045738
+L2863:	.long	FUN_06045738
+	.global FUN_06045738
 	.align 2
-_FUN_06045738:
+FUN_06045738:
 	sts.l	pr,@-r15
 	add	#-16,r15
 	mov	r4,r14
@@ -12456,18 +12456,18 @@ L2868:	.short	22368
 L2872:	.short	128
 L2873:	.short	130
 	.align 2
-L2864:	.long	_piRam06045770
-L2865:	.long	_puRam06045774
-L2866:	.long	_FUN_06045760
-L2867:	.long	_puRam06045778
-L2869:	.long	_FUN_060459c4
-L2870:	.long	_FUN_060463e4
-L2871:	.long	_FUN_06046602
-L2874:	.long	_FUN_06045a2c
-L2875:	.long	_FUN_06045a7e
-	.global _FUN_06045760
+L2864:	.long	piRam06045770
+L2865:	.long	puRam06045774
+L2866:	.long	FUN_06045760
+L2867:	.long	puRam06045778
+L2869:	.long	FUN_060459c4
+L2870:	.long	FUN_060463e4
+L2871:	.long	FUN_06046602
+L2874:	.long	FUN_06045a2c
+L2875:	.long	FUN_06045a7e
+	.global FUN_06045760
 	.align 2
-_FUN_06045760:
+FUN_06045760:
 	sts.l	pr,@-r15
 	mov.l	L2876,r0
 	mov.l	@r0,r0
@@ -12547,16 +12547,16 @@ L1558:
 	.align 2
 L2881:	.short	128
 L2882:	.short	130
-L2876:	.long	_puRam0604577c
-L2877:	.long	_iRam06045780
-L2878:	.long	_FUN_060459c4
-L2879:	.long	_FUN_060463e4
-L2880:	.long	_FUN_06046602
-L2883:	.long	_FUN_06045a2c
-L2884:	.long	_FUN_06045a7e
-	.global _FUN_06045784
+L2876:	.long	puRam0604577c
+L2877:	.long	iRam06045780
+L2878:	.long	FUN_060459c4
+L2879:	.long	FUN_060463e4
+L2880:	.long	FUN_06046602
+L2883:	.long	FUN_06045a2c
+L2884:	.long	FUN_06045a7e
+	.global FUN_06045784
 	.align 2
-_FUN_06045784:
+FUN_06045784:
 	sts.l	pr,@-r15
 	mov.l	L2885,r3
 	jsr	@r3
@@ -12565,10 +12565,10 @@ _FUN_06045784:
 	rts
 	nop
 	.align 2
-L2885:	.long	_FUN_060457a8
-	.global _FUN_060457aa
+L2885:	.long	FUN_060457a8
+	.global FUN_060457aa
 	.align 2
-_FUN_060457aa:
+FUN_060457aa:
 	sts.l	pr,@-r15
 	add	#-8,r15
 	mov	r4,r14
@@ -12661,14 +12661,14 @@ L2887:	.short	148
 L2888:	.short	136
 L2891:	.short	128
 L2892:	.short	130
-L2886:	.long	_FUN_060459c4
-L2889:	.long	_FUN_060463e4
-L2890:	.long	_FUN_06046602
-L2893:	.long	_FUN_06045a2c
-L2894:	.long	_FUN_06045a7e
-	.global _FUN_060457ac
+L2886:	.long	FUN_060459c4
+L2889:	.long	FUN_060463e4
+L2890:	.long	FUN_06046602
+L2893:	.long	FUN_06045a2c
+L2894:	.long	FUN_06045a7e
+	.global FUN_060457ac
 	.align 2
-_FUN_060457ac:
+FUN_060457ac:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -12780,14 +12780,14 @@ L2896:	.short	148
 L2897:	.short	136
 L2900:	.short	128
 L2901:	.short	130
-L2895:	.long	_FUN_060459c4
-L2898:	.long	_FUN_060463e4
-L2899:	.long	_func_0x06046602
-L2902:	.long	_func_0x06045a2c
-L2903:	.long	_FUN_06045a7e
-	.global _FUN_060457dc
+L2895:	.long	FUN_060459c4
+L2898:	.long	FUN_060463e4
+L2899:	.long	func_0x06046602
+L2902:	.long	func_0x06045a2c
+L2903:	.long	FUN_06045a7e
+	.global FUN_060457dc
 	.align 2
-_FUN_060457dc:
+FUN_060457dc:
 	sts.l	pr,@-r15
 	mov.l	L2904,r3
 	jsr	@r3
@@ -12862,14 +12862,14 @@ L2905:	.short	136
 L2908:	.short	128
 L2909:	.short	130
 	.align 2
-L2904:	.long	_FUN_060459c4
-L2906:	.long	_FUN_060463e4
-L2907:	.long	_func_0x06046602
-L2910:	.long	_func_0x06045a2c
-L2911:	.long	_FUN_06045a7e
-	.global _FUN_060457de
+L2904:	.long	FUN_060459c4
+L2906:	.long	FUN_060463e4
+L2907:	.long	func_0x06046602
+L2910:	.long	func_0x06045a2c
+L2911:	.long	FUN_06045a7e
+	.global FUN_060457de
 	.align 2
-_FUN_060457de:
+FUN_060457de:
 	sts.l	pr,@-r15
 	mov.l	L2912,r3
 	jsr	@r3
@@ -12944,14 +12944,14 @@ L2913:	.short	136
 L2916:	.short	128
 L2917:	.short	130
 	.align 2
-L2912:	.long	_FUN_060459c4
-L2914:	.long	_FUN_060463e4
-L2915:	.long	_FUN_06046602
-L2918:	.long	_FUN_06045a2c
-L2919:	.long	_FUN_06045a7e
-	.global _FUN_060457e2
+L2912:	.long	FUN_060459c4
+L2914:	.long	FUN_060463e4
+L2915:	.long	FUN_06046602
+L2918:	.long	FUN_06045a2c
+L2919:	.long	FUN_06045a7e
+	.global FUN_060457e2
 	.align 2
-_FUN_060457e2:
+FUN_060457e2:
 	sts.l	pr,@-r15
 	mov.w	L2920,r0
 	add	r9,r0
@@ -13023,13 +13023,13 @@ L2920:	.short	136
 L2923:	.short	128
 L2924:	.short	130
 	.align 2
-L2921:	.long	_FUN_060463e4
-L2922:	.long	_FUN_06046602
-L2925:	.long	_FUN_06045a2c
-L2926:	.long	_FUN_06045a7e
-	.global _FUN_060457e4
+L2921:	.long	FUN_060463e4
+L2922:	.long	FUN_06046602
+L2925:	.long	FUN_06045a2c
+L2926:	.long	FUN_06045a7e
+	.global FUN_060457e4
 	.align 2
-_FUN_060457e4:
+FUN_060457e4:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -13120,13 +13120,13 @@ L2927:	.short	136
 L2930:	.short	128
 L2931:	.short	130
 	.align 2
-L2928:	.long	_FUN_060463e4
-L2929:	.long	_func_0x06046602
-L2932:	.long	_func_0x06045a2c
-L2933:	.long	_FUN_06045a7e
-	.global _FUN_06045858
+L2928:	.long	FUN_060463e4
+L2929:	.long	func_0x06046602
+L2932:	.long	func_0x06045a2c
+L2933:	.long	FUN_06045a7e
+	.global FUN_06045858
 	.align 2
-_FUN_06045858:
+FUN_06045858:
 	sts.l	pr,@-r15
 	mov.l	L2934,r3
 	jsr	@r3
@@ -13214,14 +13214,14 @@ L1629:
 	.align 2
 L2937:	.short	128
 L2938:	.short	130
-L2934:	.long	_FUN_060459c4
-L2935:	.long	_func_0x06046478
-L2936:	.long	_func_0x06046602
-L2939:	.long	_FUN_0604670c
-L2940:	.long	_func_0x0604674e
-	.global _FUN_0604585c
+L2934:	.long	FUN_060459c4
+L2935:	.long	func_0x06046478
+L2936:	.long	func_0x06046602
+L2939:	.long	FUN_0604670c
+L2940:	.long	func_0x0604674e
+	.global FUN_0604585c
 	.align 2
-_FUN_0604585c:
+FUN_0604585c:
 	sts.l	pr,@-r15
 	mov.w	L2941,r0
 	add	r8,r0
@@ -13308,13 +13308,13 @@ L2941:	.short	136
 L2944:	.short	128
 L2945:	.short	130
 	.align 2
-L2942:	.long	_func_0x06046478
-L2943:	.long	_func_0x06046602
-L2946:	.long	_FUN_0604670c
-L2947:	.long	_func_0x0604674e
-	.global _FUN_060458da
+L2942:	.long	func_0x06046478
+L2943:	.long	func_0x06046602
+L2946:	.long	FUN_0604670c
+L2947:	.long	func_0x0604674e
+	.global FUN_060458da
 	.align 2
-_FUN_060458da:
+FUN_060458da:
 	sts.l	pr,@-r15
 	mov.l	L2948,r3
 	jsr	@r3
@@ -13402,14 +13402,14 @@ L1659:
 	.align 2
 L2951:	.short	128
 L2952:	.short	130
-L2948:	.long	_FUN_060459c4
-L2949:	.long	_FUN_06046478
-L2950:	.long	_FUN_06046602
-L2953:	.long	_FUN_06045a2c
-L2954:	.long	_FUN_06045a7e
-	.global _FUN_060458de
+L2948:	.long	FUN_060459c4
+L2949:	.long	FUN_06046478
+L2950:	.long	FUN_06046602
+L2953:	.long	FUN_06045a2c
+L2954:	.long	FUN_06045a7e
+	.global FUN_060458de
 	.align 2
-_FUN_060458de:
+FUN_060458de:
 	sts.l	pr,@-r15
 	mov.w	L2955,r0
 	add	r8,r0
@@ -13496,13 +13496,13 @@ L2955:	.short	136
 L2958:	.short	128
 L2959:	.short	130
 	.align 2
-L2956:	.long	_FUN_06046478
-L2957:	.long	_FUN_06046602
-L2960:	.long	_FUN_06045a2c
-L2961:	.long	_FUN_06045a7e
-	.global _FUN_0604595a
+L2956:	.long	FUN_06046478
+L2957:	.long	FUN_06046602
+L2960:	.long	FUN_06045a2c
+L2961:	.long	FUN_06045a7e
+	.global FUN_0604595a
 	.align 2
-_FUN_0604595a:
+FUN_0604595a:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	add	#-4,r15
@@ -13620,17 +13620,17 @@ L1689:
 	.align 2
 L2964:	.short	128
 L2965:	.short	130
-L2962:	.long	_FUN_060459c4
-L2963:	.long	_FUN_06046520
-L2966:	.long	_FUN_06045ac0
-L2967:	.long	_FUN_06045b10
-L2968:	.long	_FUN_06045b74
-L2969:	.long	_FUN_06045adc
-L2970:	.long	_FUN_06045b48
-L2971:	.long	_FUN_06045ba0
-	.global _FUN_0604595e
+L2962:	.long	FUN_060459c4
+L2963:	.long	FUN_06046520
+L2966:	.long	FUN_06045ac0
+L2967:	.long	FUN_06045b10
+L2968:	.long	FUN_06045b74
+L2969:	.long	FUN_06045adc
+L2970:	.long	FUN_06045b48
+L2971:	.long	FUN_06045ba0
+	.global FUN_0604595e
 	.align 2
-_FUN_0604595e:
+FUN_0604595e:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	add	#-4,r15
@@ -13747,16 +13747,16 @@ L2972:	.short	136
 L2974:	.short	128
 L2975:	.short	130
 	.align 2
-L2973:	.long	_FUN_06046520
-L2976:	.long	_FUN_06045ac0
-L2977:	.long	_FUN_06045b10
-L2978:	.long	_FUN_06045b74
-L2979:	.long	_FUN_06045adc
-L2980:	.long	_FUN_06045b48
-L2981:	.long	_FUN_06045ba0
-	.global _FUN_060459c4
+L2973:	.long	FUN_06046520
+L2976:	.long	FUN_06045ac0
+L2977:	.long	FUN_06045b10
+L2978:	.long	FUN_06045b74
+L2979:	.long	FUN_06045adc
+L2980:	.long	FUN_06045b48
+L2981:	.long	FUN_06045ba0
+	.global FUN_060459c4
 	.align 2
-_FUN_060459c4:
+FUN_060459c4:
 	sts.l	pr,@-r15
 	add	#-12,r15
 	mov	r4,r14
@@ -13851,11 +13851,11 @@ L2983:	.short	148
 L2984:	.short	168
 L2985:	.short	170
 L2986:	.short	142
-L2982:	.long	_FUN_06045698
-L2987:	.long	_DAT_06045b0c
-	.global _FUN_06045a2c
+L2982:	.long	FUN_06045698
+L2987:	.long	DAT_06045b0c
+	.global FUN_06045a2c
 	.align 2
-_FUN_06045a2c:
+FUN_06045a2c:
 	sts.l	pr,@-r15
 	add	#-20,r15
 	mov	r15,r9
@@ -13938,14 +13938,14 @@ L1727:
 	.align 2
 L2989:	.short	128
 L2993:	.short	155
-L2988:	.long	_FUN_06045ac0
-L2990:	.long	_FUN_06045c9c
-L2991:	.long	_FUN_06045e44
-L2992:	.long	_FUN_06045d04
-L2994:	.long	_FUN_06045e06
-	.global _FUN_06045a7e
+L2988:	.long	FUN_06045ac0
+L2990:	.long	FUN_06045c9c
+L2991:	.long	FUN_06045e44
+L2992:	.long	FUN_06045d04
+L2994:	.long	FUN_06045e06
+	.global FUN_06045a7e
 	.align 2
-_FUN_06045a7e:
+FUN_06045a7e:
 	sts.l	pr,@-r15
 	mov.l	L2995,r3
 	jsr	@r3
@@ -14005,15 +14005,15 @@ L1732:
 	.align 2
 L2996:	.short	128
 	.align 2
-L2995:	.long	_func_0x06045adc
-L2997:	.long	_FUN_06045c9c
-L2998:	.long	_FUN_06045e44
-L2999:	.long	_FUN_06045c3c
-L3000:	.long	_FUN_06045d80
-L3001:	.long	_FUN_06045e06
-	.global _FUN_06045ac0
+L2995:	.long	func_0x06045adc
+L2997:	.long	FUN_06045c9c
+L2998:	.long	FUN_06045e44
+L2999:	.long	FUN_06045c3c
+L3000:	.long	FUN_06045d80
+L3001:	.long	FUN_06045e06
+	.global FUN_06045ac0
 	.align 2
-_FUN_06045ac0:
+FUN_06045ac0:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -14069,9 +14069,9 @@ L1737:
 	.align 2
 L3002:	.short	128
 	.align 2
-	.global _FUN_06045adc
+	.global FUN_06045adc
 	.align 2
-_FUN_06045adc:
+FUN_06045adc:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -14127,9 +14127,9 @@ L1740:
 	.align 2
 L3003:	.short	128
 	.align 2
-	.global _FUN_06045af4
+	.global FUN_06045af4
 	.align 2
-_FUN_06045af4:
+FUN_06045af4:
 	mov	r5,r0
 	add	#2,r0
 	mov.w	@r0,r7
@@ -14151,9 +14151,9 @@ _FUN_06045af4:
 	shll2	r0
 	rts
 	mov.l	r0,@r1
-	.global _FUN_06045b10
+	.global FUN_06045b10
 	.align 2
-_FUN_06045b10:
+FUN_06045b10:
 	add	#-4,r15
 	mov.l	@(0,r15),r0
 	add	#7,r0
@@ -14216,9 +14216,9 @@ L1744:
 	add	#4,r15
 	rts
 	mov	r7,r0
-	.global _FUN_06045b48
+	.global FUN_06045b48
 	.align 2
-_FUN_06045b48:
+FUN_06045b48:
 	mov.b	@(7,r9),r0
 	mov	r0,r7
 	mov	#1,r0
@@ -14263,9 +14263,9 @@ L1754:
 L1753:
 	rts
 	mov	r7,r0
-	.global _FUN_06045b74
+	.global FUN_06045b74
 	.align 2
-_FUN_06045b74:
+FUN_06045b74:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov	#1,r0
@@ -14338,15 +14338,15 @@ L1760:
 	.align 2
 L3007:	.short	156
 L3011:	.short	136
-L3004:	.long	_DAT_06045b80
-L3005:	.long	_FUN_06045c9c
-L3006:	.long	_FUN_06045d04
-L3008:	.long	_FUN_06045e44
-L3009:	.long	_FUN_0604698c
-L3010:	.long	_FUN_06045e06
-	.global _FUN_06045ba0
+L3004:	.long	DAT_06045b80
+L3005:	.long	FUN_06045c9c
+L3006:	.long	FUN_06045d04
+L3008:	.long	FUN_06045e44
+L3009:	.long	FUN_0604698c
+L3010:	.long	FUN_06045e06
+	.global FUN_06045ba0
 	.align 2
-_FUN_06045ba0:
+FUN_06045ba0:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov	#1,r0
@@ -14419,15 +14419,15 @@ L1767:
 	.align 2
 L3015:	.short	156
 L3019:	.short	136
-L3012:	.long	_DAT_06045bac
-L3013:	.long	_FUN_06045c9c
-L3014:	.long	_FUN_06045d80
-L3016:	.long	_FUN_06045e44
-L3017:	.long	_FUN_06046a20
-L3018:	.long	_FUN_06045e06
-	.global _FUN_06045bc4
+L3012:	.long	DAT_06045bac
+L3013:	.long	FUN_06045c9c
+L3014:	.long	FUN_06045d80
+L3016:	.long	FUN_06045e44
+L3017:	.long	FUN_06046a20
+L3018:	.long	FUN_06045e06
+	.global FUN_06045bc4
 	.align 2
-_FUN_06045bc4:
+FUN_06045bc4:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov.w	L3020,r0
@@ -14481,14 +14481,14 @@ L3020:	.short	128
 L3023:	.short	156
 L3027:	.short	136
 	.align 2
-L3021:	.long	_FUN_06045c9c
-L3022:	.long	_FUN_06045d04
-L3024:	.long	_FUN_06045e44
-L3025:	.long	_FUN_0604698c
-L3026:	.long	_FUN_06045e06
-	.global _FUN_06045bc6
+L3021:	.long	FUN_06045c9c
+L3022:	.long	FUN_06045d04
+L3024:	.long	FUN_06045e44
+L3025:	.long	FUN_0604698c
+L3026:	.long	FUN_06045e06
+	.global FUN_06045bc6
 	.align 2
-_FUN_06045bc6:
+FUN_06045bc6:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov.w	L3028,r0
@@ -14542,14 +14542,14 @@ L3028:	.short	128
 L3031:	.short	156
 L3035:	.short	136
 	.align 2
-L3029:	.long	_FUN_06045c9c
-L3030:	.long	_FUN_06045d04
-L3032:	.long	_FUN_06045e44
-L3033:	.long	_FUN_0604698c
-L3034:	.long	_FUN_06045e06
-	.global _FUN_06045c00
+L3029:	.long	FUN_06045c9c
+L3030:	.long	FUN_06045d04
+L3032:	.long	FUN_06045e44
+L3033:	.long	FUN_0604698c
+L3034:	.long	FUN_06045e06
+	.global FUN_06045c00
 	.align 2
-_FUN_06045c00:
+FUN_06045c00:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov.w	L3036,r0
@@ -14603,14 +14603,14 @@ L3036:	.short	128
 L3039:	.short	156
 L3043:	.short	136
 	.align 2
-L3037:	.long	_FUN_06045c9c
-L3038:	.long	_FUN_06045d80
-L3040:	.long	_FUN_06045e44
-L3041:	.long	_FUN_06046a20
-L3042:	.long	_FUN_06045e06
-	.global _FUN_06045c02
+L3037:	.long	FUN_06045c9c
+L3038:	.long	FUN_06045d80
+L3040:	.long	FUN_06045e44
+L3041:	.long	FUN_06046a20
+L3042:	.long	FUN_06045e06
+	.global FUN_06045c02
 	.align 2
-_FUN_06045c02:
+FUN_06045c02:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov.w	L3044,r0
@@ -14664,14 +14664,14 @@ L3044:	.short	128
 L3047:	.short	156
 L3051:	.short	136
 	.align 2
-L3045:	.long	_FUN_06045c9c
-L3046:	.long	_FUN_06045d80
-L3048:	.long	_FUN_06045e44
-L3049:	.long	_FUN_06046a20
-L3050:	.long	_FUN_06045e06
-	.global _FUN_06045c3c
+L3045:	.long	FUN_06045c9c
+L3046:	.long	FUN_06045d80
+L3048:	.long	FUN_06045e44
+L3049:	.long	FUN_06046a20
+L3050:	.long	FUN_06045e06
+	.global FUN_06045c3c
 	.align 2
-_FUN_06045c3c:
+FUN_06045c3c:
 	sts.l	pr,@-r15
 	add	#-32,r15
 	mov	r4,r14
@@ -14837,10 +14837,10 @@ L1794:
 	rts
 	nop
 	.align 2
-L3052:	.long	_halt_baddata
-	.global _FUN_06045c9c
+L3052:	.long	halt_baddata
+	.global FUN_06045c9c
 	.align 2
-_FUN_06045c9c:
+FUN_06045c9c:
 	sts.l	macl,@-r15
 	add	#-12,r15
 	mov	r9,r0
@@ -14972,9 +14972,9 @@ L1816:
 	.align 2
 L3053:	.short	2147483647
 L3054:	.short	-2147483648
-	.global _FUN_06045ccc
+	.global FUN_06045ccc
 	.align 2
-_FUN_06045ccc:
+FUN_06045ccc:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -15009,13 +15009,13 @@ L1835:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L3055:	.long	_DAT_06045cec
-L3056:	.long	_DAT_06045cf8
-L3057:	.long	_PTR_DAT_06045de0
-L3058:	.long	_PTR_DAT_06045de4
-	.global _FUN_06045d04
+L3055:	.long	DAT_06045cec
+L3056:	.long	DAT_06045cf8
+L3057:	.long	PTR_DAT_06045de0
+L3058:	.long	PTR_DAT_06045de4
+	.global FUN_06045d04
 	.align 2
-_FUN_06045d04:
+FUN_06045d04:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -15170,13 +15170,13 @@ L1838:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L3059:	.long	_switchD_06045d12__switchdataD_06045df0
-L3060:	.long	_FUN_06045D3C
-L3061:	.long	_DAT_06045de8
-L3062:	.long	_halt_baddata
-	.global _FUN_06045D3C
+L3059:	.long	switchD_06045d12__switchdataD_06045df0
+L3060:	.long	FUN_06045D3C
+L3061:	.long	DAT_06045de8
+L3062:	.long	halt_baddata
+	.global FUN_06045D3C
 	.align 2
-_FUN_06045D3C:
+FUN_06045D3C:
 	cmp/ge	r7,r4
 	bt	L1861
 	mov	r7,r4
@@ -15189,9 +15189,9 @@ L1863:
 L1860:
 	rts
 	nop
-	.global _FUN_06045D6A
+	.global FUN_06045D6A
 	.align 2
-_FUN_06045D6A:
+FUN_06045D6A:
 	sts.l	pr,@-r15
 	mov.l	L3063,r3
 	jsr	@r3
@@ -15201,11 +15201,11 @@ _FUN_06045D6A:
 	rts
 	mov.l	@r0,r0
 	.align 2
-L3063:	.long	_caseD_4
-L3064:	.long	_DAT_06045de8
-	.global _FUN_06045d80
+L3063:	.long	caseD_4
+L3064:	.long	DAT_06045de8
+	.global FUN_06045d80
 	.align 2
-_FUN_06045d80:
+FUN_06045d80:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -15604,15 +15604,15 @@ L3086:	.short	24060
 L3087:	.short	65280
 L3088:	.short	-65536
 	.align 2
-L3067:	.long	_FUN_06045DAA
-L3077:	.long	_halt_baddata
-L3084:	.long	_switchD_06045d8c__switchdataD_06045dfc
-L3085:	.long	_halt_baddata
-L3089:	.long	_switchD_06045d8c__switchdataD_06045dfc
-L3090:	.long	_switchD_06045d8c__switchdataD_06045dfc
-	.global _FUN_06045DAA
+L3067:	.long	FUN_06045DAA
+L3077:	.long	halt_baddata
+L3084:	.long	switchD_06045d8c__switchdataD_06045dfc
+L3085:	.long	halt_baddata
+L3089:	.long	switchD_06045d8c__switchdataD_06045dfc
+L3090:	.long	switchD_06045d8c__switchdataD_06045dfc
+	.global FUN_06045DAA
 	.align 2
-_FUN_06045DAA:
+FUN_06045DAA:
 	cmp/ge	r6,r4
 	bt	L1889
 	mov	r6,r4
@@ -15621,9 +15621,9 @@ L1889:
 L1888:
 	rts
 	nop
-	.global _FUN_06045DCC
+	.global FUN_06045DCC
 	.align 2
-_FUN_06045DCC:
+FUN_06045DCC:
 	sts.l	pr,@-r15
 	mov.l	L3091,r3
 	jsr	@r3
@@ -15633,11 +15633,11 @@ _FUN_06045DCC:
 	rts
 	mov.l	@r0,r0
 	.align 2
-L3091:	.long	_caseD_4
-L3092:	.long	_DAT_06045de8
-	.global _FUN_06045e06
+L3091:	.long	caseD_4
+L3092:	.long	DAT_06045de8
+	.global FUN_06045e06
 	.align 2
-_FUN_06045e06:
+FUN_06045e06:
 	mov.l	@(32,r5),r0
 	mov	r4,r1
 	shlr8	r1
@@ -15685,10 +15685,10 @@ L1894:
 	.align 2
 L3093:	.short	-8
 L3095:	.short	155
-L3094:	.long	_DAT_06045e40
-	.global _FUN_06045e44
+L3094:	.long	DAT_06045e40
+	.global FUN_06045e44
 	.align 2
-_FUN_06045e44:
+FUN_06045e44:
 	sts.l	pr,@-r15
 	add	#-4,r15
 	mov.l	L3096,r0
@@ -15893,17 +15893,17 @@ L3108:	.short	128
 L3109:	.short	130
 L3110:	.short	146
 L3111:	.short	148
-L3096:	.long	_DAT_06045f20
-L3101:	.long	_DAT_06045f16
-L3102:	.long	_FUN_06045fc0
-L3103:	.long	_DAT_06045f1a
-L3104:	.long	_DAT_06045f1c
-L3105:	.long	_FUN_06045f46
-L3106:	.long	_DAT_06045f18
-L3107:	.long	_DAT_06045f26
-	.global _FUN_06045EA8
+L3096:	.long	DAT_06045f20
+L3101:	.long	DAT_06045f16
+L3102:	.long	FUN_06045fc0
+L3103:	.long	DAT_06045f1a
+L3104:	.long	DAT_06045f1c
+L3105:	.long	FUN_06045f46
+L3106:	.long	DAT_06045f18
+L3107:	.long	DAT_06045f26
+	.global FUN_06045EA8
 	.align 2
-_FUN_06045EA8:
+FUN_06045EA8:
 	sts.l	pr,@-r15
 	mov.l	L3112,r3
 	jsr	@r3
@@ -15937,12 +15937,12 @@ L3114:	.short	130
 L3115:	.short	146
 L3116:	.short	148
 	.align 2
-L3112:	.long	_FUN_06045fc0
-L3113:	.long	_DAT_06045f1a
-L3117:	.long	_DAT_06045f1c
-	.global _FUN_06045EC8
+L3112:	.long	FUN_06045fc0
+L3113:	.long	DAT_06045f1a
+L3117:	.long	DAT_06045f1c
+	.global FUN_06045EC8
 	.align 2
-_FUN_06045EC8:
+FUN_06045EC8:
 	mov.l	@(40,r5),r1
 	mov.w	L3118,r0
 	add	r4,r0
@@ -15976,10 +15976,10 @@ L3118:	.short	130
 L3119:	.short	148
 L3121:	.short	128
 	.align 2
-L3120:	.long	_DAT_06045f26
-	.global _FUN_06045EE8
+L3120:	.long	DAT_06045f26
+	.global FUN_06045EE8
 	.align 2
-_FUN_06045EE8:
+FUN_06045EE8:
 	sts.l	pr,@-r15
 	mov.l	L3122,r3
 	jsr	@r3
@@ -16022,12 +16022,12 @@ _FUN_06045EE8:
 	.align 2
 L3125:	.short	128
 	.align 2
-L3122:	.long	_FUN_06045fc0
-L3123:	.long	_DAT_06045f1a
-L3124:	.long	_DAT_06045f26
-	.global _FUN_06045F0C
+L3122:	.long	FUN_06045fc0
+L3123:	.long	DAT_06045f1a
+L3124:	.long	DAT_06045f26
+	.global FUN_06045F0C
 	.align 2
-_FUN_06045F0C:
+FUN_06045F0C:
 	sts.l	pr,@-r15
 	mov.l	L3126,r3
 	jsr	@r3
@@ -16064,11 +16064,11 @@ _FUN_06045F0C:
 	.align 2
 L3127:	.short	148
 L3129:	.short	128
-L3126:	.long	_FUN_06045f46
-L3128:	.long	_DAT_06045f26
-	.global _FUN_06045f46
+L3126:	.long	FUN_06045f46
+L3128:	.long	DAT_06045f26
+	.global FUN_06045f46
 	.align 2
-_FUN_06045f46:
+FUN_06045f46:
 	sts.l	pr,@-r15
 	sts.l	macl,@-r15
 	add	#-44,r15
@@ -16325,16 +16325,16 @@ L1914:
 	.align 2
 L3130:	.short	144
 L3132:	.short	128
-L3131:	.long	_DAT_06045fb0
-L3133:	.long	_halt_baddata
-L3134:	.long	_DAT_06044634
-L3135:	.long	_DAT_06044630
-L3136:	.long	_DAT_06044640
-L3137:	.long	_DAT_0604463c
-L3138:	.long	_DAT_06044644
-	.global _FUN_06046602
+L3131:	.long	DAT_06045fb0
+L3133:	.long	halt_baddata
+L3134:	.long	DAT_06044634
+L3135:	.long	DAT_06044630
+L3136:	.long	DAT_06044640
+L3137:	.long	DAT_0604463c
+L3138:	.long	DAT_06044644
+	.global FUN_06046602
 	.align 2
-_FUN_06046602:
+FUN_06046602:
 	sts.l	pr,@-r15
 	mov.l	@(16,r13),r0
 	tst	r0,r0
@@ -16368,12 +16368,12 @@ L1926:
 	rts
 	nop
 	.align 2
-L3139:	.long	_FUN_06045af4
-L3140:	.long	_FUN_06045fc0
-L3141:	.long	_DAT_06046658
-	.global _FUN_0604660a
+L3139:	.long	FUN_06045af4
+L3140:	.long	FUN_06045fc0
+L3141:	.long	DAT_06046658
+	.global FUN_0604660a
 	.align 2
-_FUN_0604660a:
+FUN_0604660a:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -16417,12 +16417,12 @@ L1933:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L3142:	.long	_FUN_06045af4
-L3143:	.long	_FUN_06045fc0
-L3144:	.long	_DAT_06046658
-	.global _FUN_0604669e
+L3142:	.long	FUN_06045af4
+L3143:	.long	FUN_06045fc0
+L3144:	.long	DAT_06046658
+	.global FUN_0604669e
 	.align 2
-_FUN_0604669e:
+FUN_0604669e:
 	sts.l	pr,@-r15
 	add	#-4,r15
 	mov	r4,r14
@@ -16519,15 +16519,15 @@ L3146:	.short	130
 L3148:	.short	136
 L3153:	.short	142
 	.align 2
-L3145:	.long	_FUN_060459c4
-L3147:	.long	_uRam06046700
-L3149:	.long	_pcRam06046704
-L3150:	.long	_pcRam06046708
-L3151:	.long	_FUN_0604670c
-L3152:	.long	_FUN_0604674e
-	.global _FUN_060466a0
+L3145:	.long	FUN_060459c4
+L3147:	.long	uRam06046700
+L3149:	.long	pcRam06046704
+L3150:	.long	pcRam06046708
+L3151:	.long	FUN_0604670c
+L3152:	.long	FUN_0604674e
+	.global FUN_060466a0
 	.align 2
-_FUN_060466a0:
+FUN_060466a0:
 	sts.l	pr,@-r15
 	add	#-4,r15
 	mov	r4,r14
@@ -16624,15 +16624,15 @@ L3155:	.short	130
 L3157:	.short	136
 L3162:	.short	142
 	.align 2
-L3154:	.long	_FUN_060459c4
-L3156:	.long	_uRam06046700
-L3158:	.long	_pcRam06046704
-L3159:	.long	_pcRam06046708
-L3160:	.long	_FUN_0604670c
-L3161:	.long	_func_0x0604674e
-	.global _FUN_0604670c
+L3154:	.long	FUN_060459c4
+L3156:	.long	uRam06046700
+L3158:	.long	pcRam06046704
+L3159:	.long	pcRam06046708
+L3160:	.long	FUN_0604670c
+L3161:	.long	func_0x0604674e
+	.global FUN_0604670c
 	.align 2
-_FUN_0604670c:
+FUN_0604670c:
 	sts.l	pr,@-r15
 	mov.l	L3163,r3
 	jsr	@r3
@@ -16690,15 +16690,15 @@ L1957:
 	.align 2
 L3164:	.short	128
 L3169:	.short	155
-L3163:	.long	_func_0x06045ac0
-L3165:	.long	_FUN_06045c9c
-L3166:	.long	_FUN_06045e44
-L3167:	.long	_FUN_06045c3c
-L3168:	.long	_FUN_06045d04
-L3170:	.long	_FUN_06045e06
-	.global _FUN_0604674e
+L3163:	.long	func_0x06045ac0
+L3165:	.long	FUN_06045c9c
+L3166:	.long	FUN_06045e44
+L3167:	.long	FUN_06045c3c
+L3168:	.long	FUN_06045d04
+L3170:	.long	FUN_06045e06
+	.global FUN_0604674e
 	.align 2
-_FUN_0604674e:
+FUN_0604674e:
 	sts.l	pr,@-r15
 	mov.l	L3171,r3
 	jsr	@r3
@@ -16754,15 +16754,15 @@ L1962:
 	.align 2
 L3172:	.short	128
 L3177:	.short	155
-L3171:	.long	_FUN_06045adc
-L3173:	.long	_FUN_06045c9c
-L3174:	.long	_FUN_06045e44
-L3175:	.long	_FUN_06045c3c
-L3176:	.long	_FUN_06045d80
-L3178:	.long	_FUN_06045e06
-	.global _FUN_060467b2
+L3171:	.long	FUN_06045adc
+L3173:	.long	FUN_06045c9c
+L3174:	.long	FUN_06045e44
+L3175:	.long	FUN_06045c3c
+L3176:	.long	FUN_06045d80
+L3178:	.long	FUN_06045e06
+	.global FUN_060467b2
 	.align 2
-_FUN_060467b2:
+FUN_060467b2:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov	r5,r13
@@ -16831,14 +16831,14 @@ L3182:	.short	168
 L3183:	.short	170
 L3184:	.short	136
 	.align 2
-L3179:	.long	_DAT_060468a4
-L3180:	.long	__DAT_ffffffe2
-L3181:	.long	_DAT_060468a8
-L3185:	.long	_FUN_0604680c
-L3186:	.long	_FUN_06045a2c
-	.global _FUN_060467b4
+L3179:	.long	DAT_060468a4
+L3180:	.long	_DAT_ffffffe2
+L3181:	.long	DAT_060468a8
+L3185:	.long	FUN_0604680c
+L3186:	.long	FUN_06045a2c
+	.global FUN_060467b4
 	.align 2
-_FUN_060467b4:
+FUN_060467b4:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -16913,14 +16913,14 @@ L3190:	.short	168
 L3191:	.short	170
 L3192:	.short	136
 	.align 2
-L3187:	.long	_DAT_060468a4
-L3188:	.long	__DAT_ffffffe2
-L3189:	.long	_DAT_060468a8
-L3193:	.long	_func_0x0604680c
-L3194:	.long	_func_0x06045a2c
-	.global _FUN_060468ae
+L3187:	.long	DAT_060468a4
+L3188:	.long	_DAT_ffffffe2
+L3189:	.long	DAT_060468a8
+L3193:	.long	func_0x0604680c
+L3194:	.long	func_0x06045a2c
+	.global FUN_060468ae
 	.align 2
-_FUN_060468ae:
+FUN_060468ae:
 	sts.l	pr,@-r15
 	mov	r4,r14
 	mov	r5,r13
@@ -16989,14 +16989,14 @@ L3198:	.short	168
 L3199:	.short	170
 L3200:	.short	136
 	.align 2
-L3195:	.long	_iRam06046984
-L3196:	.long	__DAT_ffffffe2
-L3197:	.long	_iRam06046988
-L3201:	.long	_FUN_06046908
-L3202:	.long	_FUN_06045a2c
-	.global _FUN_060468b0
+L3195:	.long	iRam06046984
+L3196:	.long	_DAT_ffffffe2
+L3197:	.long	iRam06046988
+L3201:	.long	FUN_06046908
+L3202:	.long	FUN_06045a2c
+	.global FUN_060468b0
 	.align 2
-_FUN_060468b0:
+FUN_060468b0:
 	mov.l	r14,@-r15
 	mov.l	r13,@-r15
 	mov.l	r12,@-r15
@@ -17071,14 +17071,14 @@ L3206:	.short	168
 L3207:	.short	170
 L3208:	.short	136
 	.align 2
-L3203:	.long	_iRam06046984
-L3204:	.long	__DAT_ffffffe2
-L3205:	.long	_iRam06046988
-L3209:	.long	_func_0x06046908
-L3210:	.long	_func_0x06045a2c
-	.global _FUN_0604698c
+L3203:	.long	iRam06046984
+L3204:	.long	_DAT_ffffffe2
+L3205:	.long	iRam06046988
+L3209:	.long	func_0x06046908
+L3210:	.long	func_0x06045a2c
+	.global FUN_0604698c
 	.align 2
-_FUN_0604698c:
+FUN_0604698c:
 	sts.l	pr,@-r15
 	add	#-32,r15
 	mov	#64,r0
@@ -17215,17 +17215,17 @@ L1994:
 	.align 2
 L3214:	.short	249
 L3215:	.short	155
-L3211:	.long	_FUN_06046a90
-L3212:	.long	_FUN_06046b70
-L3213:	.long	_FUN_06046bf4
-L3216:	.long	_FUN_06046bd4
-L3217:	.long	_FUN_06046c14
-L3218:	.long	_FUN_06046b3c
-L3219:	.long	_func_0x06046e0e
-L3220:	.long	_FUN_06047588
-	.global _FUN_06046990
+L3211:	.long	FUN_06046a90
+L3212:	.long	FUN_06046b70
+L3213:	.long	FUN_06046bf4
+L3216:	.long	FUN_06046bd4
+L3217:	.long	FUN_06046c14
+L3218:	.long	FUN_06046b3c
+L3219:	.long	func_0x06046e0e
+L3220:	.long	FUN_06047588
+	.global FUN_06046990
 	.align 2
-_FUN_06046990:
+FUN_06046990:
 	sts.l	pr,@-r15
 	add	#-20,r15
 	mov.l	L3221,r3
@@ -17335,16 +17335,16 @@ L2006:
 	.align 2
 L3223:	.short	249
 L3224:	.short	155
-L3221:	.long	_FUN_06046b70
-L3222:	.long	_FUN_06046bf4
-L3225:	.long	_FUN_06046bd4
-L3226:	.long	_FUN_06046c14
-L3227:	.long	_FUN_06046b3c
-L3228:	.long	_FUN_06046e0e
-L3229:	.long	_FUN_06047588
-	.global _FUN_06046a20
+L3221:	.long	FUN_06046b70
+L3222:	.long	FUN_06046bf4
+L3225:	.long	FUN_06046bd4
+L3226:	.long	FUN_06046c14
+L3227:	.long	FUN_06046b3c
+L3228:	.long	FUN_06046e0e
+L3229:	.long	FUN_06047588
+	.global FUN_06046a20
 	.align 2
-_FUN_06046a20:
+FUN_06046a20:
 	sts.l	pr,@-r15
 	add	#-4,r15
 	mov	#64,r0
@@ -17463,19 +17463,19 @@ L2013:
 	.align 2
 L3233:	.short	155
 	.align 2
-L3230:	.long	_FUN_06046ae8
-L3231:	.long	_FUN_06046b64
-L3232:	.long	_FUN_06046bf4
-L3234:	.long	_FUN_06045c3c
-L3235:	.long	_FUN_06046bd4
-L3236:	.long	_FUN_06046c14
-L3237:	.long	_FUN_06046b3c
-L3238:	.long	_func_0x06046e0e
-L3239:	.long	_FUN_06047548
-L3240:	.long	_FUN_06047588
-	.global _FUN_06046a24
+L3230:	.long	FUN_06046ae8
+L3231:	.long	FUN_06046b64
+L3232:	.long	FUN_06046bf4
+L3234:	.long	FUN_06045c3c
+L3235:	.long	FUN_06046bd4
+L3236:	.long	FUN_06046c14
+L3237:	.long	FUN_06046b3c
+L3238:	.long	func_0x06046e0e
+L3239:	.long	FUN_06047548
+L3240:	.long	FUN_06047588
+	.global FUN_06046a24
 	.align 2
-_FUN_06046a24:
+FUN_06046a24:
 	sts.l	pr,@-r15
 	mov.l	L3241,r3
 	jsr	@r3
@@ -17564,18 +17564,18 @@ L2025:
 	.align 2
 L3243:	.short	249
 L3244:	.short	155
-L3241:	.long	_FUN_06046b64
-L3242:	.long	_FUN_06046bf4
-L3245:	.long	_FUN_06045c3c
-L3246:	.long	_FUN_06046bd4
-L3247:	.long	_FUN_06046c14
-L3248:	.long	_FUN_06046b3c
-L3249:	.long	_FUN_06046e0e
-L3250:	.long	_FUN_06047548
-L3251:	.long	_FUN_06047588
-	.global _FUN_06046a90
+L3241:	.long	FUN_06046b64
+L3242:	.long	FUN_06046bf4
+L3245:	.long	FUN_06045c3c
+L3246:	.long	FUN_06046bd4
+L3247:	.long	FUN_06046c14
+L3248:	.long	FUN_06046b3c
+L3249:	.long	FUN_06046e0e
+L3250:	.long	FUN_06047548
+L3251:	.long	FUN_06047588
+	.global FUN_06046a90
 	.align 2
-_FUN_06046a90:
+FUN_06046a90:
 	sts.l	pr,@-r15
 	mov.l	L3252,r3
 	jsr	@r3
@@ -17645,15 +17645,15 @@ L2032:
 	.align 2
 L3254:	.short	249
 L3255:	.short	155
-L3252:	.long	_FUN_06046b70
-L3253:	.long	_FUN_06046bf4
-L3256:	.long	_FUN_06045c3c
-L3257:	.long	_FUN_06046bd4
-L3258:	.long	_FUN_06046b3c
-L3259:	.long	_FUN_06046e64
-	.global _FUN_06046ae8
+L3252:	.long	FUN_06046b70
+L3253:	.long	FUN_06046bf4
+L3256:	.long	FUN_06045c3c
+L3257:	.long	FUN_06046bd4
+L3258:	.long	FUN_06046b3c
+L3259:	.long	FUN_06046e64
+	.global FUN_06046ae8
 	.align 2
-_FUN_06046ae8:
+FUN_06046ae8:
 	sts.l	pr,@-r15
 	mov.l	L3260,r3
 	jsr	@r3
@@ -17720,15 +17720,15 @@ L2037:
 	.align 2
 L3262:	.short	249
 L3263:	.short	155
-L3260:	.long	_FUN_06046b64
-L3261:	.long	_FUN_06046bf4
-L3264:	.long	_FUN_06045c3c
-L3265:	.long	_FUN_06046bd4
-L3266:	.long	_FUN_06046b3c
-L3267:	.long	_FUN_06046e64
-	.global _FUN_06046b3c
+L3260:	.long	FUN_06046b64
+L3261:	.long	FUN_06046bf4
+L3264:	.long	FUN_06045c3c
+L3265:	.long	FUN_06046bd4
+L3266:	.long	FUN_06046b3c
+L3267:	.long	FUN_06046e64
+	.global FUN_06046b3c
 	.align 2
-_FUN_06046b3c:
+FUN_06046b3c:
 	mov.w	@(2,r4),r0
 	mov	r0,r7
 	neg	r6,r0
@@ -17741,9 +17741,9 @@ L2043:
 L2042:
 	rts
 	mov	r7,r0
-	.global _FUN_06046b64
+	.global FUN_06046b64
 	.align 2
-_FUN_06046b64:
+FUN_06046b64:
 	mov	r6,r0
 	shlr16	r0
 	exts.w	r0,r5
@@ -17774,9 +17774,9 @@ L2050:
 L2045:
 	rts
 	nop
-	.global _FUN_06046b70
+	.global FUN_06046b70
 	.align 2
-_FUN_06046b70:
+FUN_06046b70:
 	mov	r6,r0
 	shlr16	r0
 	exts.w	r0,r5
@@ -17819,9 +17819,9 @@ L2063:
 L2054:
 	rts
 	nop
-	.global _FUN_06046b96
+	.global FUN_06046b96
 	.align 2
-_FUN_06046b96:
+FUN_06046b96:
 	mov.w	@(2,r5),r0
 	cmp/gt	r0,r4
 	bt	L2068
@@ -17839,9 +17839,9 @@ L2070:
 L2067:
 	rts
 	mov	r7,r0
-	.global _FUN_06046bd4
+	.global FUN_06046bd4
 	.align 2
-_FUN_06046bd4:
+FUN_06046bd4:
 	mov	r7,r0
 	shlr16	r0
 	exts.w	r0,r6
@@ -17860,9 +17860,9 @@ L2073:
 L2072:
 	rts
 	mov	r6,r0
-	.global _FUN_06046bf4
+	.global FUN_06046bf4
 	.align 2
-_FUN_06046bf4:
+FUN_06046bf4:
 	mov	r7,r0
 	shlr16	r0
 	exts.w	r0,r6
@@ -17881,9 +17881,9 @@ L2076:
 L2075:
 	rts
 	mov	r6,r0
-	.global _FUN_06046c14
+	.global FUN_06046c14
 	.align 2
-_FUN_06046c14:
+FUN_06046c14:
 	cmp/ge	r7,r5
 	bt	L2079
 	neg	r7,r7
@@ -17901,9 +17901,9 @@ L2079:
 L2078:
 	rts
 	mov	r7,r0
-	.global _FUN_06046cd0
+	.global FUN_06046cd0
 	.align 2
-_FUN_06046cd0:
+FUN_06046cd0:
 	mov.l	@(12,r7),r5
 	mov.l	@(20,r7),r6
 	mov.l	@(16,r7),r1
@@ -17931,9 +17931,9 @@ _FUN_06046cd0:
 	.align 2
 L3268:	.short	239
 	.align 2
-	.global _FUN_06046cf0
+	.global FUN_06046cf0
 	.align 2
-_FUN_06046cf0:
+FUN_06046cf0:
 	mov.l	@(12,r5),r7
 	mov.l	@(16,r5),r6
 	mov.l	@(20,r5),r1
@@ -17961,9 +17961,9 @@ _FUN_06046cf0:
 	.align 2
 L3269:	.short	207
 	.align 2
-	.global _FUN_06046d10
+	.global FUN_06046d10
 	.align 2
-_FUN_06046d10:
+FUN_06046d10:
 	mov.l	@(12,r5),r7
 	mov.l	@(16,r5),r6
 	mov.l	@(24,r5),r1
@@ -17991,9 +17991,9 @@ _FUN_06046d10:
 	.align 2
 L3270:	.short	223
 	.align 2
-	.global _FUN_06046d30
+	.global FUN_06046d30
 	.align 2
-_FUN_06046d30:
+FUN_06046d30:
 	sts.l	pr,@-r15
 	add	#-4,r15
 	mov.l	@(24,r0),r4
@@ -18160,12 +18160,12 @@ L2084:
 	.align 2
 L3272:	.short	207
 L3274:	.short	239
-L3271:	.long	_FUN_06046d78
-L3273:	.long	_FUN_06046d98
-L3275:	.long	_FUN_06046d78
-	.global _FUN_06046d78
+L3271:	.long	FUN_06046d78
+L3273:	.long	FUN_06046d98
+L3275:	.long	FUN_06046d78
+	.global FUN_06046d78
 	.align 2
-_FUN_06046d78:
+FUN_06046d78:
 	mov	r6,r0
 	shlr16	r0
 	exts.w	r0,r5
@@ -18184,9 +18184,9 @@ L2102:
 L2101:
 	rts
 	mov	r7,r0
-	.global _FUN_06046d98
+	.global FUN_06046d98
 	.align 2
-_FUN_06046d98:
+FUN_06046d98:
 	mov.l	r14,@-r15
 	mov	r9,r0
 	add	#12,r0
@@ -18294,9 +18294,9 @@ L2128:
 	extu.b	r7,r0
 	rts
 	mov.l	@r15+,r14
-	.global _FUN_06046e0e
+	.global FUN_06046e0e
 	.align 2
-_FUN_06046e0e:
+FUN_06046e0e:
 	sts.l	pr,@-r15
 	mov.l	L3276,r3
 	jsr	@r3
@@ -18340,14 +18340,14 @@ L3277:	.short	164
 L3280:	.short	153
 L3282:	.short	154
 	.align 2
-L3276:	.long	_FUN_06046ebc
-L3278:	.long	_FUN_06046fd4
-L3279:	.long	_FUN_06047014
-L3281:	.long	_FUN_06047184
-L3283:	.long	_FUN_060472cc
-	.global _FUN_06046e64
+L3276:	.long	FUN_06046ebc
+L3278:	.long	FUN_06046fd4
+L3279:	.long	FUN_06047014
+L3281:	.long	FUN_06047184
+L3283:	.long	FUN_060472cc
+	.global FUN_06046e64
 	.align 2
-_FUN_06046e64:
+FUN_06046e64:
 	sts.l	pr,@-r15
 	mov.w	L3284,r0
 	add	r12,r0
@@ -18388,13 +18388,13 @@ L3284:	.short	164
 L3287:	.short	153
 L3289:	.short	154
 	.align 2
-L3285:	.long	_FUN_06046fd4
-L3286:	.long	_func_0x06047014
-L3288:	.long	_FUN_06047184
-L3290:	.long	_FUN_060472cc
-	.global _FUN_06046ebc
+L3285:	.long	FUN_06046fd4
+L3286:	.long	func_0x06047014
+L3288:	.long	FUN_06047184
+L3290:	.long	FUN_060472cc
+	.global FUN_06046ebc
 	.align 2
-_FUN_06046ebc:
+FUN_06046ebc:
 	mov.b	@(7,r8),r0
 	mov	#4,r1
 	and	r1,r0
@@ -18595,9 +18595,9 @@ L3291:	.short	207
 L3292:	.short	223
 L3293:	.short	239
 	.align 2
-	.global _FUN_06046fd4
+	.global FUN_06046fd4
 	.align 2
-_FUN_06046fd4:
+FUN_06046fd4:
 	add	#-16,r15
 	mov.l	@(0,r15),r0
 	mov.w	L3294,r1
@@ -18656,10 +18656,10 @@ _FUN_06046fd4:
 	.align 2
 L3294:	.short	152
 	.align 2
-L3295:	.long	_DAT_0604717e
-	.global _FUN_06047014
+L3295:	.long	DAT_0604717e
+	.global FUN_06047014
 	.align 2
-_FUN_06047014:
+FUN_06047014:
 	sts.l	pr,@-r15
 	mov.l	L3296,r0
 	mov.l	@r0,r0
@@ -18721,12 +18721,12 @@ L2185:
 	.align 2
 L3298:	.short	153
 L3300:	.short	100954170
-L3296:	.long	_DAT_0604717e
-L3297:	.long	_DAT_06047180
-L3299:	.long	_DAT_06047058
-	.global _FUN_0604708c
+L3296:	.long	DAT_0604717e
+L3297:	.long	DAT_06047180
+L3299:	.long	DAT_06047058
+	.global FUN_0604708c
 	.align 2
-_FUN_0604708c:
+FUN_0604708c:
 	sts.l	pr,@-r15
 	mov.l	@r13,r0
 	mov.l	r0,@r12
@@ -18748,10 +18748,10 @@ _FUN_0604708c:
 	.align 2
 L3302:	.short	153
 	.align 2
-L3301:	.long	_FUN_06047118
-	.global _FUN_060470a8
+L3301:	.long	FUN_06047118
+	.global FUN_060470a8
 	.align 2
-_FUN_060470a8:
+FUN_060470a8:
 	sts.l	pr,@-r15
 	mov.l	@r13,r0
 	mov.l	r0,@r12
@@ -18773,10 +18773,10 @@ _FUN_060470a8:
 	.align 2
 L3304:	.short	153
 	.align 2
-L3303:	.long	_FUN_06047118
-	.global _FUN_060470c4
+L3303:	.long	FUN_06047118
+	.global FUN_060470c4
 	.align 2
-_FUN_060470c4:
+FUN_060470c4:
 	sts.l	pr,@-r15
 	mov.l	L3305,r3
 	jsr	@r3
@@ -18793,10 +18793,10 @@ _FUN_060470c4:
 	.align 2
 L3306:	.short	153
 	.align 2
-L3305:	.long	_FUN_06047118
-	.global _FUN_060470d6
+L3305:	.long	FUN_06047118
+	.global FUN_060470d6
 	.align 2
-_FUN_060470d6:
+FUN_060470d6:
 	sts.l	pr,@-r15
 	mov.l	L3307,r3
 	jsr	@r3
@@ -18816,10 +18816,10 @@ _FUN_060470d6:
 	.align 2
 L3308:	.short	153
 	.align 2
-L3307:	.long	_func_0x06047118
-	.global _FUN_060470ec
+L3307:	.long	func_0x06047118
+	.global FUN_060470ec
 	.align 2
-_FUN_060470ec:
+FUN_060470ec:
 	sts.l	pr,@-r15
 	mov.l	L3309,r3
 	jsr	@r3
@@ -18836,10 +18836,10 @@ _FUN_060470ec:
 	.align 2
 L3310:	.short	153
 	.align 2
-L3309:	.long	_FUN_06047118
-	.global _FUN_060470fe
+L3309:	.long	FUN_06047118
+	.global FUN_060470fe
 	.align 2
-_FUN_060470fe:
+FUN_060470fe:
 	sts.l	pr,@-r15
 	mov.l	L3311,r3
 	jsr	@r3
@@ -18859,10 +18859,10 @@ _FUN_060470fe:
 	.align 2
 L3312:	.short	153
 	.align 2
-L3311:	.long	_func_0x06047118
-	.global _FUN_06047118
+L3311:	.long	func_0x06047118
+	.global FUN_06047118
 	.align 2
-_FUN_06047118:
+FUN_06047118:
 	sts.l	pr,@-r15
 	mov.l	L3313,r3
 	jsr	@r3
@@ -18887,10 +18887,10 @@ L2197:
 	rts
 	exts.b	r14,r0
 	.align 2
-L3313:	.long	_FUN_06047140
-	.global _FUN_06047140
+L3313:	.long	FUN_06047140
+	.global FUN_06047140
 	.align 2
-_FUN_06047140:
+FUN_06047140:
 	sts.l	macl,@-r15
 	mov	r7,r6
 	mov	r5,r0
@@ -18935,12 +18935,12 @@ L2200:
 	rts
 	nop
 	.align 2
-L3314:	.long	__DAT_ffffff00
-L3315:	.long	__DAT_ffffff04
-L3316:	.long	__DAT_ffffff1c
-	.global _FUN_06047184
+L3314:	.long	_DAT_ffffff00
+L3315:	.long	_DAT_ffffff04
+L3316:	.long	_DAT_ffffff1c
+	.global FUN_06047184
 	.align 2
-_FUN_06047184:
+FUN_06047184:
 	sts.l	pr,@-r15
 	mov.l	L3317,r0
 	mov.l	@r0,r0
@@ -18985,11 +18985,11 @@ L2203:
 	.align 2
 L3318:	.short	154
 L3320:	.short	100954538
-L3317:	.long	_DAT_060472c6
-L3319:	.long	_DAT_060471bc
-	.global _FUN_060471f0
+L3317:	.long	DAT_060472c6
+L3319:	.long	DAT_060471bc
+	.global FUN_060471f0
 	.align 2
-_FUN_060471f0:
+FUN_060471f0:
 	sts.l	pr,@-r15
 	mov.l	@r13,r0
 	mov.l	r0,@r12
@@ -19011,10 +19011,10 @@ _FUN_060471f0:
 	.align 2
 L3322:	.short	154
 	.align 2
-L3321:	.long	_FUN_0604727c
-	.global _FUN_0604720c
+L3321:	.long	FUN_0604727c
+	.global FUN_0604720c
 	.align 2
-_FUN_0604720c:
+FUN_0604720c:
 	sts.l	pr,@-r15
 	mov.l	@r13,r0
 	mov.l	r0,@r12
@@ -19036,10 +19036,10 @@ _FUN_0604720c:
 	.align 2
 L3324:	.short	154
 	.align 2
-L3323:	.long	_FUN_0604727c
-	.global _FUN_06047228
+L3323:	.long	FUN_0604727c
+	.global FUN_06047228
 	.align 2
-_FUN_06047228:
+FUN_06047228:
 	sts.l	pr,@-r15
 	mov.l	L3325,r3
 	jsr	@r3
@@ -19056,10 +19056,10 @@ _FUN_06047228:
 	.align 2
 L3326:	.short	154
 	.align 2
-L3325:	.long	_FUN_0604727c
-	.global _FUN_0604723a
+L3325:	.long	FUN_0604727c
+	.global FUN_0604723a
 	.align 2
-_FUN_0604723a:
+FUN_0604723a:
 	sts.l	pr,@-r15
 	mov.l	L3327,r3
 	jsr	@r3
@@ -19079,10 +19079,10 @@ _FUN_0604723a:
 	.align 2
 L3328:	.short	154
 	.align 2
-L3327:	.long	_func_0x0604727c
-	.global _FUN_06047250
+L3327:	.long	func_0x0604727c
+	.global FUN_06047250
 	.align 2
-_FUN_06047250:
+FUN_06047250:
 	sts.l	pr,@-r15
 	mov.l	L3329,r3
 	jsr	@r3
@@ -19099,10 +19099,10 @@ _FUN_06047250:
 	.align 2
 L3330:	.short	154
 	.align 2
-L3329:	.long	_FUN_0604727c
-	.global _FUN_06047262
+L3329:	.long	FUN_0604727c
+	.global FUN_06047262
 	.align 2
-_FUN_06047262:
+FUN_06047262:
 	sts.l	pr,@-r15
 	mov.l	L3331,r3
 	jsr	@r3
@@ -19122,10 +19122,10 @@ _FUN_06047262:
 	.align 2
 L3332:	.short	154
 	.align 2
-L3331:	.long	_func_0x0604727c
-	.global _FUN_06047270
+L3331:	.long	func_0x0604727c
+	.global FUN_06047270
 	.align 2
-_FUN_06047270:
+FUN_06047270:
 	mov.w	L3333,r1
 	add	r6,r1
 	rts
@@ -19133,9 +19133,9 @@ _FUN_06047270:
 	.align 2
 L3333:	.short	154
 	.align 2
-	.global _FUN_0604727c
+	.global FUN_0604727c
 	.align 2
-_FUN_0604727c:
+FUN_0604727c:
 	sts.l	pr,@-r15
 	mov.l	L3334,r3
 	jsr	@r3
@@ -19144,10 +19144,10 @@ _FUN_0604727c:
 	rts
 	mov.l	r13,@r12
 	.align 2
-L3334:	.long	_FUN_0604728e
-	.global _FUN_0604728e
+L3334:	.long	FUN_0604728e
+	.global FUN_0604728e
 	.align 2
-_FUN_0604728e:
+FUN_0604728e:
 	sts.l	macl,@-r15
 	mov	r7,r6
 	cmp/ge	r7,r5
@@ -19187,12 +19187,12 @@ L2215:
 	rts
 	extu.w	r0,r0
 	.align 2
-L3335:	.long	__DAT_ffffff00
-L3336:	.long	__DAT_ffffff04
-L3337:	.long	__DAT_ffffff1c
-	.global _FUN_060472cc
+L3335:	.long	_DAT_ffffff00
+L3336:	.long	_DAT_ffffff04
+L3337:	.long	_DAT_ffffff1c
+	.global FUN_060472cc
 	.align 2
-_FUN_060472cc:
+FUN_060472cc:
 	sts.l	pr,@-r15
 	mov.w	L3338,r0
 	add	r14,r0
@@ -19213,10 +19213,10 @@ _FUN_060472cc:
 	.align 2
 L3338:	.short	154
 L3340:	.short	100954846
-L3339:	.long	_DAT_060472e0
-	.global _FUN_06047332
+L3339:	.long	DAT_060472e0
+	.global FUN_06047332
 	.align 2
-_FUN_06047332:
+FUN_06047332:
 	sts.l	pr,@-r15
 	mov.l	L3341,r3
 	mov.l	@r10,r0
@@ -19258,10 +19258,10 @@ _FUN_06047332:
 	.align 2
 L3342:	.short	143
 L3343:	.short	155
-L3341:	.long	_FUN_06046d30
-	.global _FUN_0604737a
+L3341:	.long	FUN_06046d30
+	.global FUN_0604737a
 	.align 2
-_FUN_0604737a:
+FUN_0604737a:
 	sts.l	pr,@-r15
 	mov.l	L3344,r3
 	mov.l	@r10,r0
@@ -19303,10 +19303,10 @@ _FUN_0604737a:
 	.align 2
 L3345:	.short	143
 L3346:	.short	155
-L3344:	.long	_FUN_06046d30
-	.global _FUN_060473ca
+L3344:	.long	FUN_06046d30
+	.global FUN_060473ca
 	.align 2
-_FUN_060473ca:
+FUN_060473ca:
 	sts.l	pr,@-r15
 	mov.l	L3347,r3
 	mov.l	@r10,r0
@@ -19349,10 +19349,10 @@ _FUN_060473ca:
 	.align 2
 L3348:	.short	143
 L3349:	.short	155
-L3347:	.long	_FUN_06046d30
-	.global _FUN_06047414
+L3347:	.long	FUN_06046d30
+	.global FUN_06047414
 	.align 2
-_FUN_06047414:
+FUN_06047414:
 	sts.l	pr,@-r15
 	mov.l	L3350,r3
 	mov.l	@r10,r0
@@ -19395,10 +19395,10 @@ _FUN_06047414:
 	.align 2
 L3351:	.short	143
 L3352:	.short	155
-L3350:	.long	_FUN_06046d30
-	.global _FUN_06047460
+L3350:	.long	FUN_06046d30
+	.global FUN_06047460
 	.align 2
-_FUN_06047460:
+FUN_06047460:
 	sts.l	pr,@-r15
 	mov.l	L3353,r3
 	mov.l	@r9,r0
@@ -19463,10 +19463,10 @@ _FUN_06047460:
 	.align 2
 L3354:	.short	143
 L3355:	.short	155
-L3353:	.long	_FUN_06046d30
-	.global _FUN_060474d4
+L3353:	.long	FUN_06046d30
+	.global FUN_060474d4
 	.align 2
-_FUN_060474d4:
+FUN_060474d4:
 	sts.l	pr,@-r15
 	mov.l	L3356,r3
 	mov.l	@r9,r0
@@ -19532,10 +19532,10 @@ _FUN_060474d4:
 	.align 2
 L3357:	.short	143
 L3358:	.short	155
-L3356:	.long	_FUN_06046d30
-	.global _FUN_06047548
+L3356:	.long	FUN_06046d30
+	.global FUN_06047548
 	.align 2
-_FUN_06047548:
+FUN_06047548:
 	mov.l	r14,@-r15
 	sts.l	pr,@-r15
 	add	#-24,r15
@@ -19899,24 +19899,24 @@ L2224:
 	rts
 	mov.l	@r15+,r14
 	.align 2
-L3369:	.long	_func_0x06043f10
-L3370:	.long	_DAT_06044000
-L3371:	.long	_DAT_06044024
-L3372:	.long	_DAT_06044048
-L3373:	.long	_func_0x06043f24
-L3374:	.long	_PTR_FUN_06043ee0
-L3375:	.long	_PTR_FUN_06043ee8
-L3376:	.long	_PTR_FUN_06043ed8
-L3377:	.long	_PTR_SUB_06043edc
-L3378:	.long	_PTR_SUB_06043ed0
-L3379:	.long	_PTR_SUB_06043ed4
-L3380:	.long	_PTR_SUB_06043ecc
-L3381:	.long	_func_0x06043f10
-L3382:	.long	_PTR_FUN_06043ed8
-L3383:	.long	_PTR_SUB_06043edc
-	.global _FUN_06047588
+L3369:	.long	func_0x06043f10
+L3370:	.long	DAT_06044000
+L3371:	.long	DAT_06044024
+L3372:	.long	DAT_06044048
+L3373:	.long	func_0x06043f24
+L3374:	.long	PTR_FUN_06043ee0
+L3375:	.long	PTR_FUN_06043ee8
+L3376:	.long	PTR_FUN_06043ed8
+L3377:	.long	PTR_SUB_06043edc
+L3378:	.long	PTR_SUB_06043ed0
+L3379:	.long	PTR_SUB_06043ed4
+L3380:	.long	PTR_SUB_06043ecc
+L3381:	.long	func_0x06043f10
+L3382:	.long	PTR_FUN_06043ed8
+L3383:	.long	PTR_SUB_06043edc
+	.global FUN_06047588
 	.align 2
-_FUN_06047588:
+FUN_06047588:
 	mov.l	@(12,r15),r0
 	add	#7,r0
 	mov.b	@r0,r0
@@ -20134,9 +20134,9 @@ L3384:	.short	239
 L3385:	.short	207
 L3386:	.short	223
 	.align 2
-	.global _FUN_06047748
+	.global FUN_06047748
 	.align 2
-_FUN_06047748:
+FUN_06047748:
 	mov.l	L3387,r0
 	mov.l	@r0,r7
 L2290:
@@ -20162,10 +20162,10 @@ L2293:
 	rts
 	nop
 	.align 2
-L3387:	.long	_DAT_0604776c
-	.global _FUN_06047770
+L3387:	.long	DAT_0604776c
+	.global FUN_06047770
 	.align 2
-_FUN_06047770:
+FUN_06047770:
 	mov.l	L3388,r0
 	mov.l	@r0,r13
 L2296:
@@ -20216,10 +20216,10 @@ L2301:
 	rts
 	mov	r12,r0
 	.align 2
-L3388:	.long	_DAT_060477b0
-	.global _FUN_060477d4
+L3388:	.long	DAT_060477b0
+	.global FUN_060477d4
 	.align 2
-_FUN_060477d4:
+FUN_060477d4:
 	sts.l	pr,@-r15
 	mov.l	L3389,r3
 	jsr	@r3
@@ -20228,10 +20228,10 @@ _FUN_060477d4:
 	rts
 	nop
 	.align 2
-L3389:	.long	_FUN_060477fc
-	.global _FUN_060477d6
+L3389:	.long	FUN_060477fc
+	.global FUN_060477d6
 	.align 2
-_FUN_060477d6:
+FUN_060477d6:
 	sts.l	pr,@-r15
 	mov.l	L3390,r3
 	jsr	@r3
@@ -20240,10 +20240,10 @@ _FUN_060477d6:
 	rts
 	nop
 	.align 2
-L3390:	.long	_FUN_060477fc
-	.global _FUN_060477fc
+L3390:	.long	FUN_060477fc
+	.global FUN_060477fc
 	.align 2
-_FUN_060477fc:
+FUN_060477fc:
 	sts.l	pr,@-r15
 	mov.l	L3391,r0
 	mov.l	@r0,r0
@@ -20399,42 +20399,42 @@ L2305:
 	rts
 	mov	#0,r0
 	.align 2
-L3391:	.long	_DAT_0604788c
-L3392:	.long	_DAT_06047884
-L3393:	.long	_DAT_06047890
-L3394:	.long	_DAT_06047894
-L3395:	.long	_DAT_06047948
-L3396:	.long	_DAT_06047898
-L3397:	.long	_DAT_0604789c
-L3398:	.long	_DAT_06047886
-L3399:	.long	_PTR_LAB_060478a0
-L3400:	.long	_DAT_060478a4
-L3401:	.long	_DAT_060478a8
-L3402:	.long	_DAT_060478ac
-L3403:	.long	_func_0x06047986
-L3404:	.long	_DAT_06047888
-L3405:	.long	_FUN_06047748
-L3406:	.long	_DAT_060478b0
-L3407:	.long	_DAT_0604788a
-L3408:	.long	_func_0x0604796c
-L3409:	.long	_DAT_0604793c
-L3410:	.long	_DAT_0604793a
-L3411:	.long	_PTR_LAB_0604794c
-L3412:	.long	_DAT_06047950
-L3413:	.long	_DAT_06047954
-L3414:	.long	_DAT_06047958
-L3415:	.long	_FUN_060479a0
-L3416:	.long	_DAT_0604793e
-L3417:	.long	_DAT_06047940
-L3418:	.long	_FUN_06047770
-L3419:	.long	_DAT_0604795c
-L3420:	.long	_DAT_06047942
-L3421:	.long	_DAT_06047944
-L3422:	.long	_DAT_06047960
-L3423:	.long	_DAT_06047964
-	.global _FUN_06047866
+L3391:	.long	DAT_0604788c
+L3392:	.long	DAT_06047884
+L3393:	.long	DAT_06047890
+L3394:	.long	DAT_06047894
+L3395:	.long	DAT_06047948
+L3396:	.long	DAT_06047898
+L3397:	.long	DAT_0604789c
+L3398:	.long	DAT_06047886
+L3399:	.long	PTR_LAB_060478a0
+L3400:	.long	DAT_060478a4
+L3401:	.long	DAT_060478a8
+L3402:	.long	DAT_060478ac
+L3403:	.long	func_0x06047986
+L3404:	.long	DAT_06047888
+L3405:	.long	FUN_06047748
+L3406:	.long	DAT_060478b0
+L3407:	.long	DAT_0604788a
+L3408:	.long	func_0x0604796c
+L3409:	.long	DAT_0604793c
+L3410:	.long	DAT_0604793a
+L3411:	.long	PTR_LAB_0604794c
+L3412:	.long	DAT_06047950
+L3413:	.long	DAT_06047954
+L3414:	.long	DAT_06047958
+L3415:	.long	FUN_060479a0
+L3416:	.long	DAT_0604793e
+L3417:	.long	DAT_06047940
+L3418:	.long	FUN_06047770
+L3419:	.long	DAT_0604795c
+L3420:	.long	DAT_06047942
+L3421:	.long	DAT_06047944
+L3422:	.long	DAT_06047960
+L3423:	.long	DAT_06047964
+	.global FUN_06047866
 	.align 2
-_FUN_06047866:
+FUN_06047866:
 	sts.l	pr,@-r15
 	mov.l	L3424,r0
 	mov.l	@r0,r0
@@ -20460,14 +20460,14 @@ _FUN_06047866:
 	rts
 	mov	r4,r0
 	.align 2
-L3424:	.long	_DAT_06047894
-L3425:	.long	_DAT_0604789c
-L3426:	.long	_DAT_060478b4
-L3427:	.long	_DAT_060478ac
-L3428:	.long	_FUN_06047748
-	.global _FUN_0604791a
+L3424:	.long	DAT_06047894
+L3425:	.long	DAT_0604789c
+L3426:	.long	DAT_060478b4
+L3427:	.long	DAT_060478ac
+L3428:	.long	FUN_06047748
+	.global FUN_0604791a
 	.align 2
-_FUN_0604791a:
+FUN_0604791a:
 	sts.l	pr,@-r15
 	mov.l	L3429,r0
 	mov.l	@r0,r0
@@ -20497,14 +20497,14 @@ _FUN_0604791a:
 	rts
 	mov.l	r12,@r0
 	.align 2
-L3429:	.long	_DAT_06047964
-L3430:	.long	_DAT_06047948
-L3431:	.long	_DAT_06047968
-L3432:	.long	_DAT_06047958
-L3433:	.long	_FUN_06047770
-	.global _FUN_0604796c
+L3429:	.long	DAT_06047964
+L3430:	.long	DAT_06047948
+L3431:	.long	DAT_06047968
+L3432:	.long	DAT_06047958
+L3433:	.long	FUN_06047770
+	.global FUN_0604796c
 	.align 2
-_FUN_0604796c:
+FUN_0604796c:
 	mov	r4,r0
 	shll2	r0
 	shll	r0
@@ -20527,10 +20527,10 @@ L2314:
 	rts
 	mov.w	r5,@r7
 	.align 2
-L3434:	.long	_DAT_0604799c
-	.global _FUN_06047986
+L3434:	.long	DAT_0604799c
+	.global FUN_06047986
 	.align 2
-_FUN_06047986:
+FUN_06047986:
 L2316:
 	mov.w	@r4,r0
 	tst	r0,r0
@@ -20546,10 +20546,10 @@ L2315:
 	rts
 	mov.w	@r0,r0
 	.align 2
-L3435:	.long	_DAT_06047998
-	.global _FUN_060479a0
+L3435:	.long	DAT_06047998
+	.global FUN_060479a0
 	.align 2
-_FUN_060479a0:
+FUN_060479a0:
 	mov	r4,r6
 	add	#-4,r6
 	mov	r5,r7
@@ -20586,11 +20586,11 @@ L2321:
 	rts
 	mov	r0,r7
 	.align 2
-L3436:	.long	_DAT_060479d2
-L3437:	.long	_DAT_060479d4
-	.global _FUN_060479d6
+L3436:	.long	DAT_060479d2
+L3437:	.long	DAT_060479d4
+	.global FUN_060479d6
 	.align 2
-_FUN_060479d6:
+FUN_060479d6:
 	sts.l	pr,@-r15
 	mov.l	L3438,r0
 	mov.l	@r0,r13
@@ -20617,18 +20617,18 @@ _FUN_060479d6:
 	rts
 	mov.l	@r5,r5
 	.align 2
-L3438:	.long	_DAT_06047a54
-L3439:	.long	_DAT_06047a50
-L3440:	.long	_FUN_06047a84
-L3441:	.long	_DAT_06047a48
-L3442:	.long	_DAT_06047a4a
-L3443:	.long	_FUN_06047ae0
-L3444:	.long	_DAT_06047a58
-L3445:	.long	_PTR_DAT_06047a5c
-L3446:	.long	_FUN_06047b00
-	.global _FUN_06047a08
+L3438:	.long	DAT_06047a54
+L3439:	.long	DAT_06047a50
+L3440:	.long	FUN_06047a84
+L3441:	.long	DAT_06047a48
+L3442:	.long	DAT_06047a4a
+L3443:	.long	FUN_06047ae0
+L3444:	.long	DAT_06047a58
+L3445:	.long	PTR_DAT_06047a5c
+L3446:	.long	FUN_06047b00
+	.global FUN_06047a08
 	.align 2
-_FUN_06047a08:
+FUN_06047a08:
 	sts.l	pr,@-r15
 	mov.l	L3447,r0
 	mov.l	@r0,r11
@@ -20671,20 +20671,20 @@ _FUN_06047a08:
 	rts
 	mov.l	@r5,r5
 	.align 2
-L3447:	.long	_DAT_06047a54
-L3448:	.long	_DAT_06047a50
-L3449:	.long	_FUN_06047a84
-L3450:	.long	_func_0x06047b34
-L3451:	.long	_DAT_06047a48
-L3452:	.long	_FUN_06047ae0
-L3453:	.long	_DAT_06047a58
-L3454:	.long	_PTR_DAT_06047a60
-L3455:	.long	_func_0x06047b00
-L3456:	.long	_DAT_06047a64
-L3457:	.long	_PTR_DAT_06047a68
-	.global _FUN_06047a84
+L3447:	.long	DAT_06047a54
+L3448:	.long	DAT_06047a50
+L3449:	.long	FUN_06047a84
+L3450:	.long	func_0x06047b34
+L3451:	.long	DAT_06047a48
+L3452:	.long	FUN_06047ae0
+L3453:	.long	DAT_06047a58
+L3454:	.long	PTR_DAT_06047a60
+L3455:	.long	func_0x06047b00
+L3456:	.long	DAT_06047a64
+L3457:	.long	PTR_DAT_06047a68
+	.global FUN_06047a84
 	.align 2
-_FUN_06047a84:
+FUN_06047a84:
 	mov.l	L3458,r0
 	mov.w	@r0,r0
 	mov.w	r0,@r4
@@ -20761,18 +20761,18 @@ L2337:
 	.align 2
 L3465:	.short	192
 	.align 2
-L3458:	.long	_DAT_06047ac6
-L3459:	.long	_DAT_06047ad4
-L3460:	.long	_DAT_06047ac8
-L3461:	.long	_DAT_06047aca
-L3462:	.long	_DAT_06047ad8
-L3463:	.long	_DAT_06047acc
-L3464:	.long	_DAT_06047adc
-L3466:	.long	_DAT_06047ace
-L3467:	.long	_DAT_06047ad0
-	.global _FUN_06047ae0
+L3458:	.long	DAT_06047ac6
+L3459:	.long	DAT_06047ad4
+L3460:	.long	DAT_06047ac8
+L3461:	.long	DAT_06047aca
+L3462:	.long	DAT_06047ad8
+L3463:	.long	DAT_06047acc
+L3464:	.long	DAT_06047adc
+L3466:	.long	DAT_06047ace
+L3467:	.long	DAT_06047ad0
+	.global FUN_06047ae0
 	.align 2
-_FUN_06047ae0:
+FUN_06047ae0:
 	mov	r4,r1
 	add	#32,r1
 	mov.l	L3468,r0
@@ -20795,12 +20795,12 @@ _FUN_06047ae0:
 	rts
 	mov.l	r0,@(4,r14)
 	.align 2
-L3468:	.long	_DAT_06047af8
-L3469:	.long	_DAT_06047afa
-L3470:	.long	_DAT_06047afc
-	.global _FUN_06047b00
+L3468:	.long	DAT_06047af8
+L3469:	.long	DAT_06047afa
+L3470:	.long	DAT_06047afc
+	.global FUN_06047b00
 	.align 2
-_FUN_06047b00:
+FUN_06047b00:
 	mov.l	L3471,r0
 	mov.w	@r0,r0
 	mov.w	r0,@r4
@@ -20838,13 +20838,13 @@ _FUN_06047b00:
 	.align 2
 L3475:	.short	224
 	.align 2
-L3471:	.long	_DAT_06047b6c
-L3472:	.long	_DAT_06047b6e
-L3473:	.long	_DAT_06047b70
-L3474:	.long	_DAT_06047b72
-	.global _FUN_06047b34
+L3471:	.long	DAT_06047b6c
+L3472:	.long	DAT_06047b6e
+L3473:	.long	DAT_06047b70
+L3474:	.long	DAT_06047b72
+	.global FUN_06047b34
 	.align 2
-_FUN_06047b34:
+FUN_06047b34:
 	mov.l	L3476,r0
 	mov.w	@r0,r0
 	mov.w	r0,@r4
@@ -20892,18 +20892,18 @@ _FUN_06047b34:
 	rts
 	mov.l	r1,@r0
 	.align 2
-L3476:	.long	_DAT_06047b6c
-L3477:	.long	_DAT_06047b74
-L3478:	.long	_DAT_06047b6e
-L3479:	.long	_DAT_06047b78
-L3480:	.long	_DAT_06047b7c
-L3481:	.long	_DAT_06047b80
-L3482:	.long	_DAT_06047b84
-L3483:	.long	_DAT_06047b88
-L3484:	.long	_DAT_06047b8c
-	.global _FUN_06047d3c
+L3476:	.long	DAT_06047b6c
+L3477:	.long	DAT_06047b74
+L3478:	.long	DAT_06047b6e
+L3479:	.long	DAT_06047b78
+L3480:	.long	DAT_06047b7c
+L3481:	.long	DAT_06047b80
+L3482:	.long	DAT_06047b84
+L3483:	.long	DAT_06047b88
+L3484:	.long	DAT_06047b8c
+	.global FUN_06047d3c
 	.align 2
-_FUN_06047d3c:
+FUN_06047d3c:
 	mov.l	L3485,r0
 	mov.l	@r0,r0
 	mov	r4,r1
@@ -20918,11 +20918,11 @@ _FUN_06047d3c:
 	rts
 	nop
 	.align 2
-L3485:	.long	_PTR_DAT_06047db8
-L3486:	.long	_DAT_06047db0
-	.global _FUN_06047d46
+L3485:	.long	PTR_DAT_06047db8
+L3486:	.long	DAT_06047db0
+	.global FUN_06047d46
 	.align 2
-_FUN_06047d46:
+FUN_06047d46:
 	mov	r7,r0
 	mov.w	@(r0,r4),r0
 	shll2	r0
