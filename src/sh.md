@@ -1597,16 +1597,55 @@ static void sh_build_cgraph_and_order(void) {
  * runs in source order (A.1 behavior) so no cross-function state
  * leaks surface. sh_build_cgraph_and_order() has already run and
  * sh_scc_order[] holds indices in reverse-topological order when
- * we're invoked. */
+ * we're invoked.
+ *
+ * asm-shim Stage 3 — saturn/workstreams/asm_shim_design.md §6:
+ * before inheriting from callees, walk the function's captured
+ * Code list for ASM_INSN+V Nodes and OR in their parsed `writes`
+ * masks. An asm instruction that writes r4 (e.g., `mov #X, r4` or
+ * a load-into-r4) makes the enclosing function writes_r4 even if
+ * it has no callees. This is what unlocks the IPA pin's correct
+ * answer on asm-bodied functions like the FUN_06044F30 shim
+ * Stage 4 will bring in. */
 static void sh_analyze_writes_r4(void) {
         int i, j, k;
         for (i = 0; i < sh_scc_order_len; i++) {
                 struct sh_ipa_fn *e = sh_ipa_arr[sh_scc_order[i]];
-                /* Leaf (no direct calls): optimistically preserve r4.
-                 * Non-leaf: inherit "writes" from any callee that
-                 * already writes r4 (which — because we walk in
-                 * reverse-topo order — has already been analyzed). */
+                Code cp;
                 e->writes_r4 = 0;
+
+                /* Direct writes from asm-derived Nodes in this
+                 * function's body. Walk the captured Code list
+                 * for Gen records and inspect each ASM_INSN+V
+                 * Node's parsed writes mask. */
+                for (cp = e->code_head.next; cp && !e->writes_r4;
+                     cp = cp->next) {
+                        Node n;
+                        if (cp->kind != Gen && cp->kind != Jump
+                            && cp->kind != Label)
+                                continue;
+                        for (n = cp->u.forest; n; n = n->link) {
+                                if (specific(n->op) != ASM_INSN+V)
+                                        continue;
+                                if (n->syms[0]
+                                    && n->syms[0]->x.asm_insn
+                                    && (n->syms[0]->x.asm_insn->writes
+                                        & (1u << 4))) {
+                                        e->writes_r4 = 1;
+                                        break;
+                                }
+                        }
+                }
+                if (e->writes_r4)
+                        continue;
+
+                /* Inheritance from callees: leaf (no direct calls)
+                 * optimistically preserves r4; non-leaf inherits
+                 * from any callee that already writes r4 (which —
+                 * because we walk in reverse-topo order — has
+                 * already been analyzed). External callees
+                 * (outside the TU) get the conservative ABI
+                 * default. */
                 for (j = 0; j < e->n_direct_callees; j++) {
                         Symbol tgt = e->direct_callees[j];
                         int found = 0;

@@ -765,6 +765,44 @@ else
 fi
 rm -f "$ipa_out"
 
+# 4u. asm-shim Stage 3: Phase C walks ASM_INSN Nodes and reads
+# their parsed writes mask. Two asm-bodied callees in the same
+# TU — one explicitly writes r4, one doesn't. Phase C's `-d`
+# diagnostic should report writes_r4=1 for the first and
+# writes_r4=0 for the second. See
+# saturn/workstreams/asm_shim_design.md §6.
+cat > /tmp/regtest.c <<'EOF'
+extern int callee_writes_r4(int p);
+extern int callee_preserves_r4(int p);
+
+int caller(int p) {
+    return callee_writes_r4(p) + callee_preserves_r4(p);
+}
+
+int callee_writes_r4(int p) asm {
+    mov #5, r4
+    rts
+    nop
+}
+
+int callee_preserves_r4(int p) asm {
+    mov #1, r0
+    rts
+    nop
+}
+EOF
+ipa_d="$(mktemp)"
+"$RCC" -target=sh/hitachi -d /tmp/regtest.c /dev/null 2>"$ipa_d"
+ok=1
+grep -qE 'callee_writes_r4 writes_r4=1' "$ipa_d" || ok=0
+grep -qE 'callee_preserves_r4 writes_r4=0' "$ipa_d" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: Phase C reads ASM_INSN writes mask (Stage 3)"
+else
+    fail "regtest: Phase C asm writes_r4 detection wrong — inspect $ipa_d"
+fi
+rm -f "$ipa_d"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:
