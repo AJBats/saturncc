@@ -49,13 +49,19 @@
 enum sh_av_kind {
         AV_UNKNOWN = 0,    /* anything could be here */
         AV_CONST,          /* a literal integer */
-        AV_INPUT_OFF       /* input register N's entry value plus an offset */
+        AV_INPUT_OFF,      /* input register N's entry value plus an offset */
+        AV_FUNCADDR        /* address of a named function symbol —
+                            * produced by a `mov.l <pool>, rN` whose
+                            * pool entry resolves to a function. Used
+                            * by the call handler to figure out which
+                            * function `jsr @rN` is calling. */
 };
 
 struct sh_av {
         enum sh_av_kind kind;
         int input_reg;     /* AV_INPUT_OFF: which input register (0..15) */
         long value;        /* AV_CONST: the integer; AV_INPUT_OFF: the offset */
+        const char *symbol;/* AV_FUNCADDR: the function symbol name */
 };
 
 /* Convenience constructors. Used pervasively below — kept short to
@@ -65,6 +71,7 @@ static struct sh_av av_unknown(void) {
         a.kind = AV_UNKNOWN;
         a.input_reg = 0;
         a.value = 0;
+        a.symbol = NULL;
         return a;
 }
 
@@ -73,6 +80,7 @@ static struct sh_av av_const(long v) {
         a.kind = AV_CONST;
         a.input_reg = 0;
         a.value = v;
+        a.symbol = NULL;
         return a;
 }
 
@@ -81,7 +89,23 @@ static struct sh_av av_input(int reg, long off) {
         a.kind = AV_INPUT_OFF;
         a.input_reg = reg;
         a.value = off;
+        a.symbol = NULL;
         return a;
+}
+
+static struct sh_av av_funcaddr(const char *sym) {
+        struct sh_av a;
+        a.kind = AV_FUNCADDR;
+        a.input_reg = 0;
+        a.value = 0;
+        a.symbol = sym;
+        return a;
+}
+
+static int str_eq(const char *a, const char *b) {
+        if (a == b) return 1;
+        if (!a || !b) return 0;
+        return strcmp(a, b) == 0;
 }
 
 static int av_eq(struct sh_av a, struct sh_av b) {
@@ -91,6 +115,7 @@ static int av_eq(struct sh_av a, struct sh_av b) {
         case AV_CONST:      return a.value == b.value;
         case AV_INPUT_OFF:  return a.input_reg == b.input_reg
                                  && a.value == b.value;
+        case AV_FUNCADDR:   return str_eq(a.symbol, b.symbol);
         }
         return 0;
 }
@@ -433,7 +458,10 @@ static int interpret(struct sh_state *s, struct sh_asm_insn *in) {
                         return 1;
 
         /* Loads/stores — destination unknown; post-inc/pre-dec
-         * base registers update precisely. */
+         * base registers update precisely. Special-cased: a
+         * `mov.l <label>, rN` whose label resolves to a function
+         * symbol via the literal pool produces an AV_FUNCADDR in
+         * rN, so a later `jsr @rN` can name its callee. */
         if (strncmp(m, "mov.", 4) == 0
             || strncmp(m, "mac.", 4) == 0)
                 return handle_mem_op(s, in);
@@ -478,6 +506,63 @@ static void label_state_record(struct sh_walker *w, int insn,
 }
 
 /* ── Walker helpers ───────────────────────────────────────────── */
+
+/* Resolve a pool-load target. Given a label name (the operand of
+ * `mov.l <label>, rN`), find that label's definition in the body
+ * and return the function symbol it points to via the next
+ * directive (`.4byte FUN_X` or similar).
+ *
+ * Returns the resolved symbol name (a pointer into the parser's
+ * stringn'd storage, valid for the simulator's lifetime) or NULL
+ * if the label couldn't be resolved or doesn't point to a single
+ * symbolic value. */
+static const char *resolve_pool_target(struct sh_asm_insn **insns,
+                                       int n_insns,
+                                       const char *label_name) {
+        int i;
+        for (i = 0; i < n_insns; i++) {
+                struct sh_asm_insn *in = insns[i];
+                int j;
+                if (!in->is_label) continue;
+                /* Same matching shape as find_label below. */
+                if (!((in->mnemonic && strcmp(in->mnemonic, label_name) == 0)
+                      || (in->n_operands > 0
+                          && in->operands[0].kind == SH_OP_LABEL
+                          && in->operands[0].label
+                          && strcmp(in->operands[0].label,
+                                    label_name) == 0)))
+                        continue;
+                /* Found the label. Walk forward to the next non-
+                 * label instruction; if it's a directive with a
+                 * single label operand, that's our target. */
+                for (j = i + 1; j < n_insns; j++) {
+                        struct sh_asm_insn *next = insns[j];
+                        if (next->is_label || next->is_comment)
+                                continue;
+                        if (next->is_directive
+                            && next->n_operands >= 1
+                            && next->operands[0].kind == SH_OP_LABEL
+                            && next->operands[0].label)
+                                return next->operands[0].label;
+                        return NULL;
+                }
+                return NULL;
+        }
+        return NULL;
+}
+
+/* Apply the effect of a call to a callee whose preserves-r4 status
+ * has been resolved. The state's caller-save registers (r0-r7
+ * minus r4 if preserved) all become unknown. r4 stays unchanged
+ * if preserved; otherwise also unknown. r8-r15 are callee-saves
+ * by ABI and stay unchanged. */
+static void apply_call(struct sh_state *s, enum sh_sim_verdict v) {
+        int i;
+        for (i = 0; i < 8; i++) {
+                if (i == 4 && v == SH_SIM_PRESERVES) continue;
+                s->r[i] = av_unknown();
+        }
+}
 
 /* Find the index of a label in the instruction array. Labels are
  * is_label == 1 and carry their name as the first operand's label
@@ -780,12 +865,87 @@ static void walk(struct sh_walker *w, int insn_index,
                         }
                 }
 
-                /* Calls (bsr, jsr): not yet handled — give up
-                 * conservatively. Will be added once the callee
-                 * oracle is wired. */
+                /* Calls (bsr, jsr) — figure out the callee, ask the
+                 * oracle whether it preserves r4, apply the call's
+                 * effect on caller-saves, and continue past the
+                 * delay slot. */
                 if (in->is_call) {
-                        w->gave_up = 1;
-                        return;
+                        const char *callee_name = NULL;
+                        struct sh_state call_state = state;
+
+                        /* Apply delay slot first; SH-2 calls have a
+                         * delay slot whose effects materialize
+                         * before the call returns. */
+                        if (insn_index + 1 < w->n_insns) {
+                                struct sh_asm_insn *delay =
+                                        w->insns[insn_index + 1];
+                                interpret(&call_state, delay);
+                        }
+
+                        /* bsr label / bsr/s label: callee name is
+                         * directly in operand[0]. */
+                        if (in->mnemonic
+                            && (strcmp(in->mnemonic, "bsr") == 0
+                                || strcmp(in->mnemonic, "bsr/s") == 0)
+                            && in->n_operands > 0
+                            && in->operands[0].kind == SH_OP_LABEL) {
+                                callee_name = in->operands[0].label;
+                        }
+                        /* jsr @rN: read rN's abstract value; if it's
+                         * AV_FUNCADDR we know the callee. */
+                        else if (in->mnemonic
+                                 && strcmp(in->mnemonic, "jsr") == 0
+                                 && in->n_operands > 0
+                                 && in->operands[0].kind == SH_OP_MEM
+                                 && in->operands[0].mem_mode
+                                    == SH_MEM_INDIR) {
+                                int rn = in->operands[0].reg;
+                                if (state.r[rn].kind == AV_FUNCADDR)
+                                        callee_name =
+                                                state.r[rn].symbol;
+                        }
+
+                        if (!callee_name) {
+                                /* Indirect call we can't resolve.
+                                 * Conservative: r4 might or might
+                                 * not survive — bail. */
+                                w->gave_up = 1;
+                                return;
+                        }
+
+                        {
+                                enum sh_sim_verdict v = SH_SIM_WRITES;
+                                if (w->lookup)
+                                        v = w->lookup(callee_name,
+                                                      w->user);
+                                apply_call(&call_state, v);
+                        }
+
+                        /* Skip past the call + its delay slot. */
+                        state = call_state;
+                        insn_index += 2;
+                        continue;
+                }
+
+                /* Pool-load shape: `mov.l <label>, rN` where the
+                 * label points (via a directive) to a function
+                 * symbol. Set rN to AV_FUNCADDR so a downstream
+                 * `jsr @rN` can name its callee. Falls through to
+                 * the normal interpret() if not a pool load. */
+                if (in->mnemonic
+                    && strcmp(in->mnemonic, "mov.l") == 0
+                    && in->n_operands == 2
+                    && in->operands[0].kind == SH_OP_LABEL
+                    && in->operands[1].kind == SH_OP_REG) {
+                        const char *target = resolve_pool_target(
+                                w->insns, w->n_insns,
+                                in->operands[0].label);
+                        if (target) {
+                                state.r[in->operands[1].reg] =
+                                        av_funcaddr(target);
+                                insn_index++;
+                                continue;
+                        }
                 }
 
                 interpret(&state, in);

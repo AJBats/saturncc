@@ -145,6 +145,20 @@ static int sh_dflag_asm;
  * test cases without yet wiring it into Phase A's hot path. */
 static int sh_dflag_sim;
 
+/* Test-only callee oracle for -d-sim. Treats any name starting
+ * with "PRESERVES_" as a preserves-r4 callee, anything else as
+ * a writer. Used by sim regtests to author test cases that
+ * exercise the oracle path without yet plumbing real inter-
+ * procedural state through (which lands when Phase A is wired). */
+static enum sh_sim_verdict sh_sim_dbg_oracle(const char *name,
+                                             void *user) {
+        (void)user;
+        if (!name) return SH_SIM_WRITES;
+        if (strncmp(name, "PRESERVES_", 10) == 0)
+                return SH_SIM_PRESERVES;
+        return SH_SIM_WRITES;
+}
+
 /* Switch-dispatch state recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
  * Only one switch table per function is supported (enough for Daytona).
@@ -3677,7 +3691,9 @@ struct sh_asm_body *sh_parse_asm_text(const char *text) {
          */
         if (sh_dflag_sim) {
                 enum sh_sim_verdict v =
-                        sh_sim_preserves_r4_body(body, NULL, NULL);
+                        sh_sim_preserves_r4_body(body,
+                                                 sh_sim_dbg_oracle,
+                                                 NULL);
                 fprint(stderr, "[sim] %s (n_insns=%d)\n",
                        v == SH_SIM_PRESERVES ? "PRESERVES_R4"
                                              : "WRITES_R4",
