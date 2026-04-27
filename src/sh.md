@@ -79,74 +79,13 @@ struct sh_ipa_fn;  /* forward: full defn lower, with the queue globals */
 static void function(Symbol, Symbol[], Symbol[], int);
 static void sh_process_deferred_fn(struct sh_ipa_fn *e);
 
-/* asm-shim parser + emitter — type definitions and forward decls.
- * Full implementations live in the line-level helper section near
- * sh_regs_used. The structs sit here (rather than next to the
- * implementations) because emit2's ASM_INSN+V case dereferences
- * sh_asm_insn fields and emit2 lives upstream of the helpers in
- * the source. See saturn/workstreams/asm_shim_design.md §4-§5. */
-enum sh_operand_kind {
-        SH_OP_NONE = 0,
-        SH_OP_REG,        /* r0..r15 */
-        SH_OP_SREG,       /* pr, gbr, vbr, sr, mach, macl, t */
-        SH_OP_IMM,        /* #imm or bare number (directive arg) */
-        SH_OP_MEM,        /* @rN family — see sh_mem_mode */
-        SH_OP_LABEL       /* bare identifier — branch target, pool sym */
-};
-
-enum sh_mem_mode {
-        SH_MEM_NONE = 0,
-        SH_MEM_INDIR,     /* @rN */
-        SH_MEM_PREDEC,    /* @-rN */
-        SH_MEM_POSTINC,   /* @rN+ */
-        SH_MEM_DISP,      /* @(disp,rN) */
-        SH_MEM_R0IDX,     /* @(R0,rN) */
-        SH_MEM_GBRDISP,   /* @(disp,GBR) */
-        SH_MEM_PCDISP     /* @(disp,PC) */
-};
-
-enum sh_sreg_id {
-        SH_SR_PR = 0, SH_SR_GBR, SH_SR_VBR, SH_SR_SR,
-        SH_SR_MACH, SH_SR_MACL, SH_SR_T,
-        SH_SR_COUNT
-};
-
-struct sh_operand {
-        enum sh_operand_kind kind;
-        int reg;                  /* SH_OP_REG, SH_OP_MEM: base/only reg */
-        enum sh_sreg_id sreg;     /* SH_OP_SREG */
-        long imm;                 /* SH_OP_IMM, SH_OP_MEM disp */
-        char *label;              /* SH_OP_LABEL: stringn'd; also for
-                                   *   #LABEL imm */
-        enum sh_mem_mode mem_mode;
-};
-
-struct sh_asm_insn {
-        char *src_text;       /* original line for diagnostics; emit
-                               * does not read this in Stage 2+. */
-        char *mnemonic;       /* canonicalized; NULL on parse failure */
-        int n_operands;
-        struct sh_operand operands[3];
-
-        unsigned reads;       /* GP regs read (bit N = rN) */
-        unsigned writes;      /* GP regs written */
-        unsigned reads_sreg;  /* bitmask indexed by enum sh_sreg_id */
-        unsigned writes_sreg;
-        unsigned char is_branch;
-        unsigned char is_call;
-        unsigned char is_directive;
-        unsigned char is_label;
-        unsigned char is_comment;
-        unsigned char is_unknown;
-        int line_no;
-};
-
-struct sh_asm_body {
-        struct sh_asm_insn *insns;
-        int n_insns;
-        int n_capacity;
-        char *raw_text;
-};
+/* asm-shim parser + emitter — types live in src/sh_sim.h, shared
+ * with the symbolic simulator (sh_sim.c). Forward decls of the
+ * sh.md-internal helpers stay here because emit2's ASM_INSN+V case
+ * dereferences sh_asm_insn fields and emit2 lives upstream of the
+ * helpers in the source. See saturn/workstreams/asm_shim_design.md
+ * §4-§5. */
+#include "sh_sim.h"
 
 struct sh_asm_body *sh_parse_asm_text(const char *text);
 static void sh_dump_asm_body(const struct sh_asm_body *body,
@@ -199,6 +138,12 @@ static int sh_word_indexed_after_first;  /* #pragma sh_word_indexed_after_first:
  * behavior. Stage 1 only invokes the parser when this flag is on;
  * Stage 2 will invoke it unconditionally at frontend time. */
 static int sh_dflag_asm;
+
+/* -d-sim: run the symbolic simulator on every parsed asm body and
+ * print its r4-preservation verdict to stderr. Used by sim
+ * regtests to confirm the analyzer's verdict on hand-written
+ * test cases without yet wiring it into Phase A's hot path. */
+static int sh_dflag_sim;
 
 /* Switch-dispatch state recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
@@ -1750,6 +1695,8 @@ static void progbeg(int argc, char *argv[]) {
                         gbr_base_cname = argv[i] + 10;
                 else if (strcmp(argv[i], "-d-asm") == 0)
                         sh_dflag_asm = 1;
+                else if (strcmp(argv[i], "-d-sim") == 0)
+                        sh_dflag_sim = 1;
         shc_pragma_hook = sh_pragma;
         flush_deferred_pragmas();
         for (i = 0; i < 16; i++)
@@ -3717,6 +3664,24 @@ struct sh_asm_body *sh_parse_asm_text(const char *text) {
                         p++;
                         line_no++;
                 }
+        }
+
+        /* -d-sim: post-parse, run the symbolic simulator on this
+         * body and report its r4-preservation verdict. The result
+         * is informational only — Phase A's hot path doesn't
+         * consult the simulator yet. The verdict format is one
+         * line per body, ready to grep:
+         *
+         *   [sim] PRESERVES_R4 (n_insns=12)
+         *   [sim] WRITES_R4    (n_insns=8)
+         */
+        if (sh_dflag_sim) {
+                enum sh_sim_verdict v =
+                        sh_sim_preserves_r4_body(body, NULL, NULL);
+                fprint(stderr, "[sim] %s (n_insns=%d)\n",
+                       v == SH_SIM_PRESERVES ? "PRESERVES_R4"
+                                             : "WRITES_R4",
+                       body->n_insns);
         }
         return body;
 }

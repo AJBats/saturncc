@@ -55,6 +55,7 @@ RCCOBJS=$Balloc$O \
 	$Btypes$O \
 	$Bnull$O \
 	$Bsh$O \
+	$Bsh_sim$O \
 	$Bsymbolic$O \
 	$Bgen$O \
 	$Bbytecode$O \
@@ -108,6 +109,7 @@ $Balpha$O:	$Balpha.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Balpha.c
 $Bmips$O:	$Bmips.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bmips.c
 $Bsparc$O:	$Bsparc.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bsparc.c
 $Bsh$O:		$Bsh.c;		$(CC) $(CFLAGS) -c -Isrc -o $@ $Bsh.c
+$Bsh_sim$O:	src/sh_sim.c src/sh_sim.h;	$(CC) $(CFLAGS) -c -Isrc -o $@ src/sh_sim.c
 $Bx86$O:	$Bx86.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bx86.c
 $Bx86linux$O:	$Bx86linux.c;	$(CC) $(CFLAGS) -c -Isrc -o $@ $Bx86linux.c
 
