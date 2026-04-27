@@ -1643,34 +1643,58 @@ static int sh_array_has_rts(struct sh_asm_insn **arr, int n) {
  *
  * Caller provides a `start` queue entry. Returns the assembled
  * array (PERM-allocated) and the count via *n_out. */
-#define SH_SIM_MAX_CHAIN 16
+/* TU-wide concatenated insn array. Built once per drain by
+ * sh_build_tu_insn_array; freed at end of analysis. All naked-
+ * shim entries' parsed instructions are concatenated in source
+ * (queue) order. Labels, branches, and drop-through chains all
+ * resolve naturally inside this array because the unity build's
+ * naked emit produces them as one big .text section anyway.
+ *
+ * sh_tu_insn_start_of[i] holds the index where queue entry
+ * sh_ipa_arr[i]'s first instruction lives in sh_tu_insns. -1
+ * means the entry isn't a naked shim (mixed C+asm or no asm
+ * nodes) and isn't represented in the concatenated array. */
+static struct sh_asm_insn **sh_tu_insns;
+static int sh_tu_insns_n;
+static int *sh_tu_insn_start_of;
 
-static struct sh_asm_insn **sh_collect_asm_insns(struct sh_ipa_fn *start,
-                                                 int *n_out) {
-        struct sh_asm_insn **arr;
-        struct sh_ipa_fn *e;
-        int total_cap = 0;
-        int n = 0;
-        int hops = 0;
-        *n_out = 0;
-        if (!start) return NULL;
-        for (e = start; e && hops < SH_SIM_MAX_CHAIN;
-             e = e->next, hops++)
-                total_cap += sh_count_asm_insns(e);
-        if (total_cap == 0) return NULL;
-        arr = allocate(total_cap * sizeof(*arr), PERM);
-        hops = 0;
-        for (e = start; e && hops < SH_SIM_MAX_CHAIN;
-             e = e->next, hops++) {
-                n = sh_append_asm_insns(e, arr, n);
-                /* Stop chaining once we've collected a body with
-                 * at least one rts — control flow can terminate
-                 * here, no need to drag in more. */
-                if (sh_array_has_rts(arr, n))
-                        break;
+static void sh_build_tu_insn_array(void) {
+        int i, n = 0, total = 0;
+        sh_tu_insns = NULL;
+        sh_tu_insns_n = 0;
+        sh_tu_insn_start_of = NULL;
+        if (sh_ipa_count == 0) return;
+        sh_tu_insn_start_of = allocate(sh_ipa_count * sizeof(int), PERM);
+        for (i = 0; i < sh_ipa_count; i++)
+                sh_tu_insn_start_of[i] = -1;
+
+        /* Iterate sh_ipa_queue in capture (source) order and
+         * append each naked-shim entry's parsed insns. Mixed
+         * bodies are skipped because the simulator can't analyze
+         * C-derived Nodes. */
+        {
+                struct sh_ipa_fn *e;
+                for (e = sh_ipa_queue; e; e = e->next)
+                        if (sh_function_is_naked_shim(e))
+                                total += sh_count_asm_insns(e);
         }
-        *n_out = n;
-        return arr;
+        if (total == 0) return;
+        sh_tu_insns = allocate(total * sizeof(*sh_tu_insns), PERM);
+        {
+                struct sh_ipa_fn *e;
+                for (e = sh_ipa_queue; e; e = e->next) {
+                        if (!sh_function_is_naked_shim(e)) continue;
+                        /* Find the queue entry's index in
+                         * sh_ipa_arr to record the start. */
+                        for (i = 0; i < sh_ipa_count; i++)
+                                if (sh_ipa_arr[i] == e) {
+                                        sh_tu_insn_start_of[i] = n;
+                                        break;
+                                }
+                        n = sh_append_asm_insns(e, sh_tu_insns, n);
+                }
+        }
+        sh_tu_insns_n = n;
 }
 
 /* Recursion guard for the on-demand sub-entry oracle path.
@@ -1710,35 +1734,27 @@ static int sh_lookup_writes_r4(const char *name) {
                         return e->writes_r4 ? 1 : 0;
         }
 
-        /* Sub-entry: walk parent bodies on demand. */
+        /* Sub-entry: scan the TU-wide concatenated insn array for
+         * a `.asm_entry <name>` directive. If found, simulate from
+         * that position. Falls through to conservative WRITES if
+         * the name isn't found anywhere in the TU. */
         if (sh_phase_a_oracle_depth >= SH_PHASE_A_ORACLE_MAX_DEPTH)
                 return 1;
         sh_phase_a_oracle_depth++;
-        for (i = 0; i < sh_ipa_count; i++) {
-                struct sh_ipa_fn *parent = sh_ipa_arr[i];
-                struct sh_asm_insn **arr;
-                int n_total = 0, j, entry_idx = -1;
-                arr = sh_collect_asm_insns(parent, &n_total);
-                if (!arr || n_total == 0)
-                        continue;
-                for (j = 0; j < n_total; j++) {
-                        struct sh_asm_insn *in = arr[j];
-                        if (in->is_entry
-                            && in->n_operands >= 1
-                            && in->operands[0].kind == SH_OP_LABEL
-                            && in->operands[0].label
-                            && strcmp(in->operands[0].label, name)
-                               == 0) {
-                                entry_idx = j;
-                                break;
-                        }
-                }
-                if (entry_idx < 0)
-                        continue;
-                {
+        if (sh_tu_insns && sh_tu_insns_n > 0) {
+                int j;
+                for (j = 0; j < sh_tu_insns_n; j++) {
+                        struct sh_asm_insn *in = sh_tu_insns[j];
                         enum sh_sim_verdict v;
-                        v = sh_sim_preserves_r4(arr, n_total,
-                                                entry_idx,
+                        if (!in->is_entry) continue;
+                        if (in->n_operands < 1
+                            || in->operands[0].kind != SH_OP_LABEL
+                            || !in->operands[0].label
+                            || strcmp(in->operands[0].label, name)
+                                  != 0)
+                                continue;
+                        v = sh_sim_preserves_r4(sh_tu_insns,
+                                                sh_tu_insns_n, j,
                                                 sh_phase_a_oracle,
                                                 NULL);
                         sh_phase_a_oracle_depth--;
@@ -1779,22 +1795,29 @@ static void sh_analyze_writes_r4(void) {
                 Code cp;
                 e->writes_r4 = 0;
 
-                /* Naked-shim path: the simulator can answer
-                 * precisely. Replaces the old "any ASM_INSN write
-                 * → conservative" check, which was too coarse for
-                 * functions like FUN_06044E3C that advance r4
-                 * across a counted loop and restore it before rts.
-                 * The simulator's oracle queries other queue
-                 * entries' cached writes_r4 by name, so the
-                 * reverse-topo order keeps the answers correct. */
+                /* Naked-shim path: simulate against the TU-wide
+                 * concatenated insn array so cross-body labels
+                 * (a `bt label` whose target is in another
+                 * function's body) and drop-through chains both
+                 * resolve naturally. The unity build's naked
+                 * emit already produces one big .text section,
+                 * so this matches the actual program layout.
+                 *
+                 * Replaces the old "any ASM_INSN write → conservative"
+                 * check, which was too coarse for functions like
+                 * FUN_06044E3C that advance r4 across a counted
+                 * loop and restore it before rts. */
                 if (sh_function_is_naked_shim(e)) {
-                        struct sh_asm_insn **arr;
-                        int n = 0;
+                        int idx = sh_scc_order[i];
+                        int start;
                         enum sh_sim_verdict v = SH_SIM_WRITES;
-                        arr = sh_collect_asm_insns(e, &n);
-                        if (arr && n > 0) {
+                        start = (idx >= 0 && idx < sh_ipa_count)
+                                ? sh_tu_insn_start_of[idx] : -1;
+                        if (sh_tu_insns && sh_tu_insns_n > 0
+                            && start >= 0) {
                                 v = sh_sim_preserves_r4(
-                                        arr, n, 0,
+                                        sh_tu_insns,
+                                        sh_tu_insns_n, start,
                                         sh_phase_a_oracle, NULL);
                         }
                         e->writes_r4 = v == SH_SIM_PRESERVES ? 0 : 1;
@@ -1871,6 +1894,7 @@ static void sh_drain_ipa_queue(void) {
          * spill mask at CALL sites. The actual drain below stays in
          * source order — analysis is reverse-topo, emission is not. */
         sh_build_cgraph_and_order();
+        sh_build_tu_insn_array();
         sh_analyze_writes_r4();
         if (dflag && sh_scc_order_len > 0) {
                 fprint(stderr, "[ipa] writes_r4 analysis:\n");

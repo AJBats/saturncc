@@ -132,8 +132,36 @@ static struct sh_av av_meet(struct sh_av a, struct sh_av b) {
 
 #define SH_SIM_NREGS 16
 
+/* Stack-memory shadow. Tracks values stored to stack-relative
+ * locations during the function's execution, indexed by the
+ * stack offset relative to r15's entry value (i.e., the caller's
+ * sp at function entry). Negative offsets are pushed values
+ * (`mov.l rN, @-r15` makes r15 -= 4 then writes at @r15 = entry
+ * sp - 4 etc.). Positive offsets are caller-frame slots above
+ * the entry sp, which we leave UNKNOWN since they're caller's
+ * data we can't track without interprocedural analysis.
+ *
+ * The model is small but enough for the SHC push/pop save-and-
+ * restore idiom: prologue pushes registers (negative offsets
+ * relative to entry sp), epilogue pops them back. If a register
+ * is saved at offset Δ at entry and restored from offset Δ at
+ * exit, the simulator can prove preservation across an
+ * intervening clobber.
+ *
+ * Slot capacity is bounded; on overflow the slot is forgotten
+ * (becomes unknown on read), which is conservative. */
+#define SH_SIM_STACK_SLOTS 64
+
+struct sh_stack_slot {
+        int valid;          /* 1 if this slot has a tracked value */
+        long offset;        /* offset (in bytes) from entry sp */
+        struct sh_av value; /* the abstract value last stored */
+};
+
 struct sh_state {
         struct sh_av r[SH_SIM_NREGS];
+        struct sh_stack_slot stack[SH_SIM_STACK_SLOTS];
+        int n_stack;
 };
 
 static struct sh_state state_entry(void) {
@@ -143,7 +171,65 @@ static struct sh_state state_entry(void) {
          * After execution we'll check r4 against this baseline. */
         for (i = 0; i < SH_SIM_NREGS; i++)
                 s.r[i] = av_input(i, 0);
+        for (i = 0; i < SH_SIM_STACK_SLOTS; i++) {
+                s.stack[i].valid = 0;
+                s.stack[i].offset = 0;
+                s.stack[i].value = av_unknown();
+        }
+        s.n_stack = 0;
         return s;
+}
+
+/* Look up a stack slot's value by offset-from-entry-sp.
+ * Returns NULL if no tracked slot exists at that offset. */
+static struct sh_stack_slot *stack_find(struct sh_state *s, long off) {
+        int i;
+        for (i = 0; i < s->n_stack; i++)
+                if (s->stack[i].valid && s->stack[i].offset == off)
+                        return &s->stack[i];
+        return NULL;
+}
+
+/* Record a write to the stack at offset-from-entry-sp. */
+static void stack_write(struct sh_state *s, long off, struct sh_av v) {
+        struct sh_stack_slot *slot = stack_find(s, off);
+        if (slot) {
+                slot->value = v;
+                return;
+        }
+        if (s->n_stack >= SH_SIM_STACK_SLOTS)
+                return; /* overflow — write is silently dropped */
+        s->stack[s->n_stack].valid = 1;
+        s->stack[s->n_stack].offset = off;
+        s->stack[s->n_stack].value = v;
+        s->n_stack++;
+}
+
+/* Read a stack slot's value, or unknown if none tracked. */
+static struct sh_av stack_read(struct sh_state *s, long off) {
+        struct sh_stack_slot *slot = stack_find(s, off);
+        if (slot) return slot->value;
+        return av_unknown();
+}
+
+static int stack_eq(const struct sh_state *a, const struct sh_state *b) {
+        /* For visited-set termination we need stack equivalence.
+         * Two stacks are equivalent if every valid slot in one has
+         * a matching valid slot in the other with the same value
+         * (and vice versa). Order doesn't matter. */
+        int i, j;
+        if (a->n_stack != b->n_stack) return 0;
+        for (i = 0; i < a->n_stack; i++) {
+                if (!a->stack[i].valid) continue;
+                for (j = 0; j < b->n_stack; j++)
+                        if (b->stack[j].valid
+                            && b->stack[j].offset == a->stack[i].offset
+                            && av_eq(b->stack[j].value,
+                                     a->stack[i].value))
+                                break;
+                if (j == b->n_stack) return 0;
+        }
+        return 1;
 }
 
 static int state_eq(const struct sh_state *a, const struct sh_state *b) {
@@ -151,6 +237,7 @@ static int state_eq(const struct sh_state *a, const struct sh_state *b) {
         for (i = 0; i < SH_SIM_NREGS; i++)
                 if (!av_eq(a->r[i], b->r[i]))
                         return 0;
+        if (!stack_eq(a, b)) return 0;
         return 1;
 }
 
@@ -160,6 +247,22 @@ static struct sh_state state_meet(const struct sh_state *a,
         int i;
         for (i = 0; i < SH_SIM_NREGS; i++)
                 out.r[i] = av_meet(a->r[i], b->r[i]);
+        /* Stack meet: keep slots that match exactly across both
+         * states; drop anything that disagrees. Conservative. */
+        out.n_stack = 0;
+        for (i = 0; i < SH_SIM_STACK_SLOTS; i++) {
+                out.stack[i].valid = 0;
+                out.stack[i].offset = 0;
+                out.stack[i].value = av_unknown();
+        }
+        for (i = 0; i < a->n_stack; i++) {
+                struct sh_stack_slot *bs;
+                if (!a->stack[i].valid) continue;
+                bs = stack_find((struct sh_state *)b, a->stack[i].offset);
+                if (bs && av_eq(bs->value, a->stack[i].value))
+                        stack_write(&out, a->stack[i].offset,
+                                    a->stack[i].value);
+        }
         return out;
 }
 
@@ -167,9 +270,14 @@ static struct sh_state state_meet(const struct sh_state *a,
  * search. (insn_index, state) pairs we've already analyzed are
  * not re-walked. The cap is a hard ceiling; on overflow the
  * simulator widens to unknown and returns the conservative
- * verdict. ───────────────────────────────────────────────────── */
+ * verdict.
+ *
+ * The walker (which contains the visited set) is heap-allocated
+ * because the per-state size grew once we added the stack-memory
+ * shadow and the eight-deep recursion guard for sub-entry
+ * oracle calls would blow the C stack otherwise. ───────────── */
 
-#define SH_SIM_VISITED_CAP 4096
+#define SH_SIM_VISITED_CAP 512
 
 struct sh_visited_entry {
         int insn;
@@ -334,38 +442,103 @@ static void apply_mem_side_effects(struct sh_state *s,
         }
 }
 
+/* Compute the entry-sp-relative offset for a memory operand if
+ * the base register holds an `entry r15 + K` abstract value.
+ * Returns 1 and stores the offset in *out if so; 0 otherwise.
+ *
+ * Recognized forms:
+ *   @rN      where rN is `entry r15 + K`
+ *   @(d, rN) where rN is `entry r15 + K`     -> offset K + d
+ *   @-rN     after pre-decrement (caller subtracts size first)
+ *   @rN+     before post-increment
+ *
+ * Caller is responsible for consistency: pre-dec/post-inc effects
+ * on rN itself are applied separately by apply_mem_side_effects. */
+static int mem_to_entry_sp_off(struct sh_state *s, struct sh_operand *op,
+                               long size, long *out) {
+        struct sh_av base;
+        long delta = 0;
+        if (op->kind != SH_OP_MEM) return 0;
+        base = s->r[op->reg];
+        if (base.kind != AV_INPUT_OFF) return 0;
+        if (base.input_reg != 15) return 0;
+        switch (op->mem_mode) {
+        case SH_MEM_INDIR:    delta = base.value;            break;
+        case SH_MEM_DISP:     delta = base.value + op->imm;  break;
+        case SH_MEM_POSTINC:  delta = base.value;            break;
+        case SH_MEM_PREDEC:   delta = base.value - size;     break;
+        default: return 0;
+        }
+        *out = delta;
+        return 1;
+}
+
 /* Memory-form mov.X / mac.X handler. Only the load-destination
  * register goes unknown; base registers with post-inc / pre-dec
- * update precisely. Returns 1 always (handled). */
+ * update precisely.
+ *
+ * For stack-relative memory (base register holding entry r15 + K),
+ * track the actual values written so a later load from the same
+ * slot can recover the value — this is what makes prologue
+ * push / epilogue pop save-and-restore patterns analyzable.
+ *
+ * Returns 1 always (handled). */
 static int handle_mem_op(struct sh_state *s, struct sh_asm_insn *in) {
         int i;
-        /* Phase 1: precise side-effects on base regs. Done first so
-         * the post-inc/pre-dec deltas are not lost if a destination
-         * mark below races with a base mark. */
+        long size = sized_step(in->mnemonic);
+        long stack_off = 0;
+        int store_is_stack = 0;
+        int load_is_stack = 0;
+        struct sh_av store_value = av_unknown();
+
+        /* Look for stack-relative store/load BEFORE applying the
+         * base side-effects, since pre-dec changes r15 itself but
+         * the conventional "value at @-r15" is "value written at
+         * (entry r15 + K - size)" where the size adjustment was
+         * already done by mem_to_entry_sp_off for PREDEC. */
+        if (in->n_operands == 2) {
+                /* Store: src in op[0], mem in op[1]. */
+                if (in->operands[0].kind == SH_OP_REG
+                    && in->operands[1].kind == SH_OP_MEM
+                    && size == 4 /* only model word stores */) {
+                        if (mem_to_entry_sp_off(s, &in->operands[1],
+                                                size, &stack_off)) {
+                                store_is_stack = 1;
+                                store_value =
+                                        s->r[in->operands[0].reg];
+                        }
+                }
+                /* Load: mem in op[0], dst in op[1]. */
+                if (in->operands[0].kind == SH_OP_MEM
+                    && in->operands[1].kind == SH_OP_REG
+                    && size == 4) {
+                        if (mem_to_entry_sp_off(s, &in->operands[0],
+                                                size, &stack_off))
+                                load_is_stack = 1;
+                }
+        }
+
+        /* Phase 1: precise side-effects on base regs. */
         apply_mem_side_effects(s, in);
-        /* Phase 2: any operand that's a REG appearing as the load
-         * destination becomes unknown. We approximate: if both a
-         * MEM and a REG operand are present, the REG operand is
-         * either the source (store) or the destination (load).
-         * Stores don't change a GP reg; loads change the REG.
-         *
-         * Heuristic: in SH-2 syntax `mov.X mem, dst` has MEM as
-         * operand 0 and REG as operand 1 → load. `mov.X src, mem`
-         * has REG as operand 0 and MEM as operand 1 → store. So
-         * REG-as-operand[1] with MEM-as-operand[0] = load
-         * destination.
-         *
-         * mac.X has both operands as MEM and writes only mach/macl
-         * (sregs we don't track) — no GP destination to mark. */
+
+        /* Phase 2: stack-relative store records the value. */
+        if (store_is_stack)
+                stack_write(s, stack_off, store_value);
+
+        /* Phase 3: any operand that's a REG appearing as the load
+         * destination becomes the loaded value — known if it's a
+         * stack slot we tracked, unknown otherwise. */
         if (in->n_operands >= 2
             && in->operands[0].kind == SH_OP_MEM
             && in->operands[1].kind == SH_OP_REG) {
-                s->r[in->operands[1].reg] = av_unknown();
+                if (load_is_stack)
+                        s->r[in->operands[1].reg] =
+                                stack_read(s, stack_off);
+                else
+                        s->r[in->operands[1].reg] = av_unknown();
         }
-        /* Defensive: if the parser also flagged any other GP write
-         * we haven't accounted for, propagate it. (E.g., mov.X with
-         * a third operand or other oddity.) Skip the base regs we
-         * just updated precisely. */
+        /* Defensive: any other GP write that's not already
+         * accounted for. */
         for (i = 0; i < SH_SIM_NREGS; i++) {
                 int is_base = 0;
                 int j;
@@ -961,8 +1134,9 @@ enum sh_sim_verdict sh_sim_preserves_r4(struct sh_asm_insn **insns,
                                         sh_sim_callee_lookup lookup,
                                         void *user)
 {
-        struct sh_walker w;
+        struct sh_walker *w;
         struct sh_state entry;
+        enum sh_sim_verdict verdict;
         int i;
 
         if (!insns || n_insns <= 0)
@@ -970,26 +1144,38 @@ enum sh_sim_verdict sh_sim_preserves_r4(struct sh_asm_insn **insns,
         if (start < 0 || start >= n_insns)
                 return SH_SIM_WRITES;
 
-        memset(&w, 0, sizeof w);
-        w.insns = insns;
-        w.n_insns = n_insns;
-        w.lookup = lookup;
-        w.user = user;
+        /* Heap-allocated: the walker carries SH_SIM_VISITED_CAP
+         * full sh_state copies, which is too large for a stack
+         * frame given the eight-deep recursion the sub-entry
+         * oracle can do. */
+        w = (struct sh_walker *)calloc(1, sizeof *w);
+        if (!w) return SH_SIM_WRITES;
+        w->insns = insns;
+        w->n_insns = n_insns;
+        w->lookup = lookup;
+        w->user = user;
 
         entry = state_entry();
-        walk(&w, start, entry);
+        walk(w, start, entry);
 
-        if (w.gave_up || w.n_rts == 0)
+        if (w->gave_up || w->n_rts == 0) {
+                free(w);
                 return SH_SIM_WRITES;
+        }
 
         /* Every observed rts must show r4 = input r4 + 0. */
-        for (i = 0; i < w.n_rts; i++) {
-                struct sh_av v = w.rts_r4_values[i];
-                if (v.kind != AV_INPUT_OFF) return SH_SIM_WRITES;
-                if (v.input_reg != 4) return SH_SIM_WRITES;
-                if (v.value != 0) return SH_SIM_WRITES;
+        verdict = SH_SIM_PRESERVES;
+        for (i = 0; i < w->n_rts; i++) {
+                struct sh_av v = w->rts_r4_values[i];
+                if (v.kind != AV_INPUT_OFF
+                    || v.input_reg != 4
+                    || v.value != 0) {
+                        verdict = SH_SIM_WRITES;
+                        break;
+                }
         }
-        return SH_SIM_PRESERVES;
+        free(w);
+        return verdict;
 }
 
 enum sh_sim_verdict sh_sim_preserves_r4_body(struct sh_asm_body *body,
