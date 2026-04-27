@@ -185,6 +185,30 @@ Explicitly deferred (per user framing):
   alongside prod's other 7 modules is mechanical and outside the
   decomp tree.
 
+## After this branch — likely workstream order
+
+Per user framing at session close:
+
+1. **Finish r4 work in `race_FUN_06044060/`.** The Phase C
+   `writes_r4` → C call-site codegen extension called out in
+   `asm_shim_design.md`'s "Next workstreams" section. Recovers
+   the 8-line cost in FUN_06044060 by skipping redundant `mov rN,
+   r4` setup when the previous call's r4 is still live. Strictly
+   derived from existing analysis — no new pragma. Validates
+   against the frozen 060 TU experiment in saturncc. Proves the
+   writes_r4 mechanism is fully working end to end.
+2. **Driving model code.** The actual project focus — race
+   physics / vehicle handling. The unity-build harness in
+   `decomp/race/` is the workspace for lifting those functions
+   from naked shims to real C. 060 was an arbitrary methodology
+   bring-up target; the driving model is what the project
+   exists to recover.
+
+Lifting workflow when (2) starts: replace one function's asm body
+with real C, run `make -C decomp validate`. Pass = byte-perfect
+lift. Fail = isolated to that one function, single-commit revert.
+The unity build is purpose-built to give that feedback loop.
+
 ## Quick orientation for next session
 
 If you're picking this up cold:
