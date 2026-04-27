@@ -267,6 +267,16 @@ struct sh_ipa_fn {
         int    pinned_reg;
         int    total_delta;
         int    needs_restore;
+        /* Phase E.2 (Shape 2): an alternative to pinned_param.
+         * pinned_local is set when the function defines a local
+         * variable initialized exactly once from `param + K`
+         * (or just `param`), never reassigned, and used as the
+         * first argument of every direct call. Pinning the local
+         * to r4 lets the C codegen produce one-time setup and
+         * zero-cost arg passing across the entire call sequence.
+         * Mutually exclusive with pinned_param: the function gets
+         * one or the other, decided at param-homing time. */
+        Symbol pinned_local;
         struct sh_ipa_fn *next;
 };
 static struct sh_ipa_fn *sh_ipa_queue;
@@ -1989,6 +1999,18 @@ static void target(Node p) {
                     && sh_ipa_current->pinned_reg == 4
                     && p->x.argno == 0)
                         q = sh_ipa_current->pinned_param;
+                /* Phase E.2: Shape 2's pinned local plays the
+                 * same role as Shape 1's pinned parameter at the
+                 * ARG site. The redirect lets the existing kid-
+                 * chain rtarget walk propagate the local's
+                 * register down through INDIR(ADDRL(local)) and
+                 * elide the redundant load-into-r4 that would
+                 * otherwise appear before every call. */
+                else if (sh_ipa_current
+                         && sh_ipa_current->pinned_local
+                         && sh_ipa_current->pinned_reg == 4
+                         && p->x.argno == 0)
+                        q = sh_ipa_current->pinned_local;
                 if (q) {
                         rtarget(p, 0, q);
                         /* Propagate the arg register down through
@@ -7901,23 +7923,159 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
  * has IPA visibility. A leaf function (no calls) gets this for free
  * via the ncalls == 0 path; this helper is for the non-leaf case. */
 static int sh_ipa_all_callees_preserve_r4(struct sh_ipa_fn *e) {
-        int k, m;
+        int k;
         if (!e || e->n_direct_callees == 0)
                 return 0;
         for (k = 0; k < e->n_direct_callees; k++) {
                 Symbol tgt = e->direct_callees[k];
-                int found = 0;
-                for (m = 0; m < sh_ipa_count; m++)
-                        if (sh_ipa_arr[m]->f == tgt) {
-                                if (sh_ipa_arr[m]->writes_r4)
-                                        return 0;
-                                found = 1;
-                                break;
-                        }
-                if (!found)
+                /* sh_lookup_writes_r4 handles primary-entry,
+                 * sub-entry (.asm_entry FUN_X inside another
+                 * queue entry's body), and the conservative
+                 * extern fallback in one place. */
+                if (!tgt || !tgt->name)
+                        return 0;
+                if (sh_lookup_writes_r4(tgt->name))
                         return 0;
         }
         return 1;
+}
+
+/* Phase E.2: recursive search for any read of a Symbol via
+ * INDIR(ADDRL(local)) in a subtree. Used by the Shape 2 detector
+ * to verify the candidate local is referenced as an ordinary
+ * pointer-valued local with no surprises. */
+static int sh_ipa_subtree_reads_local(Node p, Symbol local) {
+        int i;
+        if (!p) return 0;
+        if (generic(p->op) == INDIR
+            && p->kids[0]
+            && generic(p->kids[0]->op) == ADDRL
+            && p->kids[0]->syms[0] == local)
+                return 1;
+        for (i = 0; i < NELEMS(p->kids); i++)
+                if (p->kids[i]
+                    && sh_ipa_subtree_reads_local(p->kids[i], local))
+                        return 1;
+        return 0;
+}
+
+/* Phase E.2: recursive check for ASGN whose LHS is ADDRL(local).
+ * The Shape 2 candidate must be assigned exactly once across the
+ * function body — additional writes invalidate the pin. */
+static int sh_ipa_root_writes_local(Node p, Symbol local) {
+        if (!p) return 0;
+        if (generic(p->op) == ASGN
+            && p->kids[0]
+            && generic(p->kids[0]->op) == ADDRL
+            && p->kids[0]->syms[0] == local)
+                return 1;
+        return 0;
+}
+
+/* Phase E.2: count ASGN-to-local roots across the captured body.
+ * Returns the count. Caller checks count == 1 for Shape 2
+ * eligibility. */
+static int sh_ipa_count_local_assigns(Symbol local) {
+        Code cp;
+        int n = 0;
+        for (cp = codehead.next; cp; cp = cp->next) {
+                Node nd;
+                if (cp->kind != Gen && cp->kind != Jump
+                    && cp->kind != Label)
+                        continue;
+                for (nd = cp->u.forest; nd; nd = nd->link)
+                        if (sh_ipa_root_writes_local(nd, local))
+                                n++;
+        }
+        return n;
+}
+
+/* Phase E.2: scan the body and find a Shape-2-eligible local.
+ *
+ * Eligibility:
+ *   - The local has pointer/integer type (4-byte register-sized).
+ *   - It is assigned exactly once (sh_ipa_count_local_assigns ==
+ *     1). The single assignment is the function's setup of this
+ *     "threaded value."
+ *   - It's not address-taken (`local->addressed == 0`) — pinning
+ *     to a register is incompatible with addresses being held.
+ *   - At least one CALL ARG-position references it via INDIR
+ *     (ADDRL(local)) so the pin actually pays off.
+ *
+ * Returns the qualifying Symbol or NULL.
+ *
+ * The caller is expected to additionally verify
+ * sh_ipa_all_callees_preserve_r4(e) before pinning, since Shape 2
+ * is only safe when r4 stays put across every call. */
+static Symbol sh_ipa_find_shape2_local(struct sh_ipa_fn *e) {
+        Code cp;
+        Symbol candidate = NULL;
+        Symbol second = NULL;
+        int saw_call_use = 0;
+
+        /* Pass 1: enumerate all locals that have a single ASGN
+         * root in the body. We need one and only one candidate;
+         * if multiple locals qualify we'd need a heuristic to
+         * pick (the one passed as ARG[0] of every call), which
+         * is more bookkeeping than warranted right now. Bail in
+         * that case. */
+        for (cp = codehead.next; cp; cp = cp->next) {
+                Node nd;
+                if (cp->kind != Gen && cp->kind != Jump
+                    && cp->kind != Label)
+                        continue;
+                for (nd = cp->u.forest; nd; nd = nd->link) {
+                        Symbol l;
+                        if (generic(nd->op) != ASGN
+                            || !nd->kids[0]
+                            || generic(nd->kids[0]->op) != ADDRL
+                            || !nd->kids[0]->syms[0])
+                                continue;
+                        l = nd->kids[0]->syms[0];
+                        if (l->addressed) continue;
+                        /* Must be a pointer or integer (4-byte
+                         * register-sized) — Shape 2 binds it to
+                         * one r4. Other sizes / types aren't
+                         * supported by this pass. */
+                        if (!l->type
+                            || l->type->size != 4)
+                                continue;
+                        if (sh_ipa_count_local_assigns(l) != 1)
+                                continue;
+                        if (candidate && candidate != l) {
+                                /* More than one single-assign
+                                 * candidate. Punt rather than
+                                 * pick wrong. */
+                                second = l;
+                                break;
+                        }
+                        candidate = l;
+                }
+                if (second) break;
+        }
+        if (second || !candidate) return NULL;
+
+        /* Pass 2: confirm the candidate is read in at least one
+         * CALL ARG-position. */
+        for (cp = codehead.next; cp; cp = cp->next) {
+                Node nd;
+                if (cp->kind != Gen && cp->kind != Jump
+                    && cp->kind != Label)
+                        continue;
+                for (nd = cp->u.forest; nd; nd = nd->link) {
+                        if (generic(nd->op) != ARG)
+                                continue;
+                        if (sh_ipa_subtree_reads_local(nd,
+                                                       candidate)) {
+                                saw_call_use = 1;
+                                break;
+                        }
+                }
+                if (saw_call_use) break;
+        }
+        if (!saw_call_use) return NULL;
+
+        return candidate;
 }
 
 /* Phase E.1b: recursive search for any INDIR(ADDRF(pinned)) in a
@@ -8355,6 +8513,46 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         }
         assert(!caller[i]);
         offset = 0;
+
+        /* Phase E.2: Shape 2 derived-local pin. If Shape 1 didn't
+         * engage (no pinned_param), the function isn't a leaf, and
+         * every direct callee preserves r4, look for a single-
+         * assigned read-only local used as the first ARG of every
+         * call. Pin it to r4 directly so the call sequence elides
+         * its redundant load-into-r4 setups.
+         *
+         * The pin is allowed to claim r4 even though r4 is the
+         * argreg(0) for the FIRST instruction of the function (the
+         * incoming p1). The local's setup expression naturally
+         * computes p1+K into r4 because both p1 and the local
+         * resolve to the same physical register; the codegen path
+         * for ASGN(ADDRL(local), ADDP4(INDIR(ADDRF(p1)), CNST(K)))
+         * lowers to `mov r4, r4 ; add #K, r4` which the existing
+         * mov-to-self peephole then trims. */
+        if (!sh_ipa_current->pinned_param
+            && ncalls > 0
+            && sh_ipa_all_callees_preserve_r4(e)) {
+                Symbol cand = sh_ipa_find_shape2_local(e);
+                if (dflag && cand)
+                        fprint(stderr,
+                               "[ipa-shape2] %s: cand=%s\n",
+                               f->name, cand->name);
+                if (cand && argregs[0]) {
+                        cand->sclass = REGISTER;
+                        if (askregvar(cand, argregs[0])) {
+                                sh_ipa_current->pinned_local = cand;
+                                sh_ipa_current->pinned_reg =
+                                        argregs[0]->x.regnode->number;
+                        } else {
+                                /* r4 already taken — Shape 2 can't
+                                 * fire. Restore default storage so
+                                 * the local goes to its normal
+                                 * stack home. */
+                                cand->sclass = AUTO;
+                        }
+                }
+        }
+
         gencode(caller, callee);
 
         usedmask[IREG] &= INTVAR;
