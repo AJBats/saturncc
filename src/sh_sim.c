@@ -180,12 +180,28 @@ static void visited_add(struct sh_visited *v, int insn,
 
 /* ── Walker context ───────────────────────────────────────────── */
 
+/* Per-label first-visit state tracker. Used by the loop recognizer:
+ * when we hit a backward branch, the loop's entry state is the
+ * state we observed the FIRST time we walked through the loop's
+ * top label. Subtracting that from the state at the branch gives
+ * us per-iteration deltas — and a register that decremented by
+ * exactly 1 is the SHC dt-loop counter. */
+#define SH_SIM_LABELSTATE_CAP 512
+
+struct sh_label_state {
+        int insn;
+        struct sh_state state;
+};
+
 struct sh_walker {
         struct sh_asm_insn **insns;
         int n_insns;
         sh_sim_callee_lookup lookup;
         void *user;
         struct sh_visited visited;
+
+        struct sh_label_state label_states[SH_SIM_LABELSTATE_CAP];
+        int n_label_states;
 
         /* rts exits we've reached, expressed as r4's abstract value
          * at the rts. The verdict at the end is the meet of all
@@ -258,19 +274,26 @@ static void mark_writes_unknown(struct sh_state *s, struct sh_asm_insn *in) {
                         s->r[i] = av_unknown();
 }
 
+/* Compute the size in bytes implied by a mov/mac mnemonic suffix. */
+static long sized_step(const char *m) {
+        if (!m) return 4;
+        if (strstr(m, ".b")) return 1;
+        if (strstr(m, ".w")) return 2;
+        return 4; /* .l default */
+}
+
 /* Apply a memory-operand's side effects on its base register
- * (post-increment, pre-decrement). Called separately so the
- * destination-register handlers above stay focused. */
+ * (post-increment, pre-decrement). The base reg's abstract value
+ * advances by ±size; if it was already unknown, it stays unknown.
+ *
+ * Used by the mov.X / mac.X handler. The handler also marks any
+ * load-destination register unknown — base-reg post-inc/pre-dec
+ * is the *precisely trackable* side effect; the loaded value
+ * coming from memory is what we don't track. */
 static void apply_mem_side_effects(struct sh_state *s,
                                    struct sh_asm_insn *in) {
+        long step = sized_step(in->mnemonic);
         int i;
-        long step;
-        const char *m = in->mnemonic;
-        /* Determine the size in bytes from the mnemonic suffix. */
-        if (!m) return;
-        if (strstr(m, ".b")) step = 1;
-        else if (strstr(m, ".w")) step = 2;
-        else step = 4;  /* default to .l for mov.l, mac.l, mul.l etc. */
         for (i = 0; i < in->n_operands; i++) {
                 struct sh_operand *op = &in->operands[i];
                 if (op->kind != SH_OP_MEM) continue;
@@ -284,6 +307,79 @@ static void apply_mem_side_effects(struct sh_state *s,
                                 base->value -= step;
                 }
         }
+}
+
+/* Memory-form mov.X / mac.X handler. Only the load-destination
+ * register goes unknown; base registers with post-inc / pre-dec
+ * update precisely. Returns 1 always (handled). */
+static int handle_mem_op(struct sh_state *s, struct sh_asm_insn *in) {
+        int i;
+        /* Phase 1: precise side-effects on base regs. Done first so
+         * the post-inc/pre-dec deltas are not lost if a destination
+         * mark below races with a base mark. */
+        apply_mem_side_effects(s, in);
+        /* Phase 2: any operand that's a REG appearing as the load
+         * destination becomes unknown. We approximate: if both a
+         * MEM and a REG operand are present, the REG operand is
+         * either the source (store) or the destination (load).
+         * Stores don't change a GP reg; loads change the REG.
+         *
+         * Heuristic: in SH-2 syntax `mov.X mem, dst` has MEM as
+         * operand 0 and REG as operand 1 → load. `mov.X src, mem`
+         * has REG as operand 0 and MEM as operand 1 → store. So
+         * REG-as-operand[1] with MEM-as-operand[0] = load
+         * destination.
+         *
+         * mac.X has both operands as MEM and writes only mach/macl
+         * (sregs we don't track) — no GP destination to mark. */
+        if (in->n_operands >= 2
+            && in->operands[0].kind == SH_OP_MEM
+            && in->operands[1].kind == SH_OP_REG) {
+                s->r[in->operands[1].reg] = av_unknown();
+        }
+        /* Defensive: if the parser also flagged any other GP write
+         * we haven't accounted for, propagate it. (E.g., mov.X with
+         * a third operand or other oddity.) Skip the base regs we
+         * just updated precisely. */
+        for (i = 0; i < SH_SIM_NREGS; i++) {
+                int is_base = 0;
+                int j;
+                if (!(in->writes & (1u << i))) continue;
+                for (j = 0; j < in->n_operands; j++)
+                        if (in->operands[j].kind == SH_OP_MEM
+                            && in->operands[j].reg == i
+                            && (in->operands[j].mem_mode == SH_MEM_POSTINC
+                                || in->operands[j].mem_mode
+                                   == SH_MEM_PREDEC)) {
+                                is_base = 1;
+                                break;
+                        }
+                if (is_base) continue;
+                if (in->n_operands >= 2
+                    && in->operands[1].kind == SH_OP_REG
+                    && in->operands[1].reg == i
+                    && in->operands[0].kind == SH_OP_MEM)
+                        continue; /* already marked above */
+                s->r[i] = av_unknown();
+        }
+        return 1;
+}
+
+/* `dt rN` — decrement rN by 1, set T flag. Tracked precisely so
+ * the dt-loop recognizer can spot a counter going N → N-1. T-flag
+ * tracking is out of scope for now (the recognizer infers loop
+ * structure from the back-edge shape, not from T). */
+static int handle_dt(struct sh_state *s, struct sh_asm_insn *in) {
+        int dest;
+        if (in->n_operands != 1) return 0;
+        if (in->operands[0].kind != SH_OP_REG) return 0;
+        dest = in->operands[0].reg;
+        switch (s->r[dest].kind) {
+        case AV_CONST:      s->r[dest].value -= 1; break;
+        case AV_INPUT_OFF:  s->r[dest].value -= 1; break;
+        case AV_UNKNOWN:    break;
+        }
+        return 1;
 }
 
 /* Master per-instruction transfer function. Returns 0 if the
@@ -332,20 +428,53 @@ static int interpret(struct sh_state *s, struct sh_asm_insn *in) {
                 return 1;
         }
 
-        /* Loads/stores — the destination register (if any) becomes
-         * unknown; post-inc / pre-dec base registers update. */
+        if (strcmp(m, "dt") == 0)
+                if (handle_dt(s, in))
+                        return 1;
+
+        /* Loads/stores — destination unknown; post-inc/pre-dec
+         * base registers update precisely. */
         if (strncmp(m, "mov.", 4) == 0
-            || strncmp(m, "mac.", 4) == 0) {
-                mark_writes_unknown(s, in);
-                apply_mem_side_effects(s, in);
-                return 1;
-        }
+            || strncmp(m, "mac.", 4) == 0)
+                return handle_mem_op(s, in);
 
         /* Default: any write is unknown, no memory side effects we
          * can describe precisely. The parser's writes mask carries
          * the truth of which registers got clobbered. */
         mark_writes_unknown(s, in);
         return 1;
+}
+
+/* Look up / record the first state observed at a given instruction
+ * index. Returns 1 if we found an existing entry (state written
+ * into *out) or 0 otherwise. */
+static int label_state_get(struct sh_walker *w, int insn,
+                           struct sh_state *out) {
+        int i;
+        for (i = 0; i < w->n_label_states; i++)
+                if (w->label_states[i].insn == insn) {
+                        *out = w->label_states[i].state;
+                        return 1;
+                }
+        return 0;
+}
+
+static void label_state_record(struct sh_walker *w, int insn,
+                               const struct sh_state *state) {
+        if (w->n_label_states >= SH_SIM_LABELSTATE_CAP) {
+                w->gave_up = 1;
+                return;
+        }
+        /* First-recorder wins; later visits compare against this. */
+        {
+                int i;
+                for (i = 0; i < w->n_label_states; i++)
+                        if (w->label_states[i].insn == insn)
+                                return;
+        }
+        w->label_states[w->n_label_states].insn = insn;
+        w->label_states[w->n_label_states].state = *state;
+        w->n_label_states++;
 }
 
 /* ── Walker helpers ───────────────────────────────────────────── */
@@ -373,6 +502,101 @@ static int find_label(struct sh_asm_insn **insns, int n_insns,
                         return i;
         }
         return -1;
+}
+
+/* SHC dt-loop recognizer.
+ *
+ * Hypothesis: the walker just reached a backward branch (target
+ * before current insn) and the branch target was visited before
+ * with state `entry`. Current state at the branch is `cur`.
+ *
+ * The SHC idiom we recognize:
+ *   mov #N, rK     ! constant initializer somewhere before the loop
+ *   loop:
+ *     <body that advances some regs by constants>
+ *     dt rK        ! decrement counter, set T flag if zero
+ *     bf/s loop    ! branch back if T not set (i.e., not yet zero)
+ *     <delay slot, runs every iter incl. last>
+ *
+ * Recognition: between entry and cur, exactly one register's
+ * abstract value should have transitioned AV_CONST(N) → AV_CONST(N-1)
+ * — that's the loop counter. Other registers may have changed by
+ * a constant (the per-iteration delta) or not at all.
+ *
+ * On success, fills *post with the state after the loop has run
+ * its full N iterations: counter = 0, each register that changed
+ * by a constant Δ_per_iter advances to entry + N*Δ_per_iter, and
+ * any register that's already AV_UNKNOWN stays unknown. Returns 1.
+ *
+ * On failure (no AV_CONST register decremented by 1, multiple
+ * candidates, or per-iter deltas that aren't constant), returns 0.
+ * The walker then falls back to giving up the loop conservatively. */
+static int try_recognize_dt_loop(const struct sh_state *entry,
+                                 const struct sh_state *cur,
+                                 struct sh_state *post) {
+        int counter_reg = -1;
+        long counter_n = 0;
+        int i;
+
+        /* Find the counter: a register that went AV_CONST(N) →
+         * AV_CONST(N-1) for some N >= 1. */
+        for (i = 0; i < SH_SIM_NREGS; i++) {
+                if (entry->r[i].kind == AV_CONST
+                    && cur->r[i].kind == AV_CONST
+                    && entry->r[i].value >= 1
+                    && cur->r[i].value == entry->r[i].value - 1) {
+                        if (counter_reg != -1)
+                                return 0; /* ambiguous — bail */
+                        counter_reg = i;
+                        counter_n = entry->r[i].value;
+                }
+        }
+        if (counter_reg < 0)
+                return 0;
+
+        /* Compute post-loop state. The counter ends at 0; every
+         * other register that has a constant-Δ relationship with
+         * its entry value advances by N * Δ_per_iter. */
+        *post = *cur;
+        post->r[counter_reg] = av_const(0);
+
+        for (i = 0; i < SH_SIM_NREGS; i++) {
+                struct sh_av e = entry->r[i];
+                struct sh_av c = cur->r[i];
+                long delta;
+
+                if (i == counter_reg)
+                        continue;
+
+                /* If both abstract values are the same kind and
+                 * differ only in `value`, treat the difference as
+                 * a per-iteration delta. */
+                if (e.kind == c.kind
+                    && (e.kind == AV_CONST
+                        || (e.kind == AV_INPUT_OFF
+                            && e.input_reg == c.input_reg))) {
+                        delta = c.value - e.value;
+                        if (delta == 0) {
+                                /* No change — keep entry value
+                                 * (== cur value here). */
+                                post->r[i] = e;
+                        } else {
+                                /* The current state already shows
+                                 * one iteration's worth of delta.
+                                 * Apply (N-1) more on top of cur
+                                 * to get the full N iterations'
+                                 * effect. */
+                                struct sh_av v = c;
+                                v.value += (counter_n - 1) * delta;
+                                post->r[i] = v;
+                        }
+                } else {
+                        /* Kind/input changed — can't precisely
+                         * project. Conservative. */
+                        post->r[i] = av_unknown();
+                }
+        }
+        return 1;
 }
 
 /* Recognize a branch's mnemonic. Returns one of:
@@ -428,6 +652,11 @@ static void walk(struct sh_walker *w, int insn_index,
                         w->gave_up = 1;
                         return;
                 }
+                /* Record the first state observed at this insn —
+                 * the loop recognizer needs it as the loop's entry
+                 * state when a back-edge later targets here. */
+                label_state_record(w, insn_index, &state);
+                if (w->gave_up) return;
 
                 in = w->insns[insn_index];
 
@@ -505,14 +734,40 @@ static void walk(struct sh_walker *w, int insn_index,
                         }
 
                         if (bk == 1 || bk == 2) {
-                                /* Conditional: walk taken AND not-
-                                 * taken paths from the same state.
-                                 * For /s the delay-slot effect is
-                                 * already applied; for non-/s the
-                                 * fall-through skips just past the
-                                 * branch. */
+                                /* Conditional. If this is a
+                                 * backward branch that loops back
+                                 * to a previously-visited label,
+                                 * try the SHC dt-loop recognizer:
+                                 * project the loop's full effect
+                                 * onto the fall-through state and
+                                 * skip re-walking. Otherwise,
+                                 * conventional: walk both paths. */
                                 int fall = insn_index
                                         + (bk == 2 ? 2 : 1);
+                                if (target_idx < insn_index) {
+                                        struct sh_state entry_at_loop;
+                                        struct sh_state post;
+                                        if (label_state_get(w, target_idx,
+                                                            &entry_at_loop)
+                                            && try_recognize_dt_loop(
+                                                    &entry_at_loop,
+                                                    &branch_state,
+                                                    &post)) {
+                                                /* Recognized. The
+                                                 * not-taken path
+                                                 * (fall-through)
+                                                 * with the projected
+                                                 * post-loop state
+                                                 * is the only
+                                                 * successor we need
+                                                 * to analyze: when
+                                                 * the loop exits,
+                                                 * control proceeds
+                                                 * to `fall`. */
+                                                walk(w, fall, post);
+                                                return;
+                                        }
+                                }
                                 walk(w, target_idx, branch_state);
                                 walk(w, fall, branch_state);
                                 return;
