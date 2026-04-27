@@ -159,6 +159,19 @@ static enum sh_sim_verdict sh_sim_dbg_oracle(const char *name,
         return SH_SIM_WRITES;
 }
 
+/* Per-sub-entry verdict printer for -d-sim. Iteration continues
+ * (return 1) after every emitted line. */
+static int sh_sim_dbg_visit_entry(const char *name,
+                                  enum sh_sim_verdict v,
+                                  void *user) {
+        (void)user;
+        fprint(stderr, "[sim entry %s] %s\n",
+               name ? name : "?",
+               v == SH_SIM_PRESERVES ? "PRESERVES_R4"
+                                     : "WRITES_R4");
+        return 1;
+}
+
 /* Switch-dispatch state recorded by sh_switchjump() during front-end
  * processing, emitted by sh_emit_switch_dispatch() after body capture.
  * Only one switch table per function is supported (enough for Daytona).
@@ -3547,6 +3560,17 @@ static void sh_parse_one_line(struct sh_asm_insn *insn,
                 /* Operands for diagnostic dump only — directives have
                  * no register effects. */
                 insn->n_operands = sh_p_parse_operands(&p, insn->operands);
+                /* `.asm_entry FUN_X` — sub-entry alias inside an asm
+                 * body. The directive's first operand is the symbol
+                 * name; emit will expand to `.global FUN_X` +
+                 * `FUN_X:` so the linker exports the entry. Phase A
+                 * treats the position as a sub-entry start point. */
+                if (insn->mnemonic
+                    && strcmp(insn->mnemonic, ".asm_entry") == 0
+                    && insn->n_operands >= 1
+                    && insn->operands[0].kind == SH_OP_LABEL) {
+                        insn->is_entry = 1;
+                }
                 return;
         }
 
@@ -3698,6 +3722,10 @@ struct sh_asm_body *sh_parse_asm_text(const char *text) {
                        v == SH_SIM_PRESERVES ? "PRESERVES_R4"
                                              : "WRITES_R4",
                        body->n_insns);
+                /* Each .asm_entry sub-entry gets its own verdict
+                 * line, printed in source order. */
+                sh_sim_visit_entries(body, sh_sim_dbg_oracle, NULL,
+                                     sh_sim_dbg_visit_entry, NULL);
         }
         return body;
 }
@@ -3794,6 +3822,20 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
         if (in->is_label && !in->is_directive) {
                 /* Standalone `LABEL:` line. */
                 print("%s:\n", in->mnemonic ? in->mnemonic : "?");
+                return;
+        }
+        if (in->is_entry) {
+                /* `.asm_entry FUN_X` expands into the assembler-
+                 * visible form: `.global FUN_X` then `FUN_X:`. The
+                 * source-level directive name doesn't survive emit
+                 * — the linker only sees the global label. */
+                const char *name = (in->n_operands >= 1
+                                    && in->operands[0].kind == SH_OP_LABEL
+                                    && in->operands[0].label)
+                                   ? in->operands[0].label
+                                   : "?";
+                print("\t.global\t%s\n", name);
+                print("%s:\n", name);
                 return;
         }
         if (in->is_directive) {

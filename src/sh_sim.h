@@ -86,6 +86,15 @@ struct sh_asm_insn {
         unsigned char is_label;
         unsigned char is_comment;
         unsigned char is_unknown;
+        unsigned char is_entry;   /* `.asm_entry FUN_X` — declares an
+                                   * additional entry point inside an
+                                   * asm body. Emit expands this to
+                                   * `.global FUN_X` + `FUN_X:`. Phase
+                                   * A treats it as the start of a
+                                   * separately-analyzable sub-entry
+                                   * for preserves-r4 inference. The
+                                   * entry-target name lives in
+                                   * operands[0].label. */
         int line_no;
 };
 
@@ -155,5 +164,26 @@ enum sh_sim_verdict sh_sim_preserves_r4(struct sh_asm_insn **insns,
 enum sh_sim_verdict sh_sim_preserves_r4_body(struct sh_asm_body *body,
                                              sh_sim_callee_lookup lookup,
                                              void *user);
+
+/* Sub-entry visitor: invoke `cb` once per `.asm_entry FUN_X`
+ * directive in the body, passing the entry's symbol name and the
+ * preserves-r4 verdict computed by simulating from that entry's
+ * position. Used by Phase A to compute writes_r4 for sub-entries
+ * the linker exports via PROVIDE chains.
+ *
+ * The visitor does NOT visit the body's primary entry (index 0) —
+ * that's the caller's responsibility via sh_sim_preserves_r4_body.
+ *
+ * Return 0 from the callback to stop iteration; non-zero to
+ * continue. */
+typedef int (*sh_sim_entry_visitor)(const char *entry_name,
+                                    enum sh_sim_verdict v,
+                                    void *user);
+
+void sh_sim_visit_entries(struct sh_asm_body *body,
+                          sh_sim_callee_lookup lookup,
+                          void *lookup_user,
+                          sh_sim_entry_visitor visit,
+                          void *visit_user);
 
 #endif /* SH_SIM_H */

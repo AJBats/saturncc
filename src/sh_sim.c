@@ -1013,3 +1013,42 @@ enum sh_sim_verdict sh_sim_preserves_r4_body(struct sh_asm_body *body,
         free(arr);
         return v;
 }
+
+void sh_sim_visit_entries(struct sh_asm_body *body,
+                          sh_sim_callee_lookup lookup,
+                          void *lookup_user,
+                          sh_sim_entry_visitor visit,
+                          void *visit_user)
+{
+        struct sh_asm_insn **arr;
+        int i;
+        if (!body || body->n_insns <= 0 || !visit)
+                return;
+        arr = (struct sh_asm_insn **)malloc(body->n_insns
+                                            * sizeof(*arr));
+        if (!arr) return;
+        for (i = 0; i < body->n_insns; i++)
+                arr[i] = &body->insns[i];
+
+        for (i = 0; i < body->n_insns; i++) {
+                struct sh_asm_insn *in = arr[i];
+                const char *name;
+                enum sh_sim_verdict v;
+                if (!in->is_entry) continue;
+                if (in->n_operands < 1
+                    || in->operands[0].kind != SH_OP_LABEL
+                    || !in->operands[0].label)
+                        continue;
+                name = in->operands[0].label;
+                /* Simulate forward starting AT the asm_entry
+                 * directive. The walker treats it as a no-op label
+                 * and steps past, so the analysis effectively
+                 * begins on the next executable instruction. */
+                v = sh_sim_preserves_r4(arr, body->n_insns, i,
+                                        lookup, lookup_user);
+                if (!visit(name, v, visit_user))
+                        break;
+        }
+
+        free(arr);
+}
