@@ -95,6 +95,9 @@ int sh_asm_body_n_insns(struct sh_asm_body *body);
 struct sh_asm_insn *sh_asm_body_insn(struct sh_asm_body *body, int i);
 char *sh_asm_insn_src_text(struct sh_asm_insn *in);
 static void sh_drain_ipa_queue(void);
+static int sh_function_is_naked_shim(struct sh_ipa_fn *e);
+static int sh_lookup_writes_r4(const char *name);
+static enum sh_sim_verdict sh_phase_a_oracle(const char *name, void *user);
 static void global(Symbol);
 static void import(Symbol);
 static void local(Symbol);
@@ -1564,6 +1567,134 @@ static void sh_build_cgraph_and_order(void) {
                         sh_tarjan_scc(i);
 }
 
+/* Build a flat array of sh_asm_insn pointers from a queue
+ * entry's Code list, in source order. Caller frees the array.
+ * Returns the array (with *n_out set) or NULL if the entry has
+ * no ASM_INSN nodes. Skips Code records that aren't Gen, and
+ * within Gen records skips non-ASM_INSN forest entries. */
+static struct sh_asm_insn **sh_collect_asm_insns(struct sh_ipa_fn *e,
+                                                 int *n_out) {
+        struct sh_asm_insn **arr;
+        Code cp;
+        int n = 0, cap = 0;
+        *n_out = 0;
+        for (cp = e->code_head.next; cp; cp = cp->next) {
+                Node node;
+                if (cp->kind != Gen && cp->kind != Jump
+                    && cp->kind != Label)
+                        continue;
+                for (node = cp->u.forest; node; node = node->link) {
+                        if (specific(node->op) != ASM_INSN+V)
+                                continue;
+                        n++;
+                }
+        }
+        if (n == 0) return NULL;
+        cap = n;
+        arr = allocate(cap * sizeof(*arr), PERM);
+        n = 0;
+        for (cp = e->code_head.next; cp; cp = cp->next) {
+                Node node;
+                if (cp->kind != Gen && cp->kind != Jump
+                    && cp->kind != Label)
+                        continue;
+                for (node = cp->u.forest; node; node = node->link) {
+                        struct sh_asm_insn *in;
+                        if (specific(node->op) != ASM_INSN+V)
+                                continue;
+                        in = node->syms[0]
+                             ? node->syms[0]->x.asm_insn : NULL;
+                        if (!in) continue;
+                        arr[n++] = in;
+                }
+        }
+        *n_out = n;
+        return arr;
+}
+
+/* Recursion guard for the on-demand sub-entry oracle path.
+ * Real recursion is unlikely in our corpus (sub-entries don't
+ * call back into the same parent's primary in a cycle), but
+ * the guard prevents pathological inputs from wedging the
+ * compiler. */
+static int sh_phase_a_oracle_depth;
+#define SH_PHASE_A_ORACLE_MAX_DEPTH 8
+
+/* Look up the writes_r4 verdict for a callee by name.
+ *
+ *   1. Scan sh_ipa_arr for a primary entry matching the name.
+ *      Use that entry's cached writes_r4. The reverse-topo
+ *      analysis order ensures the answer is already computed
+ *      for any direct callee a function asks about.
+ *
+ *   2. Otherwise, scan every queue entry's body for a
+ *      `.asm_entry <name>` directive. If one matches, simulate
+ *      from that directive's position to get a sub-entry verdict
+ *      on demand. The recursion-depth guard stops runaway calls.
+ *
+ *   3. Otherwise, conservative: return 1 (writes). Externs
+ *      outside the queue fall here.
+ *
+ * Returns 0 (preserves) or 1 (writes / unknown).
+ */
+static int sh_lookup_writes_r4(const char *name) {
+        int i;
+        if (!name) return 1;
+
+        /* Primary entry. */
+        for (i = 0; i < sh_ipa_count; i++) {
+                struct sh_ipa_fn *e = sh_ipa_arr[i];
+                if (e && e->f && e->f->name
+                    && strcmp(e->f->name, name) == 0)
+                        return e->writes_r4 ? 1 : 0;
+        }
+
+        /* Sub-entry: walk parent bodies on demand. */
+        if (sh_phase_a_oracle_depth >= SH_PHASE_A_ORACLE_MAX_DEPTH)
+                return 1;
+        sh_phase_a_oracle_depth++;
+        for (i = 0; i < sh_ipa_count; i++) {
+                struct sh_ipa_fn *parent = sh_ipa_arr[i];
+                struct sh_asm_insn **arr;
+                int n_total = 0, j, entry_idx = -1;
+                arr = sh_collect_asm_insns(parent, &n_total);
+                if (!arr || n_total == 0)
+                        continue;
+                for (j = 0; j < n_total; j++) {
+                        struct sh_asm_insn *in = arr[j];
+                        if (in->is_entry
+                            && in->n_operands >= 1
+                            && in->operands[0].kind == SH_OP_LABEL
+                            && in->operands[0].label
+                            && strcmp(in->operands[0].label, name)
+                               == 0) {
+                                entry_idx = j;
+                                break;
+                        }
+                }
+                if (entry_idx < 0)
+                        continue;
+                {
+                        enum sh_sim_verdict v;
+                        v = sh_sim_preserves_r4(arr, n_total,
+                                                entry_idx,
+                                                sh_phase_a_oracle,
+                                                NULL);
+                        sh_phase_a_oracle_depth--;
+                        return v == SH_SIM_PRESERVES ? 0 : 1;
+                }
+        }
+        sh_phase_a_oracle_depth--;
+        return 1;
+}
+
+static enum sh_sim_verdict sh_phase_a_oracle(const char *name,
+                                             void *user) {
+        (void)user;
+        return sh_lookup_writes_r4(name) ? SH_SIM_WRITES
+                                         : SH_SIM_PRESERVES;
+}
+
 /* Phase C: reverse-topological analysis pass that populates
  * writes_r4 on every queue entry. Drain order is NOT changed by
  * this; only the cached answer is set. The main drain loop still
@@ -1581,16 +1712,44 @@ static void sh_build_cgraph_and_order(void) {
  * answer on asm-bodied functions like the FUN_06044F30 shim
  * Stage 4 will bring in. */
 static void sh_analyze_writes_r4(void) {
-        int i, j, k;
+        int i, j;
         for (i = 0; i < sh_scc_order_len; i++) {
                 struct sh_ipa_fn *e = sh_ipa_arr[sh_scc_order[i]];
                 Code cp;
                 e->writes_r4 = 0;
 
-                /* Direct writes from asm-derived Nodes in this
-                 * function's body. Walk the captured Code list
-                 * for Gen records and inspect each ASM_INSN+V
-                 * Node's parsed writes mask. */
+                /* Naked-shim path: the simulator can answer
+                 * precisely. Replaces the old "any ASM_INSN write
+                 * → conservative" check, which was too coarse for
+                 * functions like FUN_06044E3C that advance r4
+                 * across a counted loop and restore it before rts.
+                 * The simulator's oracle queries other queue
+                 * entries' cached writes_r4 by name, so the
+                 * reverse-topo order keeps the answers correct. */
+                if (sh_function_is_naked_shim(e)) {
+                        struct sh_asm_insn **arr;
+                        int n = 0;
+                        enum sh_sim_verdict v = SH_SIM_WRITES;
+                        arr = sh_collect_asm_insns(e, &n);
+                        if (arr && n > 0) {
+                                v = sh_sim_preserves_r4(
+                                        arr, n, 0,
+                                        sh_phase_a_oracle, NULL);
+                        }
+                        e->writes_r4 = v == SH_SIM_PRESERVES ? 0 : 1;
+                        continue;
+                }
+
+                /* Mixed body path: the existing per-Node walk for
+                 * direct writes from asm-derived Nodes in the
+                 * captured DAG. The simulator isn't applicable
+                 * here because C-derived Nodes aren't in its
+                 * vocabulary. Inheritance from callees uses the
+                 * same lookup helper the simulator's oracle does,
+                 * so sub-entries (.asm_entry FUN_X labels inside
+                 * other queue entries' asm bodies) are findable
+                 * even though they aren't standalone queue
+                 * entries. */
                 for (cp = e->code_head.next; cp && !e->writes_r4;
                      cp = cp->next) {
                         Node n;
@@ -1612,30 +1771,20 @@ static void sh_analyze_writes_r4(void) {
                 if (e->writes_r4)
                         continue;
 
-                /* Inheritance from callees: leaf (no direct calls)
-                 * optimistically preserves r4; non-leaf inherits
-                 * from any callee that already writes r4 (which —
-                 * because we walk in reverse-topo order — has
-                 * already been analyzed). External callees
-                 * (outside the TU) get the conservative ABI
-                 * default. */
+                /* Inheritance from callees. Each direct callee is
+                 * a Symbol pointer; resolve to a writes_r4 verdict
+                 * by name via sh_lookup_writes_r4 (handles
+                 * primaries + sub-entries + extern fallback). */
                 for (j = 0; j < e->n_direct_callees; j++) {
                         Symbol tgt = e->direct_callees[j];
-                        int found = 0;
-                        for (k = 0; k < sh_ipa_count; k++)
-                                if (sh_ipa_arr[k]->f == tgt) {
-                                        if (sh_ipa_arr[k]->writes_r4)
-                                                e->writes_r4 = 1;
-                                        found = 1;
-                                        break;
-                                }
-                        if (!found) {
-                                /* External callee (outside the TU).
-                                 * Conservative: assume it writes r4. */
+                        if (!tgt || !tgt->name) {
                                 e->writes_r4 = 1;
-                        }
-                        if (e->writes_r4)
                                 break;
+                        }
+                        if (sh_lookup_writes_r4(tgt->name)) {
+                                e->writes_r4 = 1;
+                                break;
+                        }
                 }
         }
 }
