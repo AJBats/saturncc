@@ -1577,32 +1577,28 @@ static void sh_build_cgraph_and_order(void) {
                         sh_tarjan_scc(i);
 }
 
-/* Build a flat array of sh_asm_insn pointers from a queue
- * entry's Code list, in source order. Caller frees the array.
- * Returns the array (with *n_out set) or NULL if the entry has
- * no ASM_INSN nodes. Skips Code records that aren't Gen, and
- * within Gen records skips non-ASM_INSN forest entries. */
-static struct sh_asm_insn **sh_collect_asm_insns(struct sh_ipa_fn *e,
-                                                 int *n_out) {
-        struct sh_asm_insn **arr;
+/* Count ASM_INSN nodes in a single queue entry's Code list. */
+static int sh_count_asm_insns(struct sh_ipa_fn *e) {
         Code cp;
-        int n = 0, cap = 0;
-        *n_out = 0;
+        int n = 0;
         for (cp = e->code_head.next; cp; cp = cp->next) {
                 Node node;
                 if (cp->kind != Gen && cp->kind != Jump
                     && cp->kind != Label)
                         continue;
-                for (node = cp->u.forest; node; node = node->link) {
-                        if (specific(node->op) != ASM_INSN+V)
-                                continue;
-                        n++;
-                }
+                for (node = cp->u.forest; node; node = node->link)
+                        if (specific(node->op) == ASM_INSN+V)
+                                n++;
         }
-        if (n == 0) return NULL;
-        cap = n;
-        arr = allocate(cap * sizeof(*arr), PERM);
-        n = 0;
+        return n;
+}
+
+/* Append ASM_INSN nodes from a single queue entry's Code list
+ * into `arr`, returning the new count. Skips non-ASM_INSN
+ * Nodes. Caller is responsible for capacity. */
+static int sh_append_asm_insns(struct sh_ipa_fn *e,
+                               struct sh_asm_insn **arr, int n) {
+        Code cp;
         for (cp = e->code_head.next; cp; cp = cp->next) {
                 Node node;
                 if (cp->kind != Gen && cp->kind != Jump
@@ -1617,6 +1613,61 @@ static struct sh_asm_insn **sh_collect_asm_insns(struct sh_ipa_fn *e,
                         if (!in) continue;
                         arr[n++] = in;
                 }
+        }
+        return n;
+}
+
+/* Does this insn array contain an `rts`? Used to decide whether
+ * the SHC drop-through chain has terminated. */
+static int sh_array_has_rts(struct sh_asm_insn **arr, int n) {
+        int i;
+        for (i = 0; i < n; i++)
+                if (arr[i]->mnemonic
+                    && strcmp(arr[i]->mnemonic, "rts") == 0)
+                        return 1;
+        return 0;
+}
+
+/* Build a flat array of sh_asm_insn pointers for analysis.
+ *
+ * SHC multi-entry-point convention: short asm shims (one or two
+ * instructions, no rts) drop through into the next function's
+ * body. To analyze e's preserves-r4 status correctly, we have to
+ * walk past e's last instruction into the adjacent functions
+ * defined after it, until a body containing at least one rts is
+ * seen. This mirrors the actual program flow at runtime.
+ *
+ * We chain up to SH_SIM_MAX_CHAIN entries to bound work; if no
+ * rts appears in that window, the simulator's own walker will
+ * eventually run off the end and bail conservatively.
+ *
+ * Caller provides a `start` queue entry. Returns the assembled
+ * array (PERM-allocated) and the count via *n_out. */
+#define SH_SIM_MAX_CHAIN 16
+
+static struct sh_asm_insn **sh_collect_asm_insns(struct sh_ipa_fn *start,
+                                                 int *n_out) {
+        struct sh_asm_insn **arr;
+        struct sh_ipa_fn *e;
+        int total_cap = 0;
+        int n = 0;
+        int hops = 0;
+        *n_out = 0;
+        if (!start) return NULL;
+        for (e = start; e && hops < SH_SIM_MAX_CHAIN;
+             e = e->next, hops++)
+                total_cap += sh_count_asm_insns(e);
+        if (total_cap == 0) return NULL;
+        arr = allocate(total_cap * sizeof(*arr), PERM);
+        hops = 0;
+        for (e = start; e && hops < SH_SIM_MAX_CHAIN;
+             e = e->next, hops++) {
+                n = sh_append_asm_insns(e, arr, n);
+                /* Stop chaining once we've collected a body with
+                 * at least one rts — control flow can terminate
+                 * here, no need to drag in more. */
+                if (sh_array_has_rts(arr, n))
+                        break;
         }
         *n_out = n;
         return arr;
