@@ -213,6 +213,36 @@ Done remotely on their side.
 **Stage 5 — broad-corpus regression.** Run the broad-corpus pass
 race compile, expect 183 pass / 0 crash to hold.
 
+## 4.5. Known limitations
+
+These came out of the 74a8bd5 code review. None are blockers; all
+are flagged here so a future regression has a reference.
+
+- **D3 dedup is immediate-prev only.** The backward scan walks past
+  comments only — an intervening `.global FOO` or `.type FOO,
+  @function` between a source `.balign 4` and the label defeats
+  dedup, producing a redundant `.balign 4`. In practice `.L_*`
+  labels are GNU local labels (never `.global`), so the pattern
+  doesn't occur in the corpus. If a future use case hits it, widen
+  the backward scan to skip non-data directives generally.
+
+- **Naming check is prefix-match.** `strncmp(name, ".L_pool_", 8)`
+  fires on `.L_pool_idx_table` even if the label is the start of a
+  byte lookup table that doesn't need 4-alignment. No corpus
+  examples today; flag for review when the namespace expands.
+
+- **`.balign 2` is mostly ceremony.** SH-2 instruction stream has
+  natural 2-byte alignment, so `.L_wpool_*` after instructions is
+  always 2-aligned without intervention. The directive is load-
+  bearing only when an odd-byte data block precedes the wpool
+  label — the corpus doesn't have such cases. Emit anyway as
+  defensive-against-future-regression.
+
+- **No normalizer regtest.** `asm_normalize.py`'s `DROP_DIR_RE`
+  change (added `balign`) isn't directly tested. Coverage is
+  indirect: tier-1 byte-match dashboard would diff if the regex
+  reordering broke. Worth a unit test if the normalizer grows.
+
 ## 5. What NOT to do
 
 - **Don't try to byte-count the section** to emit alignment only

@@ -72,7 +72,23 @@ struct sh_operand {
 struct sh_asm_insn {
         char *src_text;       /* original line for diagnostics; emit
                                * does not read this in Stage 2+. */
-        char *mnemonic;       /* canonicalized; NULL on parse failure */
+        char *mnemonic;       /* canonicalized; NULL on parse failure.
+                               * For is_label && !is_directive: the
+                               * label name. For is_directive (with or
+                               * without is_label): the directive name
+                               * (e.g. ".long"). When both are set on
+                               * a combined-line record (`LABEL:
+                               * .directive`), mnemonic carries the
+                               * directive — use `label_name` for the
+                               * label. */
+        char *label_name;     /* set whenever is_label is set; carries
+                               * the label name uniformly across both
+                               * standalone-label and combined-label
+                               * forms. Naming-based passes (e.g.
+                               * sh_compute_pool_alignment) consult
+                               * this; the existing combined-line emit
+                               * path prints from src_text verbatim
+                               * and so doesn't need it. */
         int n_operands;
         struct sh_operand operands[3];
 

@@ -971,6 +971,11 @@ int FUN_pool_align(void) asm {
 .L_no_data:
     rts
     nop
+.L_pool_e: .long 0xCAFEBABE
+.L_wpool_f: .byte 0x03, 0x04
+.L_other_g: .4byte 0x00000000
+.L_wpool_pin:
+    .long 0xFEEDFACE
 }
 EOF
 pool_out="$(mktemp)"
@@ -998,6 +1003,26 @@ check_emits  '\.balign 4' '.L_pool_a'   || ok=0
 check_emits  '\.balign 2' '.L_wpool_b'  || ok=0
 check_no_emit             '.L_other_c'  || ok=0   # not a pool name
 check_no_emit             '.L_no_data'  || ok=0   # no follow-on data
+# Combined-line form (`LABEL: directive` on one line). The parser
+# stores label_name separately from the directive mnemonic; the
+# pool-alignment pass reads label_name. Without that field, naming
+# check would silently miss combined records. Caught in 74a8bd5
+# code review.
+check_emits  '\.balign 4' '.L_pool_e'   || ok=0   # combined .L_pool_*
+check_emits  '\.balign 2' '.L_wpool_f'  || ok=0   # combined .L_wpool_*
+check_no_emit             '.L_other_g'  || ok=0   # combined non-pool
+# Trigger-semantic pin: a `.L_wpool_*` label followed by `.long`
+# data. Under naming-based trigger this emits `.balign 2` (mov.w
+# access). Under a regression to structural-lookahead-on-.long it
+# would emit `.balign 4`. The check below FAILS if anyone reverts
+# to structural — that's the point. Originally over-fired on 1,246
+# wpool sites in DaytonaCCEReverse race build.
+check_emits  '\.balign 2' '.L_wpool_pin' || ok=0
+awk -v lbl='.L_wpool_pin:' '
+    /\.balign 4/ { aligned4[NR+1]=1 }
+    $0 ~ "^" lbl { if (aligned4[NR]) bad=1 }
+    END { exit bad ? 1 : 0 }
+' "$pool_out" || ok=0
 # .L_pool_d: source already has .balign 4; ours must NOT add a second.
 # Count adjacent .balign 4 lines preceding .L_pool_d.
 n_pool_d_align=$(awk '

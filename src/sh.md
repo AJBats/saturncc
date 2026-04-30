@@ -3786,17 +3786,39 @@ static void sh_parse_one_line(struct sh_asm_insn *insn,
                 /* Capture the label name for completeness. */
                 {
                         const char *e = strchr(content, ':');
-                        if (e)
+                        if (e) {
                                 insn->mnemonic = stringn((char *)content,
                                                          e - content);
+                                insn->label_name = insn->mnemonic;
+                        }
                 }
                 return;
         }
 
         /* Directive? */
         if (*p == '.') {
-                /* Read the directive name (`.long`, `.short`, etc.) */
                 const char *start = p;
+                /* Disambiguate: a `.`-prefixed identifier followed
+                 * by `:` is a GNU local label (e.g. `.L_pool_X:`),
+                 * NOT a directive. The combined-line branch below
+                 * handles that case. Without this lookahead the
+                 * combined-line `.L_pool_X: .long Y` form parses
+                 * `.L_pool_X` as the directive name and silently
+                 * loses the label, which was masked by the
+                 * standalone-form-only regtest until 74a8bd5's
+                 * code review caught it. */
+                {
+                        const char *q = p;
+                        while ((*q >= 'a' && *q <= 'z')
+                               || (*q >= 'A' && *q <= 'Z')
+                               || *q == '.' || *q == '_'
+                               || (*q >= '0' && *q <= '9')) q++;
+                        if (*q == ':') {
+                                /* Fall through to combined-line. */
+                                goto combined_label;
+                        }
+                }
+                /* Read the directive name (`.long`, `.short`, etc.) */
                 while ((*p >= 'a' && *p <= 'z')
                        || (*p >= 'A' && *p <= 'Z')
                        || *p == '.' || *p == '_'
@@ -3822,7 +3844,11 @@ static void sh_parse_one_line(struct sh_asm_insn *insn,
 
         /* Combined `LABEL: instruction` form (e.g. `LP0: .long _x`).
          * For Stage 1, treat the line as if the instruction part
-         * starts after the colon. */
+         * starts after the colon. Reachable both fall-through from
+         * the standard parse order (LABEL doesn't start with `.`)
+         * and via `goto combined_label` from the directive branch
+         * (LABEL starts with `.` like `.L_pool_X:`). */
+        combined_label:
         {
                 const char *colon = NULL, *q = content;
                 while (((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
@@ -3836,6 +3862,14 @@ static void sh_parse_one_line(struct sh_asm_insn *insn,
                         if (*q && *q != '\n' && *q != '\r'
                             && *q != '!' && *q != ';') {
                                 insn->is_label = 1;
+                                /* Capture the label name (text from
+                                 * `content` up to the colon) so the
+                                 * naming-based pool-alignment pass
+                                 * can find it; mnemonic below will
+                                 * be overwritten with the directive
+                                 * name. */
+                                insn->label_name = stringn((char *)content,
+                                                           colon - content);
                                 p = q;
                                 content = q;
                                 /* Re-check directive after the colon */
@@ -3946,10 +3980,12 @@ static int sh_pool_align_for_label(const char *name) {
  * convention AND whose nearest preceding non-comment record is not
  * already an alignment directive (D3 dedup).
  *
- * Pre-attaching the value at parse time (rather than peeking at
- * emit time) lets both emit paths — sh_emit_asm_body's loop and
- * emit2's per-Node ASM_INSN+V case — fire uniformly without
- * threading iterator context through sh_emit_asm_insn. */
+ * Pre-attaching the value at parse time lets sh_emit_asm_insn fire
+ * uniformly whether it's invoked from the per-Node ASM_INSN+V case
+ * in emit2 (mixed-mode asm blocks) or from the naked-shim direct
+ * call path — neither emit context has cheap access to a list-
+ * iterator-style "next instruction" peek, so the lookup happens
+ * once at parse time and the emit just reads a flag. */
 static void sh_compute_pool_alignment(struct sh_asm_body *body) {
         int i, j;
         if (!body) return;
@@ -3966,7 +4002,13 @@ static void sh_compute_pool_alignment(struct sh_asm_body *body) {
                  * explicitly for clarity. */
                 if (in->is_entry) continue;
 
-                align = sh_pool_align_for_label(in->mnemonic);
+                /* `label_name` is set by sh_parse_one_line for both
+                 * standalone-label and combined-label-with-directive
+                 * records. mnemonic carries the directive name on
+                 * combined records, so reading it here would have
+                 * silently missed `.L_pool_X: .long Y` one-liners
+                 * (caught in code review of 74a8bd5). */
+                align = sh_pool_align_for_label(in->label_name);
                 if (align == 0) continue;
 
                 /* Backward scan: skip comments. If the nearest
