@@ -3898,6 +3898,85 @@ char *sh_asm_insn_src_text(struct sh_asm_insn *in) {
         return in ? in->src_text : NULL;
 }
 
+/* Is `mn` a data directive whose presence after a label means the
+ * label is a pool-style data target? Trigger set is locked at
+ * {.long, .4byte, .short, .word, .byte} per pool_alignment_design.md
+ * D1. .string/.ascii intentionally excluded — character data has no
+ * pool-style alignment use in this corpus. */
+static int sh_is_pool_data_directive(const char *mn) {
+        if (!mn) return 0;
+        return strcmp(mn, ".long") == 0
+            || strcmp(mn, ".4byte") == 0
+            || strcmp(mn, ".short") == 0
+            || strcmp(mn, ".word") == 0
+            || strcmp(mn, ".byte") == 0;
+}
+
+/* Is `mn` an alignment directive whose presence before a label
+ * already supplies alignment, so we should suppress our synthetic
+ * `.balign 4`? Per D3: any `.balign N` or `.align M` for any N/M.
+ * The corpus has no cases that need finer-grained "align ≥ 4"
+ * matching, so a simple presence check suffices. */
+static int sh_is_align_directive(const char *mn) {
+        if (!mn) return 0;
+        return strcmp(mn, ".balign") == 0
+            || strcmp(mn, ".align") == 0;
+}
+
+/* After parse, walk `body->insns[]` and set `needs_4byte_align` on
+ * each `is_label` record whose next non-comment record is a pool
+ * data directive AND whose nearest preceding non-comment record is
+ * not already an alignment directive.
+ *
+ * Pre-attaching the flag at parse time (rather than peeking at emit
+ * time) lets both emit paths — sh_emit_asm_body's loop and emit2's
+ * per-Node ASM_INSN+V case — fire uniformly without threading
+ * iterator context through sh_emit_asm_insn. See
+ * pool_alignment_design.md §D4. */
+static void sh_compute_pool_alignment(struct sh_asm_body *body) {
+        int i, j;
+        if (!body) return;
+        for (i = 0; i < body->n_insns; i++) {
+                struct sh_asm_insn *in = &body->insns[i];
+                struct sh_asm_insn *next = NULL;
+                struct sh_asm_insn *prev = NULL;
+
+                if (!in->is_label) continue;
+                /* Sub-entry expansions (`.asm_entry FUN_X`) are
+                 * entry points to executable code, not pool labels.
+                 * The forward-scan would not find a data directive
+                 * after them in any real body, but skip explicitly
+                 * for clarity. */
+                if (in->is_entry) continue;
+
+                /* Forward scan: skip comments. The first real
+                 * record decides whether we're a pool label. */
+                for (j = i + 1; j < body->n_insns; j++) {
+                        if (body->insns[j].is_comment) continue;
+                        next = &body->insns[j];
+                        break;
+                }
+                if (!next) continue;
+                if (!next->is_directive) continue;
+                if (!sh_is_pool_data_directive(next->mnemonic)) continue;
+
+                /* Backward scan: skip comments. If the nearest
+                 * preceding real record is an alignment directive,
+                 * the source already supplied alignment; suppress
+                 * the synthetic emit per D3. */
+                for (j = i - 1; j >= 0; j--) {
+                        if (body->insns[j].is_comment) continue;
+                        prev = &body->insns[j];
+                        break;
+                }
+                if (prev && prev->is_directive
+                    && sh_is_align_directive(prev->mnemonic))
+                        continue;
+
+                in->needs_4byte_align = 1;
+        }
+}
+
 struct sh_asm_body *sh_parse_asm_text(const char *text) {
         struct sh_asm_body *body;
         const char *p = text;
@@ -3949,6 +4028,14 @@ struct sh_asm_body *sh_parse_asm_text(const char *text) {
                         line_no++;
                 }
         }
+
+        /* Pool-label auto-alignment: post-parse, attach the
+         * needs_4byte_align flag to every label whose next non-
+         * comment record is a pool data directive. See
+         * pool_alignment_design.md. The compute pass runs
+         * unconditionally so the flag is set whether or not -d-sim
+         * is enabled. */
+        sh_compute_pool_alignment(body);
 
         /* -d-sim: post-parse, run the symbolic simulator on this
          * body and report its r4-preservation verdict. The result
@@ -4067,6 +4154,8 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
         }
         if (in->is_label && !in->is_directive) {
                 /* Standalone `LABEL:` line. */
+                if (in->needs_4byte_align)
+                        print("\t.balign 4\n");
                 print("%s:\n", in->mnemonic ? in->mnemonic : "?");
                 return;
         }
@@ -4099,6 +4188,8 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                 const char *s = in->src_text;
                 while (*s == ' ' || *s == '\t') s++;
                 if (in->is_label) {
+                        if (in->needs_4byte_align)
+                                print("\t.balign 4\n");
                         print("%s", s);
                 } else {
                         print("\t%s", s);

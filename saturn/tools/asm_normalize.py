@@ -35,7 +35,7 @@ import re
 import sys
 
 DROP_DIR_RE = re.compile(
-    r'^\s*\.(section|type|global|globl|align|text|file|ident)\b'
+    r'^\s*\.(section|type|global|globl|align|balign|text|file|ident)\b'
 )
 LABEL_DEF_RE = re.compile(r'^\s*([._A-Za-z][._A-Za-z0-9]*)\s*:')
 POOL_NEXT_RE = re.compile(r'\.(long|short|word|byte|4byte)\b')

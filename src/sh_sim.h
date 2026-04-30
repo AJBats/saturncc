@@ -95,6 +95,18 @@ struct sh_asm_insn {
                                    * for preserves-r4 inference. The
                                    * entry-target name lives in
                                    * operands[0].label. */
+        unsigned char needs_4byte_align; /* set by sh_compute_pool_alignment
+                                   * on `is_label` records whose next
+                                   * non-comment record is a data
+                                   * directive (.long/.4byte/.short/
+                                   * .word/.byte). Emit prefixes
+                                   * `.balign 4` so deletions that
+                                   * shift downstream pools by a non-
+                                   * 4-aligned amount don't produce
+                                   * "offset to unaligned destination"
+                                   * at assembly time. No-op at
+                                   * baseline (existing pools are
+                                   * already 4-aligned). */
         int line_no;
 };
 
