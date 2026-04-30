@@ -939,34 +939,36 @@ fi
 rm -f "$dir_out"
 
 # 4y. Pool-label auto-alignment: the compiler must emit `.balign 4`
-# immediately before any label whose next non-comment record is a pool
-# data directive (.long / .4byte / .short / .word / .byte). Restores
-# layout stability under non-4-aligned upstream shrinks. Driven by the
-# DaytonaCCEReverse FUN_06036CF8 deletion case — see
+# immediately before `.L_pool_*` labels (mov.l targets, 4-align
+# required) and `.balign 2` immediately before `.L_wpool_*` labels
+# (mov.w targets, 2-align required). Naming-based trigger; non-pool
+# labels and source-supplied alignment do NOT trigger emission.
+# Driven by the DaytonaCCEReverse FUN_06036CF8 deletion case — see
 # saturn/workstreams/pool_alignment_design.md.
 #
 # Five trigger cases in one body:
-#   LP_long  → label + .long      → expect .balign 4
-#   LP_byte  → label + .byte      → expect .balign 4 (per subagent
-#                                    audit of D:/.../race/*.s)
-#   LP_short → label + .short     → expect .balign 4
-#   LP_pre   → label preceded by  → expect NO .balign 4 (D3 dedup)
-#                .balign 4
-#   LP_inst  → label + instruction→ expect NO .balign 4 (not a pool)
+#   .L_pool_a   → mov.l pool       → expect .balign 4
+#   .L_wpool_b  → mov.w pool       → expect .balign 2
+#   .L_other_c  → non-pool label   → expect no auto-emit (Class B
+#                                    bug from sha 9c7cc50)
+#   .L_pool_d   → preceded by      → expect no second .balign 4
+#                  .balign 4         (D3 source-align dedup)
+#   .L_no_data  → label + insn,    → expect no auto-emit
+#                  no follow-on
 cat > /tmp/regtest.c <<'EOF'
 int FUN_pool_align(void) asm {
     rts
     nop
-LP_long:
+.L_pool_a:
     .4byte  0x12345678
-LP_byte:
+.L_wpool_b:
     .byte   0x01, 0x02
-LP_short:
-    .short  0x0042
+.L_other_c:
+    .4byte  0xCAFE0BAD
     .balign 4
-LP_pre:
+.L_pool_d:
     .4byte  0xDEADBEEF
-LP_inst:
+.L_no_data:
     rts
     nop
 }
@@ -974,39 +976,38 @@ EOF
 pool_out="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c "$pool_out" 2>/dev/null
 ok=1
-# Trigger cases: .balign 4 must appear immediately before each label.
-# Use awk to verify the line *immediately above* each label is .balign 4.
-check_aligned() {
-    awk -v lbl="$1:" '
-        /\.balign 4/ { last=NR; aligned[NR+1]=1 }
+# Verify: directive `dir` ($1) appears immediately before label `lbl` ($2).
+check_emits() {
+    local dir="$1" lbl="$2"
+    awk -v dir="$dir" -v lbl="$lbl:" '
+        $0 ~ dir { aligned[NR+1]=1 }
         $0 ~ "^" lbl { if (aligned[NR]) found=1 }
         END { exit found ? 0 : 1 }
     ' "$pool_out"
 }
-check_not_aligned() {
-    # The label's predecessor must NOT be a synthesized .balign 4.
-    # We check that no .balign 4 immediately precedes the label,
-    # except when the .balign 4 was source-supplied (LP_pre case)
-    # which is allowed.
-    awk -v lbl="$1:" '
-        /\.balign 4/ { aligned[NR+1]=1 }
+# Verify: label `lbl` is NOT immediately preceded by any .balign.
+check_no_emit() {
+    local lbl="$1"
+    awk -v lbl="$lbl:" '
+        /\.balign/ { aligned[NR+1]=1 }
         $0 ~ "^" lbl { if (aligned[NR]) bad=1 }
         END { exit bad ? 1 : 0 }
     ' "$pool_out"
 }
-check_aligned LP_long  || ok=0
-check_aligned LP_byte  || ok=0
-check_aligned LP_short || ok=0
-# LP_pre: source already has .balign 4; ours must NOT add a second.
-# Count how many .balign 4 appear immediately before LP_pre.
-n_pre_align=$(awk '
-    /\.balign 4/ { last=NR }
-    /^LP_pre:/   { if (last == NR-1) print "1"; if (last == NR-2) print "2" }
-' "$pool_out" | head -1)
-[ "$n_pre_align" = "1" ] || ok=0   # exactly one (the source one)
-check_not_aligned LP_inst || ok=0  # label-then-instruction: no align
+check_emits  '\.balign 4' '.L_pool_a'   || ok=0
+check_emits  '\.balign 2' '.L_wpool_b'  || ok=0
+check_no_emit             '.L_other_c'  || ok=0   # not a pool name
+check_no_emit             '.L_no_data'  || ok=0   # no follow-on data
+# .L_pool_d: source already has .balign 4; ours must NOT add a second.
+# Count adjacent .balign 4 lines preceding .L_pool_d.
+n_pool_d_align=$(awk '
+    /\.balign 4/ { run++; next }
+    /^\.L_pool_d:/ { print run; exit }
+    { run=0 }
+' "$pool_out")
+[ "$n_pool_d_align" = "1" ] || ok=0   # exactly one (the source one)
 if [ "$ok" = "1" ]; then
-    pass "regtest: pool-label auto-alignment (D1 trigger + D3 dedup)"
+    pass "regtest: pool-label auto-alignment (naming-based trigger + D3 dedup)"
 else
     fail "regtest: pool-label auto-alignment wrong — inspect $pool_out"
 fi

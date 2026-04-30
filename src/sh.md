@@ -3898,23 +3898,9 @@ char *sh_asm_insn_src_text(struct sh_asm_insn *in) {
         return in ? in->src_text : NULL;
 }
 
-/* Is `mn` a data directive whose presence after a label means the
- * label is a pool-style data target? Trigger set is locked at
- * {.long, .4byte, .short, .word, .byte} per pool_alignment_design.md
- * D1. .string/.ascii intentionally excluded — character data has no
- * pool-style alignment use in this corpus. */
-static int sh_is_pool_data_directive(const char *mn) {
-        if (!mn) return 0;
-        return strcmp(mn, ".long") == 0
-            || strcmp(mn, ".4byte") == 0
-            || strcmp(mn, ".short") == 0
-            || strcmp(mn, ".word") == 0
-            || strcmp(mn, ".byte") == 0;
-}
-
 /* Is `mn` an alignment directive whose presence before a label
  * already supplies alignment, so we should suppress our synthetic
- * `.balign 4`? Per D3: any `.balign N` or `.align M` for any N/M.
+ * emit? Per D3: any `.balign N` or `.align M` for any N/M.
  * The corpus has no cases that need finer-grained "align ≥ 4"
  * matching, so a simple presence check suffices. */
 static int sh_is_align_directive(const char *mn) {
@@ -3923,42 +3909,65 @@ static int sh_is_align_directive(const char *mn) {
             || strcmp(mn, ".align") == 0;
 }
 
-/* After parse, walk `body->insns[]` and set `needs_4byte_align` on
- * each `is_label` record whose next non-comment record is a pool
- * data directive AND whose nearest preceding non-comment record is
- * not already an alignment directive.
+/* Look at the label name and return the alignment we should emit
+ * before it (4 or 2), or 0 if no auto-alignment is warranted.
  *
- * Pre-attaching the flag at parse time (rather than peeking at emit
- * time) lets both emit paths — sh_emit_asm_body's loop and emit2's
- * per-Node ASM_INSN+V case — fire uniformly without threading
- * iterator context through sh_emit_asm_insn. See
- * pool_alignment_design.md §D4. */
+ * Naming-based trigger per the project convention used by
+ * DaytonaCCEReverse:
+ *
+ *   `.L_pool_*`  — mov.l target, 4-byte alignment required.
+ *   `.L_wpool_*` — mov.w target, 2-byte alignment required.
+ *   anything else — no auto-emit.
+ *
+ * History: the first cut (sha 9c7cc50) used a structural trigger —
+ * "any label followed by .long/.4byte/.short/.word/.byte gets
+ * .balign 4". That over-fired on .L_wpool_* labels (forced 4-align
+ * where 2-align was correct) and on non-pool labels (.L_braf_ret_*,
+ * .L_data_*, etc.) that happened to precede data directives in
+ * code. Cumulative shift across 1,268 over-emissions blew the
+ * 12-bit displacement budget on long-distance bsr/bra in the race
+ * module. The naming convention is stable and encodes the access
+ * size; using it removes both classes of false positives. */
+static int sh_pool_align_for_label(const char *name) {
+        if (!name) return 0;
+        /* Check .L_wpool_ first because .L_pool_ is a strict prefix
+         * substring — but only of strings starting with ".L_pool_".
+         * ".L_wpool_" begins with ".L_w" so it can't match the
+         * ".L_pool_" prefix; either order is safe in practice. */
+        if (strncmp(name, ".L_wpool_", 9) == 0)
+                return 2;
+        if (strncmp(name, ".L_pool_", 8) == 0)
+                return 4;
+        return 0;
+}
+
+/* After parse, walk `body->insns[]` and set `pool_align` on each
+ * `is_label` record whose name matches the project pool-naming
+ * convention AND whose nearest preceding non-comment record is not
+ * already an alignment directive (D3 dedup).
+ *
+ * Pre-attaching the value at parse time (rather than peeking at
+ * emit time) lets both emit paths — sh_emit_asm_body's loop and
+ * emit2's per-Node ASM_INSN+V case — fire uniformly without
+ * threading iterator context through sh_emit_asm_insn. */
 static void sh_compute_pool_alignment(struct sh_asm_body *body) {
         int i, j;
         if (!body) return;
         for (i = 0; i < body->n_insns; i++) {
                 struct sh_asm_insn *in = &body->insns[i];
-                struct sh_asm_insn *next = NULL;
                 struct sh_asm_insn *prev = NULL;
+                int align;
 
                 if (!in->is_label) continue;
                 /* Sub-entry expansions (`.asm_entry FUN_X`) are
                  * entry points to executable code, not pool labels.
-                 * The forward-scan would not find a data directive
-                 * after them in any real body, but skip explicitly
-                 * for clarity. */
+                 * The naming check would naturally exclude them
+                 * (FUN_X doesn't start with .L_pool_) but skip
+                 * explicitly for clarity. */
                 if (in->is_entry) continue;
 
-                /* Forward scan: skip comments. The first real
-                 * record decides whether we're a pool label. */
-                for (j = i + 1; j < body->n_insns; j++) {
-                        if (body->insns[j].is_comment) continue;
-                        next = &body->insns[j];
-                        break;
-                }
-                if (!next) continue;
-                if (!next->is_directive) continue;
-                if (!sh_is_pool_data_directive(next->mnemonic)) continue;
+                align = sh_pool_align_for_label(in->mnemonic);
+                if (align == 0) continue;
 
                 /* Backward scan: skip comments. If the nearest
                  * preceding real record is an alignment directive,
@@ -3973,7 +3982,7 @@ static void sh_compute_pool_alignment(struct sh_asm_body *body) {
                     && sh_is_align_directive(prev->mnemonic))
                         continue;
 
-                in->needs_4byte_align = 1;
+                in->pool_align = (unsigned char)align;
         }
 }
 
@@ -4154,8 +4163,10 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
         }
         if (in->is_label && !in->is_directive) {
                 /* Standalone `LABEL:` line. */
-                if (in->needs_4byte_align)
+                if (in->pool_align == 4)
                         print("\t.balign 4\n");
+                else if (in->pool_align == 2)
+                        print("\t.balign 2\n");
                 print("%s:\n", in->mnemonic ? in->mnemonic : "?");
                 return;
         }
@@ -4188,8 +4199,10 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                 const char *s = in->src_text;
                 while (*s == ' ' || *s == '\t') s++;
                 if (in->is_label) {
-                        if (in->needs_4byte_align)
+                        if (in->pool_align == 4)
                                 print("\t.balign 4\n");
+                        else if (in->pool_align == 2)
+                                print("\t.balign 2\n");
                         print("%s", s);
                 } else {
                         print("\t%s", s);

@@ -53,29 +53,48 @@ own pool labels.
 
 ## 2. Decisions to lock in
 
-### D1 — trigger heuristic
+### D1 — trigger heuristic (revised after sha 9c7cc50 over-fired)
 
-**Proposed:** for every `is_label` insn, walk forward through
-subsequent insns skipping comment-only / blank lines and any
-existing `.balign` / `.align` directives. If the next "real" insn
-is `is_directive` with `mnemonic` in:
+**Locked:** naming-based trigger. For every `is_label` insn, look
+at the label name:
 
-- `.long`
-- `.4byte`
-- `.short`
-- `.word`
+| Label name prefix | Emit         | Why                           |
+|-------------------|--------------|-------------------------------|
+| `.L_pool_`        | `.balign 4`  | mov.l target — 4-align needed |
+| `.L_wpool_`       | `.balign 2`  | mov.w target — 2-align needed |
+| (anything else)   | no auto-emit | not a pool by convention      |
 
-…then emit `.balign 4` ahead of the label. Otherwise no change.
+**History — what we tried first and why it failed.** The first cut
+(sha 9c7cc50) used a structural trigger: "any label whose next non-
+comment record is `.long`/`.4byte`/`.short`/`.word`/`.byte` gets
+`.balign 4`". Two over-firing classes broke
+DaytonaCCEReverse's `make -C decomp validate`:
 
-**Rejected alternative:** label-name regex (`.L_pool_*`, `.L_wpool_*`).
-Works for DaytonaCCEReverse's naming convention but locks the
-feature to that convention. Trigger by *next-token-is-data-directive*
-is naming-agnostic and works for any project consuming saturncc.
+1. **`.L_wpool_*` over-emission** (1,246 sites). These labels are
+   `mov.w` targets that need 2-byte alignment, not 4. The pristine
+   layout placed many of them at 2-aligned-but-not-4-aligned
+   offsets; forcing 4-align inserted up to 2 bytes of pad before
+   each, cumulative shift up to ~2,492 bytes.
+2. **Non-pool label over-emission** (22 sites). Labels like
+   `.L_braf_ret_*` and `.L_data_*` happened to precede data
+   directives in code paths but aren't pool targets — they
+   shouldn't have been aligned at all.
 
-**.short/.word inclusion rationale:** SH-2 `mov.w @(disp,PC)`
-computes the target as `(target & ~1) - (PC & ~3)` — the load PC
-is masked to 4-aligned. So a 16-bit pool entry must also live at
-a 4-aligned address. Per the request doc.
+The cumulative shift blew the 12-bit signed displacement budget
+of long-distance `bsr`/`bra` (±4,096 bytes), failing assembly.
+
+**Why naming wins here.** This whole feature is *for*
+DaytonaCCEReverse, and they have a stable, documented naming
+convention (`.L_pool_*` for `.long`-pools, `.L_wpool_*` for
+`.word`-pools). The naming convention encodes the *access size*
+that determines the alignment requirement — structural lookahead
+over directives can see only the data shape, not the access shape.
+
+**Future-proofing.** If another project consumes saturncc and uses
+a different convention, they can either rename their labels to
+match `.L_pool_*` / `.L_wpool_*`, or we re-add a configurable
+prefix list. The corpus today doesn't need that, so the design
+stays narrow.
 
 ### D2 — always emit vs conditional
 
@@ -223,3 +242,4 @@ race compile, expect 183 pass / 0 crash to hold.
 | Date | Note |
 |------|------|
 | 2026-04-29 | Initial design. Five stages; emit-time peek over peephole-mutation. |
+| 2026-04-30 | Revised D1 after the structural trigger over-fired in DaytonaCCEReverse's race build (1,246 wpool over-emissions + 22 non-pool over-emissions blew bsr displacement budget). Trigger now naming-based: `.L_pool_*` → `.balign 4`, `.L_wpool_*` → `.balign 2`, others → no emit. |

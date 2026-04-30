@@ -95,18 +95,20 @@ struct sh_asm_insn {
                                    * for preserves-r4 inference. The
                                    * entry-target name lives in
                                    * operands[0].label. */
-        unsigned char needs_4byte_align; /* set by sh_compute_pool_alignment
-                                   * on `is_label` records whose next
-                                   * non-comment record is a data
-                                   * directive (.long/.4byte/.short/
-                                   * .word/.byte). Emit prefixes
-                                   * `.balign 4` so deletions that
-                                   * shift downstream pools by a non-
-                                   * 4-aligned amount don't produce
-                                   * "offset to unaligned destination"
-                                   * at assembly time. No-op at
-                                   * baseline (existing pools are
-                                   * already 4-aligned). */
+        unsigned char pool_align; /* set by sh_compute_pool_alignment.
+                                   * 0 = nothing emitted; 4 = emit
+                                   * `.balign 4` (label is `.L_pool_*`
+                                   * convention — mov.l target needs
+                                   * 4-align); 2 = emit `.balign 2`
+                                   * (label is `.L_wpool_*` convention
+                                   * — mov.w target needs 2-align).
+                                   * Naming-based trigger; structural
+                                   * lookahead was tried (sha 9c7cc50)
+                                   * and reverted — over-fired on
+                                   * `.L_wpool_*` and on non-pool
+                                   * labels that happened to precede
+                                   * data directives, breaking
+                                   * displacement budgets. */
         int line_no;
 };
 
