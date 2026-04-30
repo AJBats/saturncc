@@ -470,7 +470,7 @@ extern void skipto(int tok, char set[]);
  * file-scope function body. Round-trip guarantee: bytes-in == bytes-out.
  * Only fires on the SH-2 target; other backends see `asm` as ID. */
 extern char *lex_asm_body(void);
-extern Tree asm_block(char *text);
+extern Tree asm_block(char *text, const char *src_file, int src_line);
 extern void error(const char *, ...);
 extern int fatal(const char *, const char *, int);
 extern void warning(const char *, ...);

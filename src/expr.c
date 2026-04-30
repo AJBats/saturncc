@@ -413,7 +413,7 @@ static Tree postfix(Tree p) {
  * parsed body on the Symbol's Xsymbol so dag.c's lowering can fan
  * it out into per-instruction Nodes. Other backends leave parse_asm
  * null and stay on the legacy text-blob path. */
-Tree asm_block(char *text) {
+Tree asm_block(char *text, const char *src_file, int src_line) {
 	Symbol s;
 	Tree p;
 
@@ -422,8 +422,13 @@ Tree asm_block(char *text) {
 	s->u.l.label = 0;
 	s->scope = LABELS;
 	s->generated = 1;
+	/* (src_file, src_line) is the source coordinate of the opening
+	 * `asm` keyword as captured by stmt.c / decl.c before
+	 * lex_asm_body() advanced the lexer past the body. The current
+	 * `src` global at this point reflects the closing `}`, which
+	 * isn't useful for diagnostics; use the captured opener instead. */
 	if (IR && IR->x.parse_asm)
-		s->x.asm_body = (*IR->x.parse_asm)(text);
+		s->x.asm_body = (*IR->x.parse_asm)(text, src_file, src_line);
 	p = tree(ASMB + V, voidtype, NULL, NULL);
 	p->u.sym = s;
 	return p;

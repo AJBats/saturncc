@@ -178,9 +178,14 @@ void statement(int loop, Swtch swp, int lev) {
 		        * closing `}` is the statement terminator. */
 		       char *text;
 		       Tree e;
+		       /* Capture src BEFORE lex_asm_body advances past
+		        * the body — at the opening `asm` token, src
+		        * points at the line of the keyword. */
+		       const char *opener_file = src.file;
+		       int opener_line = src.y;
 		       definept(NULL);
 		       text = lex_asm_body();
-		       e = asm_block(text);
+		       e = asm_block(text, opener_file, opener_line);
 		       listnodes(e, 0, 0);
 		       walk(NULL, 0, 0);
 		       deallocate(STMT);

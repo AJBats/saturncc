@@ -48,9 +48,13 @@ typedef struct {
 	 * asm parser leave it null (the asm body falls back to the
 	 * legacy text-blob emit path). expr.c's asm_block() invokes
 	 * this hook at tree-build time and stashes the result via
-	 * Xsymbol on the ASMB tree node's Symbol. See
+	 * Xsymbol on the ASMB tree node's Symbol. The (file, line) args
+	 * are the source coordinates of the `asm` keyword as tracked by
+	 * the LCC lexer, plumbed through so emitted line directives
+	 * can attribute GAS errors back to the original C source. See
 	 * saturn/workstreams/asm_shim_design.md §5a. */
-	struct sh_asm_body *(*parse_asm)(const char *text);
+	struct sh_asm_body *(*parse_asm)(const char *text,
+	                                 const char *file, int line);
 } Xinterface;
 extern int     askregvar(Symbol, Symbol);
 extern void    blkcopy(int, int, int, int, int, int[]);

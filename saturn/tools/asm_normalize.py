@@ -37,6 +37,11 @@ import sys
 DROP_DIR_RE = re.compile(
     r'^\s*\.(section|type|global|globl|align|balign|text|file|ident)\b'
 )
+# cpp-style line directive: `# 142 "race/FUN_X.c"`. saturncc emits these
+# so GAS attributes its error messages to the original C source instead
+# of the .s file. They generate no bytes and shouldn't perturb tier-1
+# byte-match diffs.
+LINE_DIR_RE = re.compile(r'^\s*#\s+\d+\s+"[^"]*"')
 LABEL_DEF_RE = re.compile(r'^\s*([._A-Za-z][._A-Za-z0-9]*)\s*:')
 POOL_NEXT_RE = re.compile(r'\.(long|short|word|byte|4byte)\b')
 ENTRY_RE = re.compile(r'^_?((?:FUN|sub)_[0-9A-Fa-f]+)\s*:')
@@ -224,6 +229,8 @@ def normalize(lines, func_name):
         if stripped.startswith('/*') or stripped.startswith('!'):
             continue
         if DROP_DIR_RE.match(line):
+            continue
+        if LINE_DIR_RE.match(line):
             continue
 
         # Trailing ! comment. SH-2 doesn't use ! in immediates.

@@ -172,6 +172,21 @@ void main_init(int argc, char *argv[]) {
 				outfile = argv[i];
 		}
 
+	/* Seed `firstfile` with the input filename so source coords are
+	 * meaningful even when the preprocessor stripped `# line`
+	 * directives (e.g. `cpp -P`). The lex.c flow assigns
+	 * `src.file = file` on every token; `file` is updated by the
+	 * `# line` handler in input.c. Without this seed, both stay
+	 * NULL until a `# line` directive arrives — and if none ever
+	 * does, source-coord-driven emit (cpp-style line directives in
+	 * .s output) silently no-ops. input.c's input_init() forwards
+	 * firstfile to `file` after the per-input clear. */
+	if (infile != NULL && strcmp(infile, "-") != 0) {
+		extern char *firstfile;
+		if (firstfile == NULL)
+			firstfile = string(infile);
+	}
+
 	if (infile != NULL && strcmp(infile, "-") != 0
 	&& freopen(infile, "r", stdin) == NULL) {
 		fprint(stderr, "%s: can't read `%s'\n", argv[0], infile);

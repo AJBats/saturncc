@@ -133,6 +133,22 @@ struct sh_asm_body {
         int n_insns;
         int n_capacity;
         char *raw_text;
+        /* Source coordinate of the `asm` keyword that opened this
+         * body — set by sh_parse_asm_text from the (file, line) args
+         * passed in by expr.c's asm_block() hook. Used during emit
+         * to print cpp-style `# LINE "FILE"` directives so GAS-
+         * emitted errors (undefined symbols, pcrel-too-far, etc.)
+         * cite the original C source instead of race.s line numbers.
+         * src_file is the original C source path (post-cpp `# line`
+         * tracking unwinds preprocessed inclusions); src_line_base
+         * is the line of the `asm` keyword. Each parsed insn carries
+         * its own `line_no` relative to the body text, so the file
+         * line of insn N is approximately
+         * `src_line_base + insn->line_no - 1` (varies slightly with
+         * whether the body opens on the same line as `asm {` or on
+         * the next line — emit-time logic handles both). */
+        const char *src_file;
+        int src_line_base;
 };
 
 /* ── Simulator public API. ────────────────────────────────────── */

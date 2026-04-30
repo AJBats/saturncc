@@ -149,6 +149,14 @@ Node listnodes(Tree tp, int tlab, int flab) {
 		    			s->scope = LABELS;
 		    			s->generated = 1;
 		    			s->x.asm_insn = in;
+		    			/* Carry the body pointer through to
+		    			 * the per-Node symbol so emit2's
+		    			 * ASM_INSN+V case can recover the
+		    			 * source coordinate (body->src_file,
+		    			 * body->src_line_base) and emit
+		    			 * cpp-style line directives ahead of
+		    			 * each instruction. */
+		    			s->x.asm_body = body;
 		    			list(newnode(ASM_INSN+V,
 		    			             NULL, NULL, s));
 		    		}

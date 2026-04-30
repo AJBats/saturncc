@@ -87,7 +87,13 @@ void input_init(int argc, char *argv[]) {
 	limit = cp = &buffer[MAXLINE+1];
 	bsize = -1;
 	lineno = 0;
-	file = NULL;
+	/* Seed `file` from `firstfile` (set by main_init from the input
+	 * filename) so source coords are meaningful before any `# line`
+	 * directive arrives. Without this, `cpp -P` output (which strips
+	 * line directives) leaves file=NULL throughout and downstream
+	 * source-coord-driven emit (e.g. saturncc's cpp-style line
+	 * directives in .s output) silently no-ops. */
+	file = firstfile;
 	fillbuf();
 	if (cp >= limit)
 		cp = limit;

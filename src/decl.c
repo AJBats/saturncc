@@ -794,6 +794,13 @@ static void funcdefn(int sclass, char *id, Type ty, Symbol params[], Coordinate 
 		Code blk;
 		char *text;
 		Tree e;
+		/* Capture src BEFORE lex_asm_body advances past the
+		 * body — at the opening `asm` token, src points at the
+		 * line of the keyword. The captured pair flows through
+		 * to sh_asm_body's src_file/src_line_base for line-
+		 * directive emission. */
+		const char *opener_file = src.file;
+		int opener_line = src.y;
 		walk(NULL, 0, 0);
 		blk = code(Blockbeg);
 		enterscope();
@@ -801,7 +808,7 @@ static void funcdefn(int sclass, char *id, Type ty, Symbol params[], Coordinate 
 		blk->u.block.locals = newarray(1, sizeof *blk->u.block.locals, FUNC);
 		blk->u.block.locals[0] = NULL;
 		text = lex_asm_body();
-		e = asm_block(text);
+		e = asm_block(text, opener_file, opener_line);
 		listnodes(e, 0, 0);
 		walk(NULL, 0, 0);
 		blk->u.block.level = level;

@@ -980,6 +980,15 @@ int FUN_pool_align(void) asm {
 EOF
 pool_out="$(mktemp)"
 "$RCC" -target=sh/hitachi /tmp/regtest.c "$pool_out" 2>/dev/null
+# Strip cpp-style line directives the compiler now emits between
+# instructions (so GAS errors cite C source). They're irrelevant
+# to alignment-adjacency checks but break naive "previous line"
+# tests; remove them up front so the awk patterns below see the
+# pure instruction stream. If a future change to line-directive
+# emission shape breaks this strip, both this and asm_normalize.py
+# need an update.
+pool_out_clean="$(mktemp)"
+grep -v '^# [0-9]' "$pool_out" > "$pool_out_clean"
 ok=1
 # Verify: directive `dir` ($1) appears immediately before label `lbl` ($2).
 check_emits() {
@@ -988,7 +997,7 @@ check_emits() {
         $0 ~ dir { aligned[NR+1]=1 }
         $0 ~ "^" lbl { if (aligned[NR]) found=1 }
         END { exit found ? 0 : 1 }
-    ' "$pool_out"
+    ' "$pool_out_clean"
 }
 # Verify: label `lbl` is NOT immediately preceded by any .balign.
 check_no_emit() {
@@ -997,7 +1006,7 @@ check_no_emit() {
         /\.balign/ { aligned[NR+1]=1 }
         $0 ~ "^" lbl { if (aligned[NR]) bad=1 }
         END { exit bad ? 1 : 0 }
-    ' "$pool_out"
+    ' "$pool_out_clean"
 }
 check_emits  '\.balign 4' '.L_pool_a'   || ok=0
 check_emits  '\.balign 2' '.L_wpool_b'  || ok=0
@@ -1022,21 +1031,84 @@ awk -v lbl='.L_wpool_pin:' '
     /\.balign 4/ { aligned4[NR+1]=1 }
     $0 ~ "^" lbl { if (aligned4[NR]) bad=1 }
     END { exit bad ? 1 : 0 }
-' "$pool_out" || ok=0
+' "$pool_out_clean" || ok=0
 # .L_pool_d: source already has .balign 4; ours must NOT add a second.
-# Count adjacent .balign 4 lines preceding .L_pool_d.
+# Count adjacent .balign 4 lines preceding .L_pool_d. Use the cleaned
+# stream (line directives stripped) so a `# N "file"` between the
+# source .balign and the label doesn't break the streak counter.
 n_pool_d_align=$(awk '
     /\.balign 4/ { run++; next }
     /^\.L_pool_d:/ { print run; exit }
     { run=0 }
-' "$pool_out")
+' "$pool_out_clean")
 [ "$n_pool_d_align" = "1" ] || ok=0   # exactly one (the source one)
 if [ "$ok" = "1" ]; then
     pass "regtest: pool-label auto-alignment (naming-based trigger + D3 dedup)"
 else
-    fail "regtest: pool-label auto-alignment wrong — inspect $pool_out"
+    fail "regtest: pool-label auto-alignment wrong — inspect $pool_out (raw) / $pool_out_clean (line-dirs stripped)"
 fi
-rm -f "$pool_out"
+rm -f "$pool_out" "$pool_out_clean"
+
+# 4z. Line directive emission: saturncc emits cpp-style
+# `# <line> "<file>"` directives ahead of each asm-body instruction
+# so GAS error messages cite the original C source instead of the
+# generated .s file. End-to-end test: compile a body with a known-
+# undefined `bsr`, assemble through sh-elf-as, verify the error
+# names the C source path and the C line of the bsr. This is the
+# whole acceptance signal for the feature.
+SH_AS_REG="/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-as.exe"
+LINE_WORK_WIN="D:\\Projects\\saturncc\\build\\cmp\\linedir_regtest"
+LINE_WORK_WSL="/mnt/d/Projects/saturncc/build/cmp/linedir_regtest"
+mkdir -p "$LINE_WORK_WSL"
+cat > "$LINE_WORK_WSL/probe.c" <<'EOF'
+extern int FUN_already_deleted(void);
+int FUN_caller(void) asm {
+    rts
+    nop
+    bsr  FUN_already_deleted
+    nop
+}
+EOF
+"$RCC" -target=sh/hitachi "$LINE_WORK_WSL/probe.c" "$LINE_WORK_WSL/probe.s" 2>/dev/null
+line_ok=1
+# Compiler-side check ALWAYS runs: must emit a `# 5 "...probe.c"`
+# directive (the bsr is on source line 5). Independent of whether
+# sh-elf-as is installed. Without this hoist, a CI without the SDK
+# would silently pass-through and miss real regressions.
+grep -qE "^# 5 \".*probe\.c\"$" "$LINE_WORK_WSL/probe.s" || line_ok=0
+# End-to-end check (GAS round trip) only when sh-elf-as is available.
+if [ -x "$SH_AS_REG" ]; then
+    as_err="$("$SH_AS_REG" -big -o "${LINE_WORK_WIN}\\probe.o" "${LINE_WORK_WIN}\\probe.s" 2>&1)"
+    echo "$as_err" | grep -qE "probe\.c:5: Error: .*FUN_already_deleted" || line_ok=0
+fi
+if [ "$line_ok" = "1" ]; then
+    if [ -x "$SH_AS_REG" ]; then
+        pass "regtest: cpp-style line directives propagate GAS errors to C source"
+    else
+        pass "regtest: cpp-style line directives emitted (sh-elf-as absent — end-to-end skipped)"
+    fi
+else
+    fail "regtest: line directive propagation wrong — inspect $LINE_WORK_WSL/probe.s"
+fi
+
+# 4z'. Same-line one-liner: pin behavior for `int FUN_X(void) asm { rts }`
+# where the entire body is on the same source line as the `asm` keyword.
+# The off-by-one in sh_asm_insn_src_line (`src_line_base + line_no - 1`)
+# was designed around multi-line bodies where line_no=1 corresponds to
+# the empty content right after `{`. For a one-liner, the single insn
+# is line_no=1 too, and its directive should still cite the keyword's
+# line — not keyword+1. Without this regtest the same-line shape was
+# untested.
+cat > "$LINE_WORK_WSL/oneliner.c" <<'EOF'
+int FUN_oneliner(void) asm { rts }
+EOF
+"$RCC" -target=sh/hitachi "$LINE_WORK_WSL/oneliner.c" "$LINE_WORK_WSL/oneliner.s" 2>/dev/null
+# `asm` is on line 1; the rts should be attributed to line 1 too.
+if grep -qE "^# 1 \".*oneliner\.c\"$" "$LINE_WORK_WSL/oneliner.s"; then
+    pass "regtest: line directive correct for same-line one-liner asm body"
+else
+    fail "regtest: same-line one-liner missing or mis-numbered directive — inspect $LINE_WORK_WSL/oneliner.s"
+fi
 
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated

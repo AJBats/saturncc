@@ -23,22 +23,29 @@ FUN_06044060:
 	mov.b	@r0,r0
 	tst	r0,r0
 	bt	L2
+# 425 "/tmp/validate_tu_pp.c"
 	mov	#1,r6
+# 426 "/tmp/validate_tu_pp.c"
 	shll16	r6
+# 427 "/tmp/validate_tu_pp.c"
 	neg	r6,r5
+# 428 "/tmp/validate_tu_pp.c"
 	mov	r6,r7
 	mov.l	L2346,r3
 	jsr	@r3
 	mov	r12,r4
 L2:
+# 432 "/tmp/validate_tu_pp.c"
 	mov	r9,r5
 	mov.l	L2347,r3
 	jsr	@r3
 	mov	r12,r4
+# 434 "/tmp/validate_tu_pp.c"
 	mov	r11,r0
 	mov.l	L2348,r3
 	jsr	@r3
 	mov	r12,r4
+# 436 "/tmp/validate_tu_pp.c"
 	mov	r10,r0
 	mov.l	L2349,r3
 	jsr	@r3

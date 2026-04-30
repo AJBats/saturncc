@@ -87,10 +87,14 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e);
  * §4-§5. */
 #include "sh_sim.h"
 
-struct sh_asm_body *sh_parse_asm_text(const char *text);
+struct sh_asm_body *sh_parse_asm_text(const char *text,
+                                      const char *file, int line);
 static void sh_dump_asm_body(const struct sh_asm_body *body,
                              const char *label);
 static void sh_emit_asm_insn(const struct sh_asm_insn *in);
+static void sh_emit_line_directive(const char *file, int line);
+static int  sh_asm_insn_src_line(const struct sh_asm_body *body,
+                                 const struct sh_asm_insn *in);
 int sh_asm_body_n_insns(struct sh_asm_body *body);
 struct sh_asm_insn *sh_asm_body_insn(struct sh_asm_body *body, int i);
 char *sh_asm_insn_src_text(struct sh_asm_insn *in);
@@ -2272,6 +2276,19 @@ static void emit2(Node p) {
                  * See saturn/workstreams/asm_shim_design.md §5c. */
                 Symbol ls = p->syms[0];
                 struct sh_asm_insn *in = ls->x.asm_insn;
+                struct sh_asm_body *body = ls->x.asm_body;
+                /* Emit a cpp-style line directive so GAS attributes
+                 * any subsequent error to the original C source
+                 * (race/FUN_X.c:LINE) instead of race.s:LINE. Skip
+                 * for is_comment insns (blank/comment lines) — they
+                 * produce no instruction emission, so their directive
+                 * would just be orphaned text overridden by the
+                 * next non-comment insn's directive. The helper
+                 * deduplicates against the last-emitted directive
+                 * so back-to-back insns on the same line are quiet. */
+                if (body && !in->is_comment)
+                        sh_emit_line_directive(body->src_file,
+                                sh_asm_insn_src_line(body, in));
                 if (sh_dflag_asm) {
                         /* Per-insn dump for regtest greppability.
                          * Flags: B=branch C=call D=directive L=label
@@ -4028,7 +4045,8 @@ static void sh_compute_pool_alignment(struct sh_asm_body *body) {
         }
 }
 
-struct sh_asm_body *sh_parse_asm_text(const char *text) {
+struct sh_asm_body *sh_parse_asm_text(const char *text,
+                                      const char *file, int line) {
         struct sh_asm_body *body;
         const char *p = text;
         int line_no = 1;
@@ -4039,6 +4057,8 @@ struct sh_asm_body *sh_parse_asm_text(const char *text) {
         body->insns = allocate(body->n_capacity
                                * sizeof(struct sh_asm_insn), PERM);
         body->n_insns = 0;
+        body->src_file = file;
+        body->src_line_base = line;
 
         while (*p) {
                 const char *line_start = p;
@@ -4192,6 +4212,47 @@ static void sh_emit_operand(const struct sh_operand *op, int as_directive) {
                 }
                 break;
         }
+}
+
+/* Tracks the most recent (file, line) printed via a cpp-style line
+ * directive so we don't spam consecutive identical directives. The
+ * comparison is pointer-equality on the file (LCC stores file paths
+ * via stringn, so the same source path is the same pointer) and
+ * integer-equality on the line. */
+static const char *sh_last_line_dir_file;
+static int sh_last_line_dir_line;
+
+/* Emit `# <line> "<file>"` if it would change the current source
+ * coord seen by GAS. This is the standard cpp-style line directive
+ * (also emitted by gcc and clang) — GAS uses it to attribute
+ * downstream error messages to the original source file/line
+ * instead of the .s file. No-op (silent) if file is NULL or empty,
+ * which can happen for synthesized asm bodies that lack a source
+ * coord. */
+static void sh_emit_line_directive(const char *file, int line) {
+        if (!file || !*file || line <= 0) return;
+        if (file == sh_last_line_dir_file
+            && line == sh_last_line_dir_line) return;
+        print("# %d \"%s\"\n", line, file);
+        sh_last_line_dir_file = file;
+        sh_last_line_dir_line = line;
+}
+
+/* Compute the source line of an asm-body insn, given its enclosing
+ * body. body->src_line_base is the line of the `asm` keyword; the
+ * body text starts on that same line (if `asm { rts ...` on one
+ * line) or on the next line (if `asm {\n    rts ...`). insn->line_no
+ * is 1-based within the body text. The mapping is therefore
+ * approximate to within +/- 1; emit-side accuracy good enough for
+ * GAS error messages to put the engineer on the right line block. */
+static int sh_asm_insn_src_line(const struct sh_asm_body *body,
+                                const struct sh_asm_insn *in) {
+        if (!body || !in) return 0;
+        /* line_no is 1-based within the body text. Body text starts
+         * on the same source line as the `asm` keyword (the part
+         * after `{`). So `line_no == 1` corresponds to that opener
+         * line — hence the `- 1`. */
+        return body->src_line_base + in->line_no - 1;
 }
 
 static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
@@ -8523,6 +8584,18 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         Symbol *caller = e->caller;
         Symbol *callee = e->callee;
         int ncalls = e->ncalls;
+        /* Reset line-directive dedup tracking. The static
+         * (sh_last_line_dir_file, sh_last_line_dir_line) holds
+         * pointers into PERM-arena strings; PERM gets deallocated
+         * between TUs (main.c:102), so a stale pointer would survive
+         * across compilations. Pointer-equality dedup means we only
+         * compare, never deref, so a stale pointer is technically
+         * safe — but bounding scope to per-function is cleaner and
+         * means the first emitted insn of every function gets a
+         * deterministic directive instead of being suppressed by
+         * whatever happened to compare-equal from a prior TU. */
+        sh_last_line_dir_file = NULL;
+        sh_last_line_dir_line = 0;
         /* Phase E: publish the current queue entry so per-node hooks
          * (target(), clobber(), doarg()) can consult IPA state. Paired
          * with the reset at end of function; leaving it set after the
@@ -8583,11 +8656,25 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
                         if (cp->kind != Gen)
                                 continue;
                         for (n = cp->u.forest; n; n = n->link) {
+                                struct sh_asm_insn *in;
+                                struct sh_asm_body *body;
                                 if (specific(n->op) != ASM_INSN+V)
                                         continue;
-                                sh_emit_asm_insn(n->syms[0]
-                                                 ? n->syms[0]->x.asm_insn
-                                                 : NULL);
+                                if (!n->syms[0]) continue;
+                                in   = n->syms[0]->x.asm_insn;
+                                body = n->syms[0]->x.asm_body;
+                                /* Same as the per-Node ASM_INSN+V
+                                 * case in emit2 — emit a cpp-style
+                                 * line directive so GAS errors cite
+                                 * the original C source. Skip for
+                                 * is_comment insns to avoid orphan
+                                 * directives that get overridden. */
+                                if (body && in && !in->is_comment)
+                                        sh_emit_line_directive(
+                                                body->src_file,
+                                                sh_asm_insn_src_line(
+                                                        body, in));
+                                sh_emit_asm_insn(in);
                         }
                 }
                 /* Restore Phase E state so the next function's
