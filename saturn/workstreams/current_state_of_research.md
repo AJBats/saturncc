@@ -7,9 +7,21 @@
 
 ## 0. Mission
 
-Identify (or reconstruct) the C compiler that was used to build **Daytona USA CCE** (Sega Saturn, August 1996, JP). Goal: produce byte-identical SH-2 machine code matching functions in the retail binary.
+**Decompile Daytona USA CCE** (Sega Saturn, August 1996, JP) to
+maintainable C. The historical "identify the compiler" investigation
+this doc tracks was step zero of that mission — without a matching
+compiler, decomp reduces to "C that looks like the asm" and the
+round-trip-to-bytes guarantee is lost. Saturncc is the compiler we
+built after the survey ruled out every available alternative; it
+exists to byte-match the original Hitachi SHC v5.0 output so that
+each lifted function can be verified against the retail binary.
 
-This investigation exists to support future decompilation work on the parent project [DaytonaCCEReverse](../../DaytonaCCEReverse/). The parent project's race-module transplant effort **does not require compiler matching to succeed** — matching is a separate goal, pursued because unmatched decomp reduces to "C that looks like the asm" and creates long-term maintenance debt.
+**Project framing as of 2026-04-30:** saturncc holds the wheel for
+the decomp work. The earlier framing of saturncc as a side
+investigation that "supports" decomp on the DaytonaCCEReverse side
+is superseded — saturncc-side now drives the decomp itself, with
+DaytonaCCEReverse-side asm-edit / mod-build work paused until the
+milestone (≥50% of race.bin lifted to C).
 
 **Prior eras, already concluded as failed**:
 - **GCC 2.6.3 patching era** (DaytonaUSAExplorer, SaturnReverseTest): 26 backend patches applied to Cygnus-adjacent GCC 2.6.3, reached 48/867 PASS (5.5%), marked "decomp era concluded." See [DaytonaUSAExplorer/workstreams/ICEBOX_compiler_patches.md](../../DaytonaUSAExplorer/workstreams/ICEBOX_compiler_patches.md) and [docs/gcc26_internals.md](../../DaytonaUSAExplorer/docs/gcc26_internals.md).

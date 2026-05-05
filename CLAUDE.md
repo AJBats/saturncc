@@ -4,9 +4,19 @@ This repo is a fork of [drh/lcc](https://github.com/drh/lcc) with a
 custom SH-2 backend. It's also the home of a Sega Saturn reverse
 engineering research project that lives under `saturn/`.
 
-**Primary goal:** byte-match Daytona USA CCE (1996) by hand-writing
-C source that, when compiled through our custom backend, reproduces
-the exact instruction bytes of the original Hitachi SHC output.
+**Primary goal:** decompile **Daytona USA CCE** (Saturn, 1996) to
+maintainable C. Saturncc is the compiler we built to make that
+decomp possible — it byte-matches Hitachi SHC's output, which is the
+verification gate that proves each lifted function is faithful to
+the retail binary. Byte-match is the gate; decomp is the goal.
+
+**Current milestone:** decompile ≥50% of race.bin to C, starting
+from the racing-physics rivers-of-data flow (FUN_06037E28 →
+060384C4 → 060386D8 → 06038A84 → ...) and walking outward through
+call chains and data-pointer chains. See
+[saturn/workstreams/](saturn/workstreams/) for active state. The
+DaytonaCCEReverse asm-edit / mod-build flow is paused while saturncc
+drives decomp; we hand back to that side after the milestone.
 
 ## Repo layout
 
