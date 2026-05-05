@@ -261,8 +261,9 @@ are flagged here so a future regression has a reference.
 ## 6. Cross-references
 
 - `asm_shim_design.md` — substrate this builds on.
-- `entry_alias_design.md` — sibling wishlist item (#2). Both share
-  the "asm-shim emit path" surface.
+- `../nti/multi_entry_functions.md` — sibling feature (originally
+  wishlist item #2 as `entry_alias_design.md`; promoted to NTI
+  2026-05-05). Both share the "asm-shim emit path" surface.
 - DaytonaCCEReverse `saturncc_request_pool_alignment.md` — origin.
 - DaytonaCCEReverse `saturncc_capability_response.md` — broader
   reply doc; this becomes wishlist item #6.
