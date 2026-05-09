@@ -52,7 +52,7 @@ The work partitions into four buckets:
 
 | ID | Feature | Corpus | NTI doc | Status |
 |----|---|---:|---|---|
-| A1 | Multi-entry functions | 27% | [`multi_entry_functions.md`](../nti/multi_entry_functions.md) | **nti-design (full); promotion-ready** |
+| A1 | Multi-entry functions | 27% | [`multi_entry_functions.md`](../nti/multi_entry_functions.md) | **active** — workstream at [`multi_entry_implementation.md`](multi_entry_implementation.md) |
 | A2 | `#pragma gbr_base` / `gbr_base1` | majority of 36% | [`gbr_base_addressing.md`](../nti/gbr_base_addressing.md) | nti-stub |
 | A3 | `#pragma global_register` | minority of 36% | [`global_register_pinning.md`](../nti/global_register_pinning.md) | nti-stub |
 | A4 | Save-strategy pragmas | 13% | [`save_strategy_pragmas.md`](../nti/save_strategy_pragmas.md) | partial — `#pragma regsave` shipped; rest stub |
@@ -161,6 +161,12 @@ Stage 5 (alias inside C statement) deferred.
 **Promotion trigger:** ready now. When promoted, opens
 `saturn/workstreams/multi_entry_implementation.md` with status header.
 
+**Promoted 2026-05-05.** Workstream:
+[`multi_entry_implementation.md`](multi_entry_implementation.md). M1
+acceptance anchored to the FUN_06036BB8 case from
+[`decomp_request_dead_code_safety_FUN_06036BB8_case.md`](../../../DaytonaCCEReverse/workstreams/transplant/decomp_request_dead_code_safety_FUN_06036BB8_case.md)
+— the dispositive editing-safety problem this whole bucket trivializes.
+
 ### A6 — IPA register pinning
 
 **NTI doc:** [`register_pinning_ipa.md`](../nti/register_pinning_ipa.md).
@@ -196,6 +202,12 @@ Tier 2 has the same verification strength as strict byte-match.
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-05-05` — A1 — promoted from NTI to active. Workstream opened at
+  `saturn/workstreams/multi_entry_implementation.md`. M1 acceptance
+  anchored to the FUN_06036BB8 attract-demo regression case
+  (`DaytonaCCEReverse/.../decomp_request_dead_code_safety_FUN_06036BB8_case.md`)
+  — fits NTI Pattern A (mid-prologue entry) verbatim, indirect-via-pool
+  caller is the headline test of the link-time deletion-safety contract.
 - `2026-05-05` — roadmap — this doc created. Rollup table seeded from the
   Bucket A NTI sweep + the gap-catalog → Bucket B remap from the same
   conversation. Sub-milestones M1..M4 defined.

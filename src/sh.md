@@ -112,9 +112,25 @@ static void space(int);
 static void target(Node);
 static Symbol argreg(int);
 static void sh_pragma(char *name);
+static void sh_entry_alias(const char *fn_name, int offset, const char *alias);
 static int sh_switchjump(Swtch, long *, int, int, Symbol *, Symbol, int, int);
 
 extern void (*shc_pragma_hook)(char *name);
+extern void (*shc_entry_alias_hook)(const char *fn_name, int offset, const char *alias);
+
+/* Entry-alias table populated from `__entry_alias__(FN, offset, "ALIAS")`
+ * declarations at file scope. Resolved against emitted instruction
+ * boundaries at IR-attach time (Stage 2) and emitted as `.global ALIAS`
+ * + `ALIAS:\n` at Stage 3. See
+ * saturn/workstreams/multi_entry_implementation.md. */
+struct sh_entry_alias_entry {
+        const char *fn_name;
+        int offset;
+        const char *alias;
+};
+#define SH_MAX_ENTRY_ALIASES 1024
+static struct sh_entry_alias_entry sh_entry_aliases[SH_MAX_ENTRY_ALIASES];
+static int sh_n_entry_aliases;
 
 /* ireg is sized to 32 because gen.c's askreg() walks a wildcard's
  * register array from index 31 down to 0. On SH-2 we only populate
@@ -151,6 +167,12 @@ static int sh_dflag_asm;
  * regtests to confirm the analyzer's verdict on hand-written
  * test cases without yet wiring it into Phase A's hot path. */
 static int sh_dflag_sim;
+
+/* -d-entry-alias: dump the entry-alias table at progend. Used by
+ * Stage 1 regtests of the multi-entry implementation to confirm
+ * `__entry_alias__(FN, offset, "ALIAS")` declarations parsed and
+ * landed correctly in the backend table. */
+static int sh_dflag_entry_alias;
 
 /* Test-only callee oracle for -d-sim. Treats any name starting
  * with "PRESERVES_" as a preserves-r4 callee, anything else as
@@ -1379,6 +1401,23 @@ static void sh_pragma(char *name) {
         }
 }
 
+/* Register one entry alias. Called by the front-end's parser for each
+ * `__entry_alias__(FN, offset, "ALIAS")` declaration. Strings come in
+ * already PERM-allocated by the caller. Validation of the FN binding
+ * and the offset's instruction-boundary alignment is deferred to
+ * Stage 2 (IR-attach time). */
+static void sh_entry_alias(const char *fn_name, int offset, const char *alias) {
+        if (sh_n_entry_aliases >= SH_MAX_ENTRY_ALIASES) {
+                error("too many __entry_alias__ declarations (max %d)\n",
+                      SH_MAX_ENTRY_ALIASES);
+                return;
+        }
+        sh_entry_aliases[sh_n_entry_aliases].fn_name = fn_name;
+        sh_entry_aliases[sh_n_entry_aliases].offset = offset;
+        sh_entry_aliases[sh_n_entry_aliases].alias = alias;
+        sh_n_entry_aliases++;
+}
+
 /* Switch jump table hook. Called from swcode() in stmt.c when a
  * dense switch range has 4+ cases. Emits bounds check + records
  * table metadata for post-capture emission of the SH-2 braf idiom. */
@@ -1932,6 +1971,14 @@ static void sh_drain_ipa_queue(void) {
 static void progend(void) {
         int i, base_idx = -1;
         sh_drain_ipa_queue();
+        if (sh_dflag_entry_alias) {
+                fprintf(stderr, "[entry-alias] %d entries\n", sh_n_entry_aliases);
+                for (i = 0; i < sh_n_entry_aliases; i++)
+                        fprintf(stderr, "[entry-alias] %s @ +%d -> %s\n",
+                                sh_entry_aliases[i].fn_name,
+                                sh_entry_aliases[i].offset,
+                                sh_entry_aliases[i].alias);
+        }
         if (ngbr_pool == 0)
                 return;
         print("\t.section\t.gbr_data,\"aw\"\n");
@@ -1962,7 +2009,10 @@ static void progbeg(int argc, char *argv[]) {
                         sh_dflag_asm = 1;
                 else if (strcmp(argv[i], "-d-sim") == 0)
                         sh_dflag_sim = 1;
+                else if (strcmp(argv[i], "-d-entry-alias") == 0)
+                        sh_dflag_entry_alias = 1;
         shc_pragma_hook = sh_pragma;
+        shc_entry_alias_hook = sh_entry_alias;
         flush_deferred_pragmas();
         for (i = 0; i < 16; i++)
                 ireg[i] = mkreg("%d", i, 1, IREG);
@@ -4253,6 +4303,112 @@ static int sh_asm_insn_src_line(const struct sh_asm_body *body,
          * after `{`). So `line_no == 1` corresponds to that opener
          * line — hence the `- 1`. */
         return body->src_line_base + in->line_no - 1;
+}
+
+/* Byte width of one parsed asm insn for byte-offset bookkeeping
+ * (multi-entry alias resolution, Stage 2). Standalone labels,
+ * comments, .asm_entry sub-entries, and most directives are 0 bytes;
+ * data slots inside the function body have their canonical width.
+ *
+ * .balign / .align / .string are deliberately reported as 0 because
+ * their effective width is context-dependent (current PC, contents);
+ * an `__entry_alias__` whose offset points past such a directive will
+ * resolve to a position that may not match prod. The corpus targets
+ * for M1 (FUN_06036BB8 family) are pure executable code, so this is
+ * safe in scope. */
+static int sh_asm_insn_byte_size(const struct sh_asm_insn *in) {
+        const char *m;
+        if (!in) return 0;
+        if (in->is_comment) return 0;
+        if (in->is_entry) return 0;
+        if (in->is_label && !in->is_directive) return 0;
+        if (in->is_directive) {
+                m = in->mnemonic;
+                if (!m) return 0;
+                if (strcmp(m, ".long")  == 0) return 4;
+                if (strcmp(m, ".4byte") == 0) return 4;
+                if (strcmp(m, ".word")  == 0) return 2;
+                if (strcmp(m, ".short") == 0) return 2;
+                if (strcmp(m, ".2byte") == 0) return 2;
+                if (strcmp(m, ".byte")  == 0) return 1;
+                return 0;
+        }
+        return 2;
+}
+
+/* Per-function resolution of `__entry_alias__` declarations: maps each
+ * declared (FN, offset, ALIAS) entry whose FN matches `fn_name` to the
+ * insn-index inside `body` whose starting byte offset equals the
+ * declared offset. Stage 2 (this pass) writes the resolution and
+ * validates boundaries; Stage 3 will consume it during emit to print
+ * `.global ALIAS\n` + `ALIAS:\n`.
+ *
+ * Resolved insn-index semantics: the alias label belongs IMMEDIATELY
+ * BEFORE the insn at the returned index. Offset 0 → index 0 (alias at
+ * function entry, before insn 0). Offset equal to total body size →
+ * index n_insns (alias at the very end). Off-boundary offsets and
+ * out-of-range offsets are hard errors.
+ *
+ * Storage: caller-provided arrays (out_insn_idx[], out_alias_idx[])
+ * sized at SH_MAX_ENTRY_ALIASES. Returns the count of resolved
+ * entries via *n_resolved_out. */
+static void sh_resolve_aliases_for_fn(const char *fn_name,
+                                      const struct sh_asm_body *body,
+                                      int *out_insn_idx,
+                                      int *out_alias_idx,
+                                      int *n_resolved_out) {
+        int i;
+        *n_resolved_out = 0;
+        if (!fn_name || !body) return;
+        for (i = 0; i < sh_n_entry_aliases; i++) {
+                int target = sh_entry_aliases[i].offset;
+                int cur = 0;
+                int j;
+                int found = -1;
+                if (strcmp(sh_entry_aliases[i].fn_name, fn_name) != 0)
+                        continue;
+                if (target < 0) {
+                        error("`__entry_alias__(%s, %d, \"%s\")` "
+                              "negative offset rejected\n",
+                              fn_name, target, sh_entry_aliases[i].alias);
+                        continue;
+                }
+                if (target == 0) {
+                        found = 0;
+                } else {
+                        for (j = 0; j < body->n_insns; j++) {
+                                cur += sh_asm_insn_byte_size(&body->insns[j]);
+                                if (cur == target) {
+                                        found = j + 1;
+                                        break;
+                                }
+                                if (cur > target) {
+                                        error("`__entry_alias__(%s, %d, \"%s\")` "
+                                              "does not land on an instruction "
+                                              "boundary; nearest boundaries are "
+                                              "%d and %d\n",
+                                              fn_name, target,
+                                              sh_entry_aliases[i].alias,
+                                              cur - sh_asm_insn_byte_size(
+                                                      &body->insns[j]),
+                                              cur);
+                                        found = -2;
+                                        break;
+                                }
+                        }
+                        if (found == -1) {
+                                error("`__entry_alias__(%s, %d, \"%s\")` "
+                                      "offset exceeds function body size %d\n",
+                                      fn_name, target,
+                                      sh_entry_aliases[i].alias, cur);
+                        }
+                }
+                if (found >= 0) {
+                        out_insn_idx[*n_resolved_out] = found;
+                        out_alias_idx[*n_resolved_out] = i;
+                        (*n_resolved_out)++;
+                }
+        }
 }
 
 static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
@@ -8640,6 +8796,44 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
          * whitespace, which asm_normalize.py strips). */
         if (sh_function_is_naked_shim(e)) {
                 Code cp;
+                int alias_insn_idx[SH_MAX_ENTRY_ALIASES];
+                int alias_table_idx[SH_MAX_ENTRY_ALIASES];
+                int n_aliases = 0;
+                struct sh_asm_body *fn_body = NULL;
+                /* Multi-entry alias resolution (Stage 2). Find the
+                 * body once via the first ASM_INSN+V Node, then walk
+                 * the alias table and resolve each declared offset
+                 * to an insn index. Errors here surface before any
+                 * emission so the user sees the diagnostic at the
+                 * function being compiled, not deep in GAS. */
+                for (cp = e->code_head.next; cp && !fn_body; cp = cp->next) {
+                        Node n;
+                        if (cp->kind != Gen) continue;
+                        for (n = cp->u.forest; n; n = n->link) {
+                                if (specific(n->op) != ASM_INSN+V) continue;
+                                if (!n->syms[0]) continue;
+                                fn_body = n->syms[0]->x.asm_body;
+                                break;
+                        }
+                }
+                sh_resolve_aliases_for_fn(f->x.name, fn_body,
+                                          alias_insn_idx, alias_table_idx,
+                                          &n_aliases);
+                if (sh_dflag_entry_alias) {
+                        int k;
+                        fprintf(stderr,
+                                "[entry-alias] resolve fn=%s n=%d body_insns=%d\n",
+                                f->x.name, n_aliases,
+                                fn_body ? fn_body->n_insns : 0);
+                        for (k = 0; k < n_aliases; k++)
+                                fprintf(stderr,
+                                        "[entry-alias] resolve %s @ +%d -> "
+                                        "%s at insn_idx=%d\n",
+                                        f->x.name,
+                                        sh_entry_aliases[alias_table_idx[k]].offset,
+                                        sh_entry_aliases[alias_table_idx[k]].alias,
+                                        alias_insn_idx[k]);
+                }
                 /* `.align 1` = 2-byte alignment (the SH-2 instruction
                  * minimum) rather than `.align 2` = 4-byte. Prod
                  * function entries can sit at 2-mod-4 offsets (e.g.
@@ -8658,11 +8852,30 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
                         for (n = cp->u.forest; n; n = n->link) {
                                 struct sh_asm_insn *in;
                                 struct sh_asm_body *body;
+                                int insn_idx, k;
                                 if (specific(n->op) != ASM_INSN+V)
                                         continue;
                                 if (!n->syms[0]) continue;
                                 in   = n->syms[0]->x.asm_insn;
                                 body = n->syms[0]->x.asm_body;
+                                /* Stage 3: emit `.global ALIAS\n` +
+                                 * `ALIAS:\n` for any aliases whose
+                                 * resolved insn-index is this one.
+                                 * The label belongs IMMEDIATELY
+                                 * BEFORE the insn at this index, so
+                                 * it must precede both the line
+                                 * directive and the insn emission. */
+                                insn_idx = body ? (int)(in - body->insns) : -1;
+                                for (k = 0; k < n_aliases; k++) {
+                                        if (alias_insn_idx[k] != insn_idx)
+                                                continue;
+                                        print("\t.global\t%s\n",
+                                              sh_entry_aliases[
+                                                  alias_table_idx[k]].alias);
+                                        print("%s:\n",
+                                              sh_entry_aliases[
+                                                  alias_table_idx[k]].alias);
+                                }
                                 /* Same as the per-Node ASM_INSN+V
                                  * case in emit2 — emit a cpp-style
                                  * line directive so GAS errors cite
@@ -8675,6 +8888,24 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
                                                 sh_asm_insn_src_line(
                                                         body, in));
                                 sh_emit_asm_insn(in);
+                        }
+                }
+                /* Stage 3 post-loop: aliases whose resolved insn-idx
+                 * == n_insns belong AFTER the last emitted insn (alias
+                 * at the very end of the body). The per-Node loop
+                 * above never reaches that index since it only
+                 * iterates through n_insns - 1. */
+                if (fn_body) {
+                        int k;
+                        for (k = 0; k < n_aliases; k++) {
+                                if (alias_insn_idx[k] != fn_body->n_insns)
+                                        continue;
+                                print("\t.global\t%s\n",
+                                      sh_entry_aliases[
+                                          alias_table_idx[k]].alias);
+                                print("%s:\n",
+                                      sh_entry_aliases[
+                                          alias_table_idx[k]].alias);
                         }
                 }
                 /* Restore Phase E state so the next function's

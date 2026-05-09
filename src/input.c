@@ -17,6 +17,14 @@ int lineno;		/* line number of current line */
 /* SaturnCompiler backend hook for unrecognized #pragma directives. */
 void (*shc_pragma_hook)(char *name) = 0;
 
+/* SaturnCompiler backend hook for the `__entry_alias__(FN, offset,
+ * "ALIAS")` file-scope declaration. The front-end's program() loop
+ * recognizes the keyword, parses the three arguments, and calls the
+ * hook to register one alias. The backend stores it for the IR-attach
+ * pass that runs at function-emit time. See
+ * saturn/workstreams/multi_entry_implementation.md (Stage 1). */
+void (*shc_entry_alias_hook)(const char *fn_name, int offset, const char *alias) = 0;
+
 /* Pragmas encountered before shc_pragma_hook is wired (which happens
  * in the backend's progbeg, AFTER main.c reads the first lookahead
  * token) are deferred and replayed on flush_deferred_pragmas(). The

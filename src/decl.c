@@ -30,12 +30,63 @@ static Symbol *parameters(Type);
 static Type specifier(int *);
 static Type structdcl(int);
 static Type tnode(int, Type);
+
+/* Saturn-backend hook for `__entry_alias__(FN, offset, "ALIAS")`. The
+ * declaration is recognized at file scope by program(); this hook is
+ * wired by the SH-2 backend in progbeg. See
+ * saturn/workstreams/multi_entry_implementation.md for the full
+ * design. The front end calls the hook with simple types; the backend
+ * resolves FN to a Symbol at IR-attach time (Stage 2). */
+extern void (*shc_entry_alias_hook)(const char *fn_name, int offset, const char *alias);
+
+/* Parse `__entry_alias__(FN, offset, "ALIAS");` starting at the
+ * keyword token and advancing past the trailing `;`. On any syntax
+ * error, recover by skipping to the next `;` and returning. */
+static void entry_alias_decl(void) {
+	char *fn_name = NULL;
+	int offset = 0;
+	char *alias = NULL;
+
+	t = gettok();  /* consume `__entry_alias__` */
+	if (t != '(') { error("`__entry_alias__' expects `('\n"); goto recover; }
+	t = gettok();
+	if (t != ID) { error("`__entry_alias__' expects FN identifier\n"); goto recover; }
+	fn_name = string(token);
+	t = gettok();
+	if (t != ',') { error("`__entry_alias__' expects `,' after FN\n"); goto recover; }
+	t = gettok();
+	if (t != ICON) { error("`__entry_alias__' expects integer offset\n"); goto recover; }
+	offset = (int)tsym->u.c.v.i;
+	t = gettok();
+	if (t != ',') { error("`__entry_alias__' expects `,' after offset\n"); goto recover; }
+	t = gettok();
+	if (t != SCON) { error("`__entry_alias__' expects string ALIAS\n"); goto recover; }
+	alias = string(tsym->u.c.v.p);
+	t = gettok();
+	if (t != ')') { error("`__entry_alias__' expects `)'\n"); goto recover; }
+	t = gettok();
+	if (t != ';') { error("`__entry_alias__' expects `;'\n"); goto recover; }
+	t = gettok();
+	if (shc_entry_alias_hook)
+		(*shc_entry_alias_hook)(fn_name, offset, alias);
+	else
+		error("`__entry_alias__' is only supported by the SH-2 target\n");
+	return;
+recover:
+	while (t != ';' && t != EOI)
+		t = gettok();
+	if (t == ';')
+		t = gettok();
+}
+
 void program(void) {
 	int n;
-	
+
 	level = GLOBAL;
 	for (n = 0; t != EOI; n++)
-		if (kind[t] == CHAR || kind[t] == STATIC
+		if (t == ID && token != NULL && strcmp(token, "__entry_alias__") == 0) {
+			entry_alias_decl();
+		} else if (kind[t] == CHAR || kind[t] == STATIC
 		|| t == ID || t == '*' || t == '(') {
 			decl(dclglobal);
 			deallocate(STMT);

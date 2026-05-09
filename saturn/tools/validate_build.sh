@@ -1110,6 +1110,243 @@ else
     fail "regtest: same-line one-liner missing or mis-numbered directive — inspect $LINE_WORK_WSL/oneliner.s"
 fi
 
+# 4ba. __entry_alias__ Stage 1 — front-end recognition. Two declarations
+# at file scope must parse and land in the backend table with correct
+# fn_name / offset / alias. The -d-entry-alias flag dumps the table at
+# progend; we grep its lines.
+cat > /tmp/regtest.c <<'EOF'
+int real_func(int x) {
+    return x + 1;
+}
+__entry_alias__(real_func, 4, "alt_entry");
+__entry_alias__(real_func, 8, "third_entry");
+EOF
+ea_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-entry-alias /tmp/regtest.c /dev/null 2>"$ea_dump"
+ok=1
+grep -qE '^\[entry-alias\] 2 entries$' "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] real_func @ \+4 -> alt_entry$' "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] real_func @ \+8 -> third_entry$' "$ea_dump" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: __entry_alias__ Stage 1 parses + populates backend table"
+else
+    fail "regtest: __entry_alias__ Stage 1 wrong — inspect $ea_dump"
+fi
+rm -f "$ea_dump"
+
+# 4bc. __entry_alias__ Stage 2 — IR attachment resolves declared
+# offsets to insn indices in the asm body. Three happy-path offsets
+# at 0, 2, 4 against a 3-insn body should resolve cleanly.
+cat > /tmp/regtest.c <<'EOF'
+int real_func(void) asm {
+    mov r4, r0
+    rts
+    nop
+}
+__entry_alias__(real_func, 0, "alt_entry");
+__entry_alias__(real_func, 2, "alt_mid");
+__entry_alias__(real_func, 4, "alt_end");
+EOF
+ea_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-entry-alias /tmp/regtest.c /dev/null 2>"$ea_dump"
+ok=1
+grep -qE '^\[entry-alias\] resolve fn=real_func n=3' "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] resolve real_func @ \+0 -> alt_entry at insn_idx=0$' "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] resolve real_func @ \+2 -> alt_mid at insn_idx=[0-9]+$' "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] resolve real_func @ \+4 -> alt_end at insn_idx=[0-9]+$' "$ea_dump" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: __entry_alias__ Stage 2 resolves offsets to insn indices"
+else
+    fail "regtest: __entry_alias__ Stage 2 wrong — inspect $ea_dump"
+fi
+rm -f "$ea_dump"
+
+# 4bd. __entry_alias__ Stage 2 — off-boundary offset (1, between
+# 0-byte mov and 2-byte rts) errors and is NOT included in resolved
+# count. The diagnostic must name the nearest boundaries.
+cat > /tmp/regtest.c <<'EOF'
+int real_func(void) asm {
+    mov r4, r0
+    rts
+    nop
+}
+__entry_alias__(real_func, 1, "off_boundary");
+EOF
+ea_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-entry-alias /tmp/regtest.c /dev/null 2>"$ea_dump"
+ok=1
+grep -q "does not land on an instruction boundary" "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] resolve fn=real_func n=0' "$ea_dump" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: __entry_alias__ Stage 2 errors on off-boundary offset"
+else
+    fail "regtest: __entry_alias__ Stage 2 boundary check wrong — inspect $ea_dump"
+fi
+rm -f "$ea_dump"
+
+# 4bg. __entry_alias__ Stage 4 — link-time deletion-safety contract.
+# Two TUs: tu_a defines real_func with alias alt_entry at offset 2;
+# tu_b references alt_entry via a pool entry. With tu_a's alias
+# declaration intact, both TUs link cleanly. With real_func + its
+# alias declaration removed, the link must fail with an undefined-
+# symbol error citing alt_entry.
+#
+# This is the editing-safety contract from the FUN_06036BB8 case
+# (DaytonaCCEReverse/.../decomp_request_dead_code_safety_FUN_06036BB8_case.md):
+# deletion of the parent function makes any caller's link fail loudly
+# instead of silently corrupting the build.
+SH_AS=/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-as.exe
+SH_LD=/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-ld.exe
+SH_NM=/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-nm.exe
+if [ -x "$SH_AS" ] && [ -x "$SH_LD" ] && [ -x "$SH_NM" ]; then
+    EA_WORK="$REPO/build/s4_test"
+    rm -rf "$EA_WORK" && mkdir -p "$EA_WORK"
+    EA_WIN="${EA_WORK//\/mnt\/d/D:}"; EA_WIN="${EA_WIN//\//\\}"
+    cat > "$EA_WORK/tu_a.c" <<'EOF'
+int real_func(void) asm {
+    mov r4, r0
+    rts
+    nop
+}
+__entry_alias__(real_func, 2, "alt_entry");
+EOF
+    cat > "$EA_WORK/tu_b.c" <<'EOF'
+int caller(void) asm {
+    mov.l alt_entry_ptr, r0
+    jsr @r0
+    nop
+    rts
+    nop
+.balign 4
+alt_entry_ptr:
+    .long alt_entry
+}
+EOF
+    cat > "$EA_WORK/tu_a_empty.c" <<'EOF'
+/* real_func deleted; alias declaration also gone since it referenced real_func */
+EOF
+    "$RCC" -target=sh/hitachi "$EA_WORK/tu_a.c" "$EA_WORK/tu_a.s" 2>/dev/null
+    "$RCC" -target=sh/hitachi "$EA_WORK/tu_b.c" "$EA_WORK/tu_b.s" 2>/dev/null
+    "$RCC" -target=sh/hitachi "$EA_WORK/tu_a_empty.c" "$EA_WORK/tu_a_empty.s" 2>/dev/null
+    "$SH_AS" -little -o "$EA_WIN\\tu_a.o" "$EA_WIN\\tu_a.s" 2>/dev/null
+    "$SH_AS" -little -o "$EA_WIN\\tu_b.o" "$EA_WIN\\tu_b.s" 2>/dev/null
+    "$SH_AS" -little -o "$EA_WIN\\tu_a_empty.o" "$EA_WIN\\tu_a_empty.s" 2>/dev/null
+    ok=1
+    # Exit codes from .exe tools invoked through WSL are unreliable to
+    # capture via $?. Use produced-file presence + link-error content
+    # to gate success/failure instead.
+    rm -f "$EA_WORK/linked.elf" "$EA_WORK/linked2.elf"
+    # Phase 1: link with alias defined — linked.elf must exist after.
+    "$SH_LD" -EL -Ttext=0x06000000 -e real_func -o "$EA_WIN\\linked.elf" \
+        "$EA_WIN\\tu_a.o" "$EA_WIN\\tu_b.o" >/dev/null 2>"$EA_WORK/link1.err"
+    [ -s "$EA_WORK/linked.elf" ] || ok=0
+    [ ! -s "$EA_WORK/link1.err" ] || ok=0
+    # alt_entry must be defined in tu_a.o at real_func + 2.
+    "$SH_NM" "$EA_WIN\\tu_a.o" 2>/dev/null \
+        | tr -d '\r' | grep -qE '^00000002 T alt_entry$' || ok=0
+    # Phase 2: link with real_func + alias removed — linked2.elf must
+    # NOT be created, and link2.err must carry the undefined-symbol
+    # diagnostic naming alt_entry.
+    "$SH_LD" -EL -Ttext=0x06000000 -e caller -o "$EA_WIN\\linked2.elf" \
+        "$EA_WIN\\tu_a_empty.o" "$EA_WIN\\tu_b.o" >/dev/null 2>"$EA_WORK/link2.err"
+    [ ! -s "$EA_WORK/linked2.elf" ] || ok=0
+    grep -q "undefined reference to .alt_entry." "$EA_WORK/link2.err" || ok=0
+    if [ "$ok" = "1" ]; then
+        pass "regtest: __entry_alias__ Stage 4 deletion-safety (link breaks loudly)"
+    else
+        fail "regtest: __entry_alias__ Stage 4 wrong — inspect $EA_WORK/"
+    fi
+else
+    # sh-elf toolchain unavailable — Stage 4 needs the linker; skip
+    # rather than fail. CI machines without the SDK still get value
+    # from Stages 1-3.
+    echo "  SKIP  regtest: __entry_alias__ Stage 4 (sh-elf toolchain not found)"
+fi
+
+# 4bf. __entry_alias__ Stage 3 — `.global ALIAS\n` + `ALIAS:\n` are
+# emitted at each resolved insn-index in the asm body. Four aliases
+# at offsets 0/2/4/6 cover entry, mid-body, and post-last-insn.
+cat > /tmp/regtest.c <<'EOF'
+int real_func(void) asm {
+    mov r4, r0
+    rts
+    nop
+}
+__entry_alias__(real_func, 0, "alt_at_entry");
+__entry_alias__(real_func, 2, "alt_after_mov");
+__entry_alias__(real_func, 4, "alt_after_rts");
+__entry_alias__(real_func, 6, "alt_at_end");
+EOF
+asm_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$asm_out" 2>/dev/null
+ok=1
+# Each alias must produce both directive lines, in order.
+awk '
+/^\treal_func:?$|^real_func:$/    { seen["real_func"]=NR }
+/^\t\.global\talt_at_entry$/      { glb["alt_at_entry"]=NR }
+/^alt_at_entry:$/                 { lbl["alt_at_entry"]=NR }
+/^\t\.global\talt_after_mov$/     { glb["alt_after_mov"]=NR }
+/^alt_after_mov:$/                { lbl["alt_after_mov"]=NR }
+/^\t\.global\talt_after_rts$/     { glb["alt_after_rts"]=NR }
+/^alt_after_rts:$/                { lbl["alt_after_rts"]=NR }
+/^\t\.global\talt_at_end$/        { glb["alt_at_end"]=NR }
+/^alt_at_end:$/                   { lbl["alt_at_end"]=NR }
+END {
+    for (a in glb) if (!(a in lbl) || lbl[a] != glb[a]+1) exit 1
+    if (lbl["alt_at_entry"] >= lbl["alt_after_mov"]) exit 2
+    if (lbl["alt_after_mov"] >= lbl["alt_after_rts"]) exit 3
+    if (lbl["alt_after_rts"] >= lbl["alt_at_end"]) exit 4
+    exit 0
+}' "$asm_out" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: __entry_alias__ Stage 3 emits .global+label at each resolved position"
+else
+    fail "regtest: __entry_alias__ Stage 3 wrong — inspect $asm_out"
+fi
+rm -f "$asm_out"
+
+# 4be. __entry_alias__ Stage 2 — out-of-range offset (1000 vs 6-byte
+# body) errors with the body size in the message.
+cat > /tmp/regtest.c <<'EOF'
+int real_func(void) asm {
+    mov r4, r0
+    rts
+    nop
+}
+__entry_alias__(real_func, 1000, "way_too_far");
+EOF
+ea_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-entry-alias /tmp/regtest.c /dev/null 2>"$ea_dump"
+ok=1
+grep -q "offset exceeds function body size" "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] resolve fn=real_func n=0' "$ea_dump" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: __entry_alias__ Stage 2 errors on out-of-range offset"
+else
+    fail "regtest: __entry_alias__ Stage 2 OOR check wrong — inspect $ea_dump"
+fi
+rm -f "$ea_dump"
+
+# 4bb. __entry_alias__ Stage 1 — malformed declarations error and
+# recover without polluting the table. Missing-comma case picked from
+# the parser's recovery path.
+cat > /tmp/regtest.c <<'EOF'
+int real_func(int x) { return x + 1; }
+__entry_alias__(real_func, 4 "missing_comma");
+EOF
+ea_err="$(mktemp)"
+ea_dump="$(mktemp)"
+"$RCC" -target=sh/hitachi -d-entry-alias /tmp/regtest.c /dev/null 2>"$ea_dump"
+ok=1
+grep -q "expects \`,' after offset" "$ea_dump" || ok=0
+grep -qE '^\[entry-alias\] 0 entries$' "$ea_dump" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: __entry_alias__ Stage 1 errors+recovers on malformed decl"
+else
+    fail "regtest: __entry_alias__ Stage 1 recovery wrong — inspect $ea_dump"
+fi
+rm -f "$ea_err" "$ea_dump"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:
