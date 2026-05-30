@@ -1347,6 +1347,79 @@ else
 fi
 rm -f "$ea_err" "$ea_dump"
 
+# 4bh. __naked__ multi-block asm function with an INLINE __entry_alias__
+# marker (feature/naked-multiblock). Distinct from the file-scope
+# __entry_alias__(FN, offset, "ALIAS") form: the inline form takes a
+# bare entry NAME, no offset — its position between the asm blocks IS
+# the offset. `__naked__` suppresses the synthetic return so a compound
+# body of multiple asm{} statements lowers to an all-ASM_INSN+V code
+# list and the naked-shim fast path fires.
+#
+# Verifies:
+#   - both asm blocks emit verbatim, in source order,
+#   - no prologue/epilogue/synthetic return (only the body's own
+#     pushes/pops/rts — exactly one rts, no compiler pool labels),
+#   - `.global ALT_ENTRY` + `ALT_ENTRY:` land at the boundary,
+#     immediately before the second block's first instruction.
+cat > /tmp/regtest.c <<'EOF'
+void FUN_mb(void) __naked__ {
+    asm {
+        mov.l   r14,@-r15
+        mov.l   r13,@-r15
+    }
+    __entry_alias__(ALT_ENTRY);
+    asm {
+        sts.l   pr,@-r15
+        rts
+        mov.l   @r15+,r14
+    }
+}
+EOF
+mb_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$mb_out" 2>/dev/null
+ok=1
+# Function entry label present.
+grep -qE '^FUN_mb:' "$mb_out" || ok=0
+# Both blocks' instructions present in source order.
+grep -qE $'^\tmov\\.l\tr14,@-r15$' "$mb_out" || ok=0
+grep -qE $'^\tmov\\.l\tr13,@-r15$' "$mb_out" || ok=0
+grep -qE $'^\tsts\\.l\tpr,@-r15$' "$mb_out" || ok=0
+# Inline marker emits .global + label.
+grep -qE $'^\t\\.global\tALT_ENTRY$' "$mb_out" || ok=0
+grep -qE '^ALT_ENTRY:$' "$mb_out" || ok=0
+# The marker label must sit BETWEEN the two blocks: the line number of
+# ALT_ENTRY: must be after r13's push and before pr's push.
+ln_r13=$(grep -nE $'^\tmov\\.l\tr13,@-r15$' "$mb_out" | head -1 | cut -d: -f1)
+ln_alias=$(grep -nE '^ALT_ENTRY:$' "$mb_out" | head -1 | cut -d: -f1)
+ln_pr=$(grep -nE $'^\tsts\\.l\tpr,@-r15$' "$mb_out" | head -1 | cut -d: -f1)
+[ -n "$ln_r13" ] && [ -n "$ln_alias" ] && [ -n "$ln_pr" ] || ok=0
+[ "$ok" = "1" ] && { [ "$ln_r13" -lt "$ln_alias" ] && [ "$ln_alias" -lt "$ln_pr" ] || ok=0; }
+# Exactly ONE rts (the body's own); a synthetic return would add another.
+n_rts=$(grep -cE '^[[:space:]]+rts$' "$mb_out")
+[ "$n_rts" = "1" ] || ok=0
+# No compiler-generated pool labels (Lnnn:).
+grep -qE '^L[0-9]+:' "$mb_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: __naked__ multi-block asm + inline __entry_alias__ marker"
+else
+    fail "regtest: __naked__ multi-block wrong (n_rts=$n_rts r13@$ln_r13 alias@$ln_alias pr@$ln_pr) — inspect $mb_out"
+fi
+rm -f "$mb_out"
+
+# 4bi. __naked__ on a non-definition (no body) is rejected.
+cat > /tmp/regtest.c <<'EOF'
+void FUN_nobody(void) __naked__;
+EOF
+nk_err="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$nk_err"; then
+    fail "regtest: __naked__ on non-definition incorrectly accepted"
+elif grep -q "applies only to a function definition" "$nk_err" 2>/dev/null; then
+    pass "regtest: __naked__ on non-definition rejected with expected message"
+else
+    fail "regtest: __naked__ on non-definition rejected but wrong message — inspect $nk_err"
+fi
+rm -f "$nk_err"
+
 # ── Landmine coverage not duplicated here ──────────────────
 # Landmines in saturn/workstreams/landmines.md for which a dedicated
 # stage-4 reproducer would be redundant or impractical:

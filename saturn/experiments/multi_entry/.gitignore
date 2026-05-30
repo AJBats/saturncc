@@ -1,0 +1,3 @@
+# Transient assembler/linker artifacts from the naked-multiblock test.
+*.o
+*.elf

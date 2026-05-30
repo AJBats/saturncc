@@ -74,11 +74,71 @@ void definept(Coordinate *p) {
 				listnodes(e, 0, 0);
 		}
 }
+/* Parse the inline `__entry_alias__(NAME);` statement form. Distinct
+ * from the file-scope `__entry_alias__(FN, offset, "ALIAS")` declaration
+ * parsed in decl.c: the inline form takes only a bare entry NAME and has
+ * no explicit offset — its POSITION in the function body IS the offset.
+ *
+ * It lowers to a synthetic `asm { .asm_entry NAME }` block: the SH-2
+ * asm parser already turns `.asm_entry NAME` into a zero-byte sentinel
+ * that the backend expands to `.global NAME\n` + `NAME:\n` at exactly
+ * the point it sits in the code list — i.e. immediately before the next
+ * asm block's first instruction. This rides the same ASM_INSN+V Node
+ * machinery as a real `asm { ... }` statement, so the naked-shim
+ * detector still sees an all-ASM body and the marker lands at the
+ * correct boundary in source order with no new IR node type.
+ *
+ * Only valid inside a `__naked__` / asm-bodied function; in any other
+ * context the surrounding C body would defeat the naked-shim path and
+ * the `.asm_entry` would never expand. We don't enforce that here — the
+ * marker is harmless verbatim asm regardless — but document the intent.
+ *
+ * On entry `t` is the ID `__entry_alias__`; on return `t` is the token
+ * after the trailing `;`. */
+static void inline_entry_alias_stmt(void) {
+	char *name = NULL;
+	const char *opener_file = src.file;
+	int opener_line = src.y;
+
+	t = gettok();  /* consume `__entry_alias__` */
+	if (t != '(') { error("inline `__entry_alias__' expects `('\n"); goto recover; }
+	t = gettok();
+	if (t != ID) { error("inline `__entry_alias__' expects entry NAME identifier\n"); goto recover; }
+	name = string(token);
+	t = gettok();
+	if (t != ')') { error("inline `__entry_alias__' expects `)' after NAME\n"); goto recover; }
+	t = gettok();
+	if (t != ';') { error("inline `__entry_alias__' expects `;'\n"); goto recover; }
+	t = gettok();
+	{
+		/* Build `.asm_entry NAME\n` and lower it through the same
+		 * asm_block() path the `asm { ... }` statement uses. */
+		char *text = stringf(".asm_entry %s\n", name);
+		Tree e;
+		definept(NULL);
+		e = asm_block(text, opener_file, opener_line);
+		listnodes(e, 0, 0);
+		walk(NULL, 0, 0);
+		deallocate(STMT);
+	}
+	return;
+recover:
+	while (t != ';' && t != EOI)
+		t = gettok();
+	if (t == ';')
+		t = gettok();
+}
 void statement(int loop, Swtch swp, int lev) {
 	float ref = refinc;
 
 	if (Aflag >= 2 && lev == 15)
 		warning("more than 15 levels of nested statements\n");
+	if (t == ID && token != NULL
+	&& strcmp(token, "__entry_alias__") == 0) {
+		inline_entry_alias_stmt();
+		refinc = ref;
+		return;
+	}
 	switch (t) {
 	case IF:       ifstmt(genlabel(2), loop, swp, lev + 1);
  break;
