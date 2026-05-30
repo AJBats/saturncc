@@ -9,6 +9,17 @@ static int regcount;
 
 static List autos, registers;
 Symbol cfunc;		/* current function */
+/* Set by funcdefn() when a function declarator carries the `__naked__`
+ * attribute (`void FUN_X(void) __naked__ { ... }`). Suppresses the
+ * synthetic return that compound() otherwise appends, so a body made
+ * entirely of `asm { ... }` statements (and inline `__entry_alias__`
+ * markers) lowers to an all-ASM_INSN+V code list and the SH-2
+ * backend's naked-shim fast path fires. Read + consumed in compound();
+ * funcdefn() clears it before parsing the body so it never leaks to a
+ * nested compound or the next function. See
+ * saturn/workstreams/multi_entry_implementation.md (naked multi-block
+ * stage). */
+static int naked_func;
 Symbol retv;		/* return value location for structs */
 
 static void checkref(Symbol, void *);
@@ -205,7 +216,20 @@ static void decl(Symbol (*dcl)(int, char *, Type, Coordinate *)) {
 		pos = src;
 		if (level == GLOBAL) {
 			Symbol *params = NULL;
+			int pending_naked = 0;
 			ty1 = dclr(ty, &id, &params, 0);
+			/* `__naked__` function attribute: appears between the
+			 * declarator's `)` and the body `{`. Consume it here so
+			 * the function-definition lookahead below sees `{`, and
+			 * remember it for funcdefn() to suppress the synthetic
+			 * return. Only meaningful on a function definition with a
+			 * compound body. */
+			if (params && id && isfunc(ty1)
+			    && t == ID && token != NULL
+			    && strcmp(token, "__naked__") == 0) {
+				pending_naked = 1;
+				t = gettok();
+			}
 			if (params && id && isfunc(ty1)
 			    && (t == '{' || t == ASM || istypename(t, tsym)
 			    || (kind[t] == STATIC && t != TYPEDEF))) {
@@ -215,10 +239,16 @@ static void decl(Symbol (*dcl)(int, char *, Type, Coordinate *)) {
 				}
 				if (ty1->u.f.oldstyle)
 					exitscope();
+				naked_func = pending_naked;
 				funcdefn(sclass, id, ty1, params, pos);
+				naked_func = 0;
 				return;
-			} else if (params)
-				exitparams(params);
+			} else {
+				if (pending_naked)
+					error("`__naked__' applies only to a function definition\n");
+				if (params)
+					exitparams(params);
+			}
 		} else
 			ty1 = dclr(ty, &id, NULL, 0);
 		for (;;) {
@@ -988,7 +1018,7 @@ void compound(int loop, struct swtch *swp, int lev) {
 		}
 	}
 #endif
-	if (level == LOCAL) {
+	if (level == LOCAL && !naked_func) {
 		Code cp;
 		for (cp = codelist; cp->kind < Label; cp = cp->prev)
 			;
