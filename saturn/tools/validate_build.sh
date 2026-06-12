@@ -1370,6 +1370,282 @@ else
 fi
 rm -f "$meta_out"
 
+# 4y5. First-class dispatch construct (.dispatch_table / .case /
+# .end_dispatch): rcc owns anchor placement, alignment, tripwires,
+# metadata, and delta arithmetic; the human declares the case list.
+# Design: saturn/nti/dispatch_table_construct.md. The keystone
+# assertion is (b): the expansion is byte-identical to the
+# hand-written pad-immune label-pair form.
+#
+# (a) expansion shape.
+cat > /tmp/regtest.c <<'EOF'
+void FUN_dispatch(void) asm {
+    mov r0, r1
+    mova .L_pool_t, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+    .dispatch_table .L_pool_t
+    .case .L_case0
+    .case .L_case1
+    .end_dispatch
+.L_case0:
+    rts
+    nop
+.L_case1:
+    rts
+    nop
+}
+EOF
+dc_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$dc_out" 2>/dev/null
+ok=1
+grep -q '^\.L_disp_anchor_1:$' "$dc_out" || ok=0
+grep -q '^saturncc_braf_1:$' "$dc_out" || ok=0
+grep -q '^saturncc_braf_1_anchor:$' "$dc_out" || ok=0
+grep -q '^saturncc_braf_1_tbl_2:$' "$dc_out" || ok=0
+grep -q '\.2byte .L_case0 - .L_disp_anchor_1' "$dc_out" || ok=0
+grep -q '\.2byte .L_case1 - .L_disp_anchor_1' "$dc_out" || ok=0
+grep -q '^\.L_pool_t:$' "$dc_out" || ok=0
+# .case/.end_dispatch must NOT survive into the output.
+grep -qE '^\s*\.(case|end_dispatch)\b' "$dc_out" && ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: .dispatch_table expands to anchor + aligned table + anchored deltas"
+else
+    fail "regtest: .dispatch_table expansion wrong — inspect $dc_out"
+fi
+
+# (d) error cases (ungated — pure rcc).
+dc_err="$(mktemp)"
+cat > /tmp/regtest.c <<'EOF'
+void FUN_badpos(void) asm {
+    rts
+    nop
+    .dispatch_table .L_pool_t
+    .case .L_case0
+    .end_dispatch
+}
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$dc_err"; then
+    fail "regtest: .dispatch_table without feeding mova not rejected"
+elif grep -q 'no `mova' "$dc_err"; then
+    pass "regtest: .dispatch_table without feeding mova rejected (nonzero exit)"
+else
+    fail "regtest: .dispatch_table no-mova error message wrong — inspect $dc_err"
+fi
+cat > /tmp/regtest.c <<'EOF'
+void FUN_orphan(void) asm {
+    rts
+    nop
+    .case .L_x
+}
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$dc_err"; then
+    fail "regtest: orphan .case not rejected"
+elif grep -q 'outside a `.dispatch_table` block' "$dc_err"; then
+    pass "regtest: orphan .case rejected (nonzero exit)"
+else
+    fail "regtest: orphan .case error message wrong — inspect $dc_err"
+fi
+cat > /tmp/regtest.c <<'EOF'
+void FUN_noclose(void) asm {
+    mov r0, r1
+    mova .L_pool_t, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+    .dispatch_table .L_pool_t
+    .case .L_case0
+}
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /dev/null 2>"$dc_err"; then
+    fail "regtest: unterminated .dispatch_table not rejected"
+elif grep -q 'no `.end_dispatch`' "$dc_err"; then
+    pass "regtest: unterminated .dispatch_table rejected (nonzero exit)"
+else
+    fail "regtest: unterminated .dispatch_table error message wrong — inspect $dc_err"
+fi
+rm -f "$dc_err"
+
+# (b)+(c) byte-identity vs the hand-written pad-immune form, and
+# braf_verify acceptance of the construct object. Gated on the SDK.
+DC_WSL="/mnt/d/Projects/saturncc/build/cmp/dispatch_regtest"
+DC_WIN="D:\\Projects\\saturncc\\build\\cmp\\dispatch_regtest"
+if [ -x "$SH_AS_BV" ] && [ -e "$SH_NM_BV" ] && [ -e "$SH_OD_BV" ]; then
+    mkdir -p "$DC_WSL"
+    dc_ok=1
+    cp "$dc_out" "$DC_WSL/construct.s"
+    cat > "$DC_WSL/hand.c" <<'EOF'
+void FUN_dispatch(void) asm {
+    mov r0, r1
+    mova .L_pool_t, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+.L_ret:
+.L_pool_t:
+    .2byte .L_case0 - .L_ret
+    .2byte .L_case1 - .L_ret
+.L_case0:
+    rts
+    nop
+.L_case1:
+    rts
+    nop
+}
+EOF
+    "$RCC" -target=sh/hitachi "$DC_WSL/hand.c" "$DC_WSL/hand.s" 2>/dev/null || dc_ok=0
+    "$SH_AS_BV" -big -o "${DC_WIN}\\construct.o" "${DC_WIN}\\construct.s" 2>/dev/null || dc_ok=0
+    "$SH_AS_BV" -big -o "${DC_WIN}\\hand.o" "${DC_WIN}\\hand.s" 2>/dev/null || dc_ok=0
+    "$SH_OD_BV" -s -j .text "${DC_WIN}\\construct.o" | tail -n +4 > "$DC_WSL/construct.hex"
+    "$SH_OD_BV" -s -j .text "${DC_WIN}\\hand.o" | tail -n +4 > "$DC_WSL/hand.hex"
+    diff -q "$DC_WSL/construct.hex" "$DC_WSL/hand.hex" >/dev/null || dc_ok=0
+    dc_rep="$(SH_NM="$SH_NM_BV" SH_OBJDUMP="$SH_OD_BV" python3 "$SCRIPT_DIR/braf_verify.py" "${DC_WIN}\\construct.o")" || dc_ok=0
+    echo "$dc_rep" | grep -q 'braf tables verified: 1, errors: 0' || dc_ok=0
+    if [ "$dc_ok" = "1" ]; then
+        pass "regtest: construct expansion byte-identical to hand-written form + braf_verify clean"
+    else
+        fail "regtest: construct byte-identity / verification wrong — inspect $DC_WSL"
+    fi
+
+    # (e) bsrf call site with separated table: bsrf+4 is the live
+    # return point (anchor welded there), the table lives after the
+    # epilogue. Byte-identity against the hand-written pad-immune
+    # equivalent. Modeled on the real FUN_0603E394 shape.
+    dc_ok=1
+    cat > "$DC_WSL/bsrf_c.c" <<'EOF'
+void FUN_bsrf_disp(void) asm {
+    sts.l pr, @-r15
+    mov r4, r1
+    mova .L_pool_b, r0
+    mov.w @(r0, r1), r0
+    bsrf r0
+    nop
+.L_retpt:
+    lds.l @r15+, pr
+    rts
+    nop
+    .dispatch_table .L_pool_b
+    .case .L_sub0
+    .case .L_sub1
+    .end_dispatch
+.L_sub0:
+    rts
+    nop
+.L_sub1:
+    rts
+    nop
+}
+EOF
+    cat > "$DC_WSL/bsrf_h.c" <<'EOF'
+void FUN_bsrf_disp(void) asm {
+    sts.l pr, @-r15
+    mov r4, r1
+    mova .L_pool_b, r0
+    mov.w @(r0, r1), r0
+    bsrf r0
+    nop
+.L_retpt:
+    lds.l @r15+, pr
+    rts
+    nop
+.L_pool_b:
+    .2byte .L_sub0 - .L_retpt
+    .2byte .L_sub1 - .L_retpt
+.L_sub0:
+    rts
+    nop
+.L_sub1:
+    rts
+    nop
+}
+EOF
+    "$RCC" -target=sh/hitachi "$DC_WSL/bsrf_c.c" "$DC_WSL/bsrf_c.s" 2>/dev/null || dc_ok=0
+    "$RCC" -target=sh/hitachi "$DC_WSL/bsrf_h.c" "$DC_WSL/bsrf_h.s" 2>/dev/null || dc_ok=0
+    "$SH_AS_BV" -big -o "${DC_WIN}\\bsrf_c.o" "${DC_WIN}\\bsrf_c.s" 2>/dev/null || dc_ok=0
+    "$SH_AS_BV" -big -o "${DC_WIN}\\bsrf_h.o" "${DC_WIN}\\bsrf_h.s" 2>/dev/null || dc_ok=0
+    "$SH_OD_BV" -s -j .text "${DC_WIN}\\bsrf_c.o" | tail -n +4 > "$DC_WSL/bsrf_c.hex"
+    "$SH_OD_BV" -s -j .text "${DC_WIN}\\bsrf_h.o" | tail -n +4 > "$DC_WSL/bsrf_h.hex"
+    diff -q "$DC_WSL/bsrf_c.hex" "$DC_WSL/bsrf_h.hex" >/dev/null || dc_ok=0
+    dc_rep="$(SH_NM="$SH_NM_BV" SH_OBJDUMP="$SH_OD_BV" python3 "$SCRIPT_DIR/braf_verify.py" "${DC_WIN}\\bsrf_c.o")" || dc_ok=0
+    echo "$dc_rep" | grep -q 'braf tables verified: 1, errors: 0' || dc_ok=0
+    if [ "$dc_ok" = "1" ]; then
+        pass "regtest: bsrf construct (separated table, welded anchor) byte-identical + verified"
+    else
+        fail "regtest: bsrf construct wrong — inspect $DC_WSL"
+    fi
+
+    # (f) pool-word gap (FUN_06028000 shape, from the downstream
+    # site inventory): auto-aligned pool words sit BETWEEN the
+    # welded anchor (braf+4) and the table — multiple independent
+    # pads between the hardware base and the entries, all absorbed
+    # by re-pricing. Byte-identity against the hand-written form.
+    dc_ok=1
+    cat > "$DC_WSL/poolgap_c.c" <<'EOF'
+void FUN_poolgap(void) asm {
+    mov r0, r1
+    mova .L_pool_t, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+.L_pool_a:
+    .4byte 0x12345678
+.L_pool_b:
+    .4byte 0xCAFEBABE
+    .dispatch_table .L_pool_t
+    .case .L_case0
+    .case .L_case1
+    .end_dispatch
+.L_case0:
+    rts
+    nop
+.L_case1:
+    rts
+    nop
+}
+EOF
+    cat > "$DC_WSL/poolgap_h.c" <<'EOF'
+void FUN_poolgap(void) asm {
+    mov r0, r1
+    mova .L_pool_t, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+.L_ret:
+.L_pool_a:
+    .4byte 0x12345678
+.L_pool_b:
+    .4byte 0xCAFEBABE
+.L_pool_t:
+    .2byte .L_case0 - .L_ret
+    .2byte .L_case1 - .L_ret
+.L_case0:
+    rts
+    nop
+.L_case1:
+    rts
+    nop
+}
+EOF
+    "$RCC" -target=sh/hitachi "$DC_WSL/poolgap_c.c" "$DC_WSL/poolgap_c.s" 2>/dev/null || dc_ok=0
+    "$RCC" -target=sh/hitachi "$DC_WSL/poolgap_h.c" "$DC_WSL/poolgap_h.s" 2>/dev/null || dc_ok=0
+    "$SH_AS_BV" -big -o "${DC_WIN}\\poolgap_c.o" "${DC_WIN}\\poolgap_c.s" 2>/dev/null || dc_ok=0
+    "$SH_AS_BV" -big -o "${DC_WIN}\\poolgap_h.o" "${DC_WIN}\\poolgap_h.s" 2>/dev/null || dc_ok=0
+    "$SH_OD_BV" -s -j .text "${DC_WIN}\\poolgap_c.o" | tail -n +4 > "$DC_WSL/poolgap_c.hex"
+    "$SH_OD_BV" -s -j .text "${DC_WIN}\\poolgap_h.o" | tail -n +4 > "$DC_WSL/poolgap_h.hex"
+    diff -q "$DC_WSL/poolgap_c.hex" "$DC_WSL/poolgap_h.hex" >/dev/null || dc_ok=0
+    dc_rep="$(SH_NM="$SH_NM_BV" SH_OBJDUMP="$SH_OD_BV" python3 "$SCRIPT_DIR/braf_verify.py" "${DC_WIN}\\poolgap_c.o")" || dc_ok=0
+    echo "$dc_rep" | grep -q 'braf tables verified: 1, errors: 0' || dc_ok=0
+    if [ "$dc_ok" = "1" ]; then
+        pass "regtest: pool-word-gap construct (pads between anchor and table) byte-identical + verified"
+    else
+        fail "regtest: pool-word-gap construct wrong — inspect $DC_WSL"
+    fi
+else
+    pass "regtest: construct byte-identity (sh-elf toolchain absent — skipped)"
+fi
+rm -f "$dc_out"
+
 # 4z. Line directive emission: saturncc emits cpp-style
 # `# <line> "<file>"` directives ahead of each asm-body instruction
 # so GAS error messages cite the original C source instead of the

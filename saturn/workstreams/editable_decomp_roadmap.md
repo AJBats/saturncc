@@ -202,6 +202,24 @@ Tier 2 has the same verification strength as strict byte-match.
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-06-12` — C1 — dispatch construct UNIFIED: downstream pilot passed
+  (FUN_06045B74 byte-identical + correct under a real 2-mod-4 MOD layout);
+  engineer's sweep retired the split form (all 18 tables co-located with
+  their dispatch — "cross-file" meant targets, already handled). bsrf call
+  sites required and got computed anchor welding (the bsrf+4 return point
+  is live code; table sits elsewhere in the body) — validated
+  byte+reloc-identical against real FUN_0603E394. Regtests 4y5 a–e; suite
+  78/78. Queued: downstream migration of 18+4 sites, then strict mode
+  (hand-written braf tables become errors); then switch-emitter
+  convergence.
+- `2026-06-12` — C1 — dispatch construct LOCAL FORM shipped:
+  `.dispatch_table`/`.case`/`.end_dispatch` resolved and expanded by rcc
+  (anchor at dispatch+4, alignment, tripwires, braf_verify metadata,
+  anchored deltas all generated). Keystone regtest: expansion is
+  byte-identical to the hand-written pad-immune form. Regtests 4y5 a–d;
+  suite 77/77. Cross-file split form awaits the downstream generator
+  answer. Next: downstream pilot (convert one real site via their
+  generator), then switch-emitter convergence.
 - `2026-06-12` — C1 — binary braf verifier shipped (the menu's "trusts
   nothing textual" layer): lint stamps `saturncc_braf_K` symbol families
   on blessed tables; `saturn/tools/braf_verify.py` checks anchor==braf+4

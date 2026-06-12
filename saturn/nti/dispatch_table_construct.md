@@ -1,7 +1,22 @@
 # First-class dispatch-table construct
 
-**Status:** design draft (2026-06-12), written for circulation to the
-DaytonaCCEReverse engineer before implementation. Tracked at
+**Status: implemented, unified form** (2026-06-12). One syntax
+covers all 18 corpus sites: the construct sits where the table
+physically lives; the anchor is never positional — resolution finds
+the table's unique `mova`, walks to the consuming braf/bsrf, and
+welds `.L_disp_anchor_K` onto whatever record sits at dispatch+4
+(for braf-adjacent sites that's the construct itself; for the 4 bsrf
+call sites it's the live return-point code). Byte-identity
+regtest-pinned for both shapes — the bsrf shape validated against
+the real FUN_0603E394, text bytes and relocs identical to the
+hand-written form. The split form (`.dispatch_anchor` /
+`.dispatch_table_for`) is **retired unbuilt**: the downstream
+metadata sweep showed every table is co-located with its dispatch in
+the same shim ("cross-file" in the original audit meant cross-file
+*targets*, which are just global symbols in the unity TU). Strict
+mode (hand-written braf tables become outright errors) is queued
+behind the downstream migration of all 18 + 4 mod-copy sites.
+Tracked at
 [editable_decomp_roadmap.md#C1](../workstreams/editable_decomp_roadmap.md).
 
 **Provenance:** the 2-mod-4 silent braf corruption incident
@@ -159,6 +174,47 @@ Sequencing: implement the local form first (covers the 13 single-
 file sites including FUN_06045B74's two tables); the split form
 follows once the engineer confirms the 6 sites' generator shape.
 
+## Downstream pilot guide (try it on one site)
+
+Prereqs: pull the current saturncc test release (`build/release/rcc`,
+VERSION marked dirty until the construct commit lands); the pad/braf
+checks run automatically if your `AS` already points at
+`as_pad_wrap.sh`.
+
+1. Pick a single-file site — FUN_06045B74 is the poetic choice.
+   Replace the anchor/table label pair AND the entry lines with the
+   declaration; keep the mova/braf code untouched:
+
+   ```asm
+       braf r1
+       sts.l pr, @-r15
+       .dispatch_table .L_pool_06045B80
+       .case .L_06045BC4
+       .case FUN_06046024
+       ...                          ! one .case per entry, in order
+       .end_dispatch
+   ```
+
+   Delete: `.L_braf_ret_06045B80:`, `.L_pool_06045B80:`, every
+   `.2byte` line. Keep: the table label *name* (it moves into the
+   `.dispatch_table` operand — your mova still references it).
+
+2. Rules the compiler enforces (all hard errors with file:line):
+   the declaration sits wherever the table physically lives (for
+   braf sites that's right after the delay slot; for bsrf call
+   sites it's wherever the table is — typically after the
+   epilogue, since bsrf+4 is the live return point and rcc welds
+   the anchor there automatically); exactly one `mova <table-name>`
+   in the body, consumed by a braf/bsrf with a dataflow link; only
+   `.case` lines until `.end_dispatch`; at least one case; stray
+   `.case`/`.end_dispatch` outside a block.
+
+3. Acceptance: your `make validate` must stay byte-identical at
+   baseline (the expansion is regtest-pinned byte-identical to the
+   hand-written pad-immune form on our side), and `braf_verify`
+   (auto via the AS wrapper) should show the site as a verified
+   table with zero errors.
+
 ## Open questions for DaytonaCCEReverse
 
 1. **Generator fit** — the Ghidra exporter already emits these tables;
@@ -182,3 +238,7 @@ follows once the engineer confirms the 6 sites' generator shape.
 | Date | Note |
 |------|------|
 | 2026-06-12 | Initial draft from the braf-incident session; circulated to DaytonaCCEReverse for generator-side review. |
+| 2026-06-12 | Cross-file split form sketched (`.dispatch_anchor` / `.dispatch_table_for`) — the drafted local form can't express the 6 cross-file retail sites without moving bytes. |
+| 2026-06-12 | Local form implemented: `.dispatch_table`/`.case`/`.end_dispatch` resolution + expansion in sh.md; expansion byte-identical to the hand-written pad-immune form (regtest-pinned); construct output carries full tripwire + braf_verify metadata; all violations are hard errors with file:line. Suite 77/77. |
+| 2026-06-12 | Downstream pilot passed (FUN_06045B74 both tables, byte-identical, plus a genuine 2-mod-4 MOD layout: pad absorbed, dispatch correct, game runs). Engineer's metadata sweep killed the split form's premise — all 18 tables co-located with their dispatch; "cross-file" meant targets only. |
+| 2026-06-12 | Unified placement shipped: positional rule replaced by computed anchor welding (disp_anchor_id on the record at dispatch+4). bsrf call sites (table after the epilogue, anchor on live return-point code) now expressible with the same syntax — validated byte+reloc-identical against the real FUN_0603E394. Shared-table guard (multiple mova) is a hard error per the engineer's none-exist confirmation. Regtests 4y5 a–e; suite 78/78. Strict mode queued behind migration. |

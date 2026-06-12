@@ -69,6 +69,22 @@ struct sh_operand {
         enum sh_mem_mode mem_mode;
 };
 
+/* First-class dispatch-table construct (.dispatch_table / .case /
+ * .end_dispatch — design: saturn/nti/dispatch_table_construct.md).
+ * Resolution data attached to the `.dispatch_table` directive record
+ * by sh_resolve_dispatch_tables; emit expands it into the pad-immune
+ * anchor + aligned table + anchored deltas. */
+#define SH_DISPATCH_MAX_CASES 64
+
+struct sh_dispatch_table {
+        int id;            /* saturncc_braf_K family id (shared with
+                            * the dispatch insn's braf_meta_id) */
+        char *table_name;  /* author-chosen table label — must match
+                            * the feeding mova's operand */
+        int n_cases;
+        char *cases[SH_DISPATCH_MAX_CASES];
+};
+
 struct sh_asm_insn {
         char *src_text;       /* original line for diagnostics; emit
                                * does not read this in Stage 2+. */
@@ -111,6 +127,27 @@ struct sh_asm_insn {
                                    * for preserves-r4 inference. The
                                    * entry-target name lives in
                                    * operands[0].label. */
+        struct sh_dispatch_table *dispatch;
+                                  /* non-NULL only on a
+                                   * `.dispatch_table` directive
+                                   * record — emit expands it instead
+                                   * of printing the directive. */
+        int disp_anchor_id;       /* 0 = none; else the construct id
+                                   * whose anchor is welded here: this
+                                   * record sits at dispatch+4, and
+                                   * emit prints `.L_disp_anchor_K:` +
+                                   * `saturncc_braf_K_anchor:` before
+                                   * it. For braf sites this record is
+                                   * the construct itself; for bsrf
+                                   * call sites it is the live return-
+                                   * point code after the delay slot
+                                   * (the table lives elsewhere in the
+                                   * body). */
+        unsigned char suppress_emit;
+                                  /* `.case` / `.end_dispatch` records
+                                   * consumed by a construct: their
+                                   * content lives in the expansion;
+                                   * emit skips them entirely. */
         int braf_meta_id;         /* 0 = none; else the 1-based id K of
                                    * the saturncc_braf_K verification
                                    * symbol family. Set by

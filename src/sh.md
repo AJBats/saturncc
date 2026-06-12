@@ -4505,6 +4505,316 @@ static void sh_lint_braf_tables(struct sh_asm_body *body) {
         }
 }
 
+/* ── first-class dispatch-table construct ────────────────────────
+ *
+ * `.dispatch_table NAME` / `.case TARGET` / `.end_dispatch`: the
+ * human declares which targets a braf/bsrf table dispatches to;
+ * rcc owns everything the cross-build-stage contract needs (see
+ * the banner above sh_pool_align_for_label — this construct
+ * ingests that contract rather than removing it, which is exactly
+ * why the expansion below must never be hand-replicated). The
+ * label-pair ritual becomes generated output:
+ *
+ *   source                          expansion at emit
+ *   ────────────────────────        ─────────────────────────────
+ *   braf r1                         saturncc_braf_K:   (role 1)
+ *   nop                             ...braf + delay emitted as-is
+ *   .dispatch_table .L_pool_X       .L_disp_anchor_K:    ← braf+4
+ *   .case .L_case0                  saturncc_braf_K_anchor:
+ *   .case FUN_x                     saturncc_pad_probe_N:
+ *   .end_dispatch                       .balign 4
+ *                                   saturncc_pad_mark_N_...:
+ *                                   saturncc_braf_K_tbl_n:
+ *                                   .L_pool_X:
+ *                                       .2byte .L_case0 - .L_disp_anchor_K
+ *                                       .2byte FUN_x    - .L_disp_anchor_K
+ *
+ * The construct sits WHERE THE TABLE PHYSICALLY LIVES, which is
+ * NOT always dispatch+4: bsrf call sites return to bsrf+4, so
+ * that address holds live code and the table sits elsewhere in
+ * the body (real case: FUN_0603E394, table 0x10 past the bsrf).
+ * The anchor is therefore never positional — resolution finds the
+ * table's unique mova, walks to the consuming braf/bsrf, and
+ * welds `.L_disp_anchor_K` onto whatever record sits at
+ * dispatch+4 (disp_anchor_id). For braf-adjacent constructs that
+ * record is the construct itself, reproducing the diagram above;
+ * for bsrf sites the anchor lands on the return-point code and
+ * only the table expands at the directive.
+ *
+ * Validation (all hard errors): exactly one `mova NAME` in the
+ * body (a shared table cannot be anchored for two dispatch
+ * bases); the mova must be consumed by a braf/bsrf in its block
+ * with a dataflow link to the dispatch register; the dispatch
+ * must have a delay slot and a following record to carry the
+ * anchor; only `.case` lines until `.end_dispatch`; at least one
+ * case. Stray `.case`/`.end_dispatch` outside a construct are
+ * errors too. Design: saturn/nti/dispatch_table_construct.md.
+ * The braf lint naturally skips construct sites (NAME has no
+ * parsed label definition); correctness is owned here and checked
+ * at the binary level by braf_verify via the same metadata
+ * symbols. */
+static void sh_resolve_dispatch_tables(struct sh_asm_body *body) {
+        int i, j;
+        if (!body) return;
+        for (i = 0; i < body->n_insns; i++) {
+                struct sh_asm_insn *dt = &body->insns[i];
+                struct sh_dispatch_table *d;
+                struct sh_asm_insn *br = NULL;
+                int delay = -1, braf = -1, closed = 0;
+                int mova_idx, link_ok, breg;
+
+                if (!dt->is_directive || !dt->mnemonic
+                    || strcmp(dt->mnemonic, ".dispatch_table") != 0)
+                        continue;
+
+                if (dt->n_operands < 1
+                    || dt->operands[0].kind != SH_OP_LABEL) {
+                        error("%s:%d: `.dispatch_table` needs the "
+                              "table label as its operand\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt));
+                        continue;
+                }
+
+                /* Collect cases through .end_dispatch. */
+                NEW0(d, PERM);
+                d->table_name = dt->operands[0].label;
+                for (j = i + 1; j < body->n_insns; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment) continue;
+                        if (in->is_directive && in->mnemonic
+                            && strcmp(in->mnemonic, ".end_dispatch")
+                               == 0) {
+                                in->suppress_emit = 1;
+                                closed = 1;
+                                break;
+                        }
+                        if (in->is_directive && in->mnemonic
+                            && strcmp(in->mnemonic, ".case") == 0
+                            && !in->is_label) {
+                                if (in->n_operands < 1
+                                    || in->operands[0].kind
+                                       != SH_OP_LABEL) {
+                                        error("%s:%d: `.case` needs "
+                                              "a target label\n",
+                                              body->src_file
+                                              ? body->src_file
+                                              : "<asm>",
+                                              sh_asm_insn_src_line(
+                                                      body, in));
+                                } else if (d->n_cases
+                                           >= SH_DISPATCH_MAX_CASES) {
+                                        error("%s:%d: dispatch table "
+                                              "exceeds %d cases\n",
+                                              body->src_file
+                                              ? body->src_file
+                                              : "<asm>",
+                                              sh_asm_insn_src_line(
+                                                      body, in),
+                                              SH_DISPATCH_MAX_CASES);
+                                } else {
+                                        d->cases[d->n_cases++] =
+                                                in->operands[0].label;
+                                }
+                                in->suppress_emit = 1;
+                                continue;
+                        }
+                        error("%s:%d: only `.case` lines may appear "
+                              "between `.dispatch_table` and "
+                              "`.end_dispatch`\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, in));
+                        break;
+                }
+                if (!closed) {
+                        error("%s:%d: `.dispatch_table %s` has no "
+                              "`.end_dispatch`\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name);
+                        continue;
+                }
+                if (d->n_cases == 0) {
+                        error("%s:%d: `.dispatch_table %s` has no "
+                              "`.case` entries\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name);
+                        continue;
+                }
+
+                /* Locate the dispatch through the table's UNIQUE
+                 * mova — the construct sits where the table
+                 * physically lives, which for bsrf call sites is
+                 * NOT dispatch+4 (the call returns there; it's live
+                 * code). The anchor is therefore welded onto
+                 * whatever record sits at dispatch+4, computed
+                 * here, not assumed positionally. */
+                mova_idx = -1;
+                link_ok = 0;        /* reused as mova count first */
+                for (j = 0; j < body->n_insns; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment || in->is_label
+                            || in->is_directive || in->is_entry)
+                                continue;
+                        if (in->mnemonic
+                            && strcmp(in->mnemonic, "mova") == 0
+                            && in->n_operands >= 1
+                            && in->operands[0].kind == SH_OP_LABEL
+                            && strcmp(in->operands[0].label,
+                                      d->table_name) == 0) {
+                                mova_idx = j;
+                                link_ok++;
+                        }
+                }
+                if (link_ok == 0) {
+                        error("%s:%d: `.dispatch_table %s`: no "
+                              "`mova %s` in this body\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name, d->table_name);
+                        continue;
+                }
+                if (link_ok > 1) {
+                        error("%s:%d: `.dispatch_table %s`: multiple "
+                              "mova reference this table — shared "
+                              "dispatch tables cannot be anchored "
+                              "for more than one dispatch base\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name);
+                        continue;
+                }
+
+                /* Forward from the mova to the consuming braf/bsrf
+                 * within the straight-line block. */
+                braf = -1;
+                for (j = mova_idx + 1; j < body->n_insns; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment || in->is_directive)
+                                continue;
+                        if (in->is_label || in->is_entry)
+                                break;
+                        if (in->mnemonic
+                            && (strcmp(in->mnemonic, "braf") == 0
+                                || strcmp(in->mnemonic, "bsrf")
+                                   == 0)) {
+                                braf = j;
+                                break;
+                        }
+                        if (in->is_branch)
+                                break;
+                }
+                if (braf < 0) {
+                        error("%s:%d: `.dispatch_table %s`: the "
+                              "`mova %s` is not consumed by a "
+                              "braf/bsrf in its block\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name, d->table_name);
+                        continue;
+                }
+                br = &body->insns[braf];
+                breg = (br->n_operands >= 1
+                        && br->operands[0].kind == SH_OP_REG)
+                       ? br->operands[0].reg : -1;
+                link_ok = 0;
+                if (breg >= 0) {
+                        for (j = mova_idx + 1; j < braf; j++) {
+                                struct sh_asm_insn *in =
+                                        &body->insns[j];
+                                if (in->is_comment || in->is_label
+                                    || in->is_directive
+                                    || in->is_entry)
+                                        continue;
+                                if ((in->writes & (1u << breg))
+                                    && (in->reads & 1u)) {
+                                        link_ok = 1;
+                                        break;
+                                }
+                        }
+                }
+                if (!link_ok) {
+                        error("%s:%d: `.dispatch_table %s`: nothing "
+                              "between the mova and the %s moves the "
+                              "loaded entry into its register\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name, br->mnemonic);
+                        continue;
+                }
+
+                /* Delay slot, then the record at dispatch+4 — the
+                 * anchor weld point. */
+                delay = -1;
+                for (j = braf + 1; j < body->n_insns; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment) continue;
+                        if (!in->is_label && !in->is_directive
+                            && !in->is_entry)
+                                delay = j;
+                        break;
+                }
+                if (delay < 0) {
+                        error("%s:%d: `.dispatch_table %s`: the %s "
+                              "has no delay-slot instruction\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name, br->mnemonic);
+                        continue;
+                }
+                for (j = delay + 1; j < body->n_insns; j++) {
+                        if (body->insns[j].is_comment) continue;
+                        break;
+                }
+                if (j >= body->n_insns) {
+                        error("%s:%d: `.dispatch_table %s`: nothing "
+                              "follows the delay slot to carry the "
+                              "dispatch+4 anchor\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, dt),
+                              d->table_name);
+                        continue;
+                }
+
+                /* All checks pass: assign the verification id, weld
+                 * the anchor, attach the expansion. */
+                d->id = ++sh_braf_meta_counter;
+                br->braf_meta_id = d->id;
+                br->braf_meta_role = 1;
+                body->insns[j].disp_anchor_id = d->id;
+                dt->dispatch = d;
+        }
+
+        /* Orphan sweep: .case / .end_dispatch not consumed by a
+         * construct are author mistakes, not no-ops. */
+        for (i = 0; i < body->n_insns; i++) {
+                struct sh_asm_insn *in = &body->insns[i];
+                if (in->is_directive && !in->suppress_emit
+                    && in->mnemonic
+                    && (strcmp(in->mnemonic, ".case") == 0
+                        || strcmp(in->mnemonic, ".end_dispatch")
+                           == 0)) {
+                        error("%s:%d: `%s` outside a "
+                              "`.dispatch_table` block\n",
+                              body->src_file ? body->src_file
+                                             : "<asm>",
+                              sh_asm_insn_src_line(body, in),
+                              in->mnemonic);
+                }
+        }
+}
+
 struct sh_asm_body *sh_parse_asm_text(const char *text,
                                       const char *file, int line) {
         struct sh_asm_body *body;
@@ -4567,6 +4877,12 @@ struct sh_asm_body *sh_parse_asm_text(const char *text,
          * unconditionally so the flag is set whether or not -d-sim
          * is enabled. */
         sh_compute_pool_alignment(body);
+
+        /* First-class dispatch construct resolution. Runs before
+         * the lint: construct sites have no parsed table-label
+         * definition, so the lint naturally skips them and
+         * correctness is owned by the construct + braf_verify. */
+        sh_resolve_dispatch_tables(body);
 
         /* Dispatch-table anchor lint. Must run after the pool-
          * alignment pass — the lint reads pool_align to know where
@@ -4736,6 +5052,13 @@ static int sh_asm_insn_byte_size(const struct sh_asm_insn *in) {
         if (!in) return 0;
         if (in->is_comment) return 0;
         if (in->is_entry) return 0;
+        if (in->suppress_emit) return 0;
+        if (in->dispatch)
+                /* .dispatch_table expansion: 2 bytes per entry. The
+                 * .balign inside the expansion has the same context-
+                 * dependent-width caveat as a bare .balign (reported
+                 * 0, see the function comment). */
+                return 2 * in->dispatch->n_cases;
         if (in->is_label && !in->is_directive) return 0;
         if (in->is_directive) {
                 m = in->mnemonic;
@@ -4883,6 +5206,50 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                 /* Blank or comment line — skip emission entirely.
                  * The assembled output doesn't need decorative
                  * whitespace from the source. */
+                return;
+        }
+        if (in->disp_anchor_id) {
+                /* Anchor weld point: this record sits at dispatch+4
+                 * (computed by sh_resolve_dispatch_tables, not
+                 * positional). For a braf-adjacent construct this is
+                 * the construct record itself; for a bsrf call site
+                 * it is the live return-point code and the table
+                 * lives elsewhere in the body. Printed before
+                 * everything else this record emits — including any
+                 * pool .balign — so the anchor carries the PRE-pad
+                 * address the hardware adds from. Deliberately ahead
+                 * of the suppress check: a welded anchor must never
+                 * vanish with a suppressed record. */
+                print(".L_disp_anchor_%d:\n", in->disp_anchor_id);
+                print("saturncc_braf_%d_anchor:\n",
+                      in->disp_anchor_id);
+        }
+        if (in->suppress_emit) {
+                /* `.case` / `.end_dispatch` consumed by a
+                 * .dispatch_table construct — their content is in
+                 * the expansion below. */
+                return;
+        }
+        if (in->dispatch) {
+                /* `.dispatch_table` expansion. This is the generated
+                 * form of the pad-immune label pair — anchor welded
+                 * to the instruction stream at dispatch+4 (hook
+                 * above), table free to float behind its alignment
+                 * pad, entries re-priced by GAS from final
+                 * addresses. The whole reason this is generated and
+                 * not hand-written is the cross-build-stage contract
+                 * documented above sh_pool_align_for_label — do not
+                 * replicate this sequence by hand; declare a
+                 * construct. */
+                const struct sh_dispatch_table *d = in->dispatch;
+                sh_emit_pad_probe(sh_pad_probe_counter++, 4,
+                                  d->table_name);
+                print("saturncc_braf_%d_tbl_%d:\n", d->id,
+                      d->n_cases);
+                print("%s:\n", d->table_name);
+                for (i = 0; i < d->n_cases; i++)
+                        print("\t.2byte %s - .L_disp_anchor_%d\n",
+                              d->cases[i], d->id);
                 return;
         }
         /* braf_verify metadata, roles 1 and 2 (dispatch insn /
