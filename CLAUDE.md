@@ -110,6 +110,13 @@ pipeline).
   side-by-side viewing. Separate from `validate_byte_match.sh`'s
   mechanical diff — use this when you want to eyeball the
   difference, the other when you want a regression-gated number.
+- **Cross-function pool map exists — don't rewrite it.**
+  `python saturn/tools/pool_graph_probe.py` builds the Case C map
+  (pool words physically inside function X, read by function Y —
+  the delete-X-and-Y-reads-garbage class) from the unity race.s +
+  the yaml function map. Reused by deletion-safety audits and the
+  TU-boundary archaeology follow-ups; check it before writing any
+  new pool/boundary probe.
 - **Don't measure progress by instruction count alone.** Shorter
   output using different instructions than production is not
   progress. Grade on matching production's specific sequences.
