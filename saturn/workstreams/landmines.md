@@ -253,6 +253,41 @@ accepted` in `validate_build.sh` stage 4q.
 
 ---
 
+### Pool auto-align silently corrupts self-anchored braf tables
+
+**Trigger:** a `braf`/`bsrf` dispatch table named `.L_pool_*` whose
+`.2byte` deltas are anchored to the table label itself (or are raw
+numbers), linked at a section offset ≡ 2 mod 4.
+
+**Result:** the pool-align pass emits `.balign 4` before the table;
+GAS materializes a 2-byte pad between the delay slot and the table;
+the table-anchored arithmetic re-evaluates to the same deltas — but
+the hardware adds them to braf+4, which is now table−2. Every
+dispatch lands 2 bytes short. **No diagnostic anywhere in the
+pipe** — this shipped a crashing DaytonaCCEReverse build (illegal
+instruction exception in FUN_06045B74) and was only caught by
+byte-diffing the binary. The bitter part: without our `.balign`,
+GAS hard-errors on the misaligned mova target — the pool-align
+feature (9c7cc50) converted that loud failure into silent
+corruption for this one idiom class. Alignment absorption is sound
+for literal pools (GAS re-encodes label displacements); it is
+unsound for any data consumed by braf/bsrf hardware arithmetic
+that GAS doesn't manage.
+
+**Fix shipped:** `sh_lint_braf_tables` (sh.md, runs after
+`sh_compute_pool_alignment`) — hard compile error unless every
+entry of a braf-consumed delta table is `TARGET - ANCHOR` with
+ANCHOR a label at braf+4 (declared after the delay slot, before
+any alignment point). Fires regardless of current parity: the
+style is latent corruption even when today's bytes are right.
+
+**Regression tests:** `validate_build.sh` 4y2 (a)–(d).
+
+**See also:** `pool_alignment_design.md` §4.5;
+`braf_dispatch_lint.md` for the full incident + corpus sweep.
+
+---
+
 ## Build / harness
 
 ### `$(pwd)` mangling under WSL-invoked Bash
@@ -266,6 +301,29 @@ command line, breaking downstream tools that expect POSIX paths.
 **Workaround:** use absolute paths derived from
 `readlink -f "$0"`. `saturn/tools/build.sh` does this; copy the
 pattern when adding new bash entry points.
+
+---
+
+### `wsl bash -c` from the harness mangles leading-slash args and inline `$?`
+
+**Trigger:** (a) a `wsl bash -c '...'` command string that BEGINS
+with a `/mnt/...` path — Git Bash's MSYS layer rewrites it to
+`C:/Program Files/Git/mnt/...` before wsl sees it (exit 127,
+"C:/Program: No such file or directory"); (b) checking an exit
+code with `...; echo $?` inside the quoted string — some layer of
+the chain pre-expands it and **every `$?` prints 0**, including
+after `false`.
+
+**Result:** during the braf-lint work this produced a convincing
+but entirely false "rcc exits 0 on errors" diagnosis — nearly an
+unnecessary main.c patch. Shell variables (`$f`, arrays) inside
+the quoted string are equally unreliable.
+
+**Workaround:** start the `-c` string with a non-slash token
+(`exec /mnt/...`, `cd /mnt/... && ...`); never read exit codes via
+inline `$?` — make the command of interest the LAST command and
+let the harness report the real exit code, or put multi-step logic
+in a script file on disk and run `wsl bash -c 'bash /mnt/.../script.sh'`.
 
 ---
 

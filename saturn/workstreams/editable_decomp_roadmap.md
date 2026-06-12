@@ -91,7 +91,7 @@ joins the equivalence-metric spec (D2) with a written soundness argument.
 
 | ID | Item | Status |
 |----|---|---|
-| C1 | `__asm` block lint pass (save/restore symmetry, stack balance) | not started |
+| C1 | `__asm` block lint pass (save/restore symmetry, stack balance) | **partial** — braf dispatch-table anchor lint shipped ([`braf_dispatch_lint.md`](braf_dispatch_lint.md)); save/restore + stack-balance lints not started |
 | C2 | Tier 3a partition criteria (when is `__asm` safe?) | not started |
 
 ### Bucket D — Cross-cutting infrastructure
@@ -202,6 +202,22 @@ Tier 2 has the same verification strength as strict byte-match.
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-06-12` — C1 — loud absorption shipped: probe/mark symbol pairs
+  around every synthetic `.balign` + `saturn/tools/pad_report.sh` (per-site
+  pad report from .o symtab, `--strict` for identity gates). GAS-native
+  `.if/.warning` proved impossible (parse-time evaluation). Interim
+  compound-anchor spelling dropped by user decision; first-class dispatch
+  construct promoted to top of the C1 queue. Suite 69/69.
+- `2026-06-12` — C1 — first lint shipped: `sh_lint_braf_tables` hard-errors
+  on pad-vulnerable braf/bsrf dispatch tables (anchor must sit at braf+4).
+  Driven by the DaytonaCCEReverse 2-mod-4 silent-corruption incident
+  (FUN_06045B74); root cause is our own pool auto-align converting a loud
+  GAS error into silent dispatch shear. Corpus sweep: 13/757 shims
+  rejected, all true positives. Workstream:
+  [`braf_dispatch_lint.md`](braf_dispatch_lint.md); landmine logged;
+  retail-parity-pinning alternative investigated and punted
+  ([`tu_boundary_archaeology.md`](tu_boundary_archaeology.md)). Queued:
+  binary-level braf verifier; pad-immune `sh_emit_switch_dispatch`.
 - `2026-05-05` — A1 — promoted from NTI to active. Workstream opened at
   `saturn/workstreams/multi_entry_implementation.md`. M1 acceptance
   anchored to the FUN_06036BB8 attract-demo regression case

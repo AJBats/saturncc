@@ -243,6 +243,21 @@ are flagged here so a future regression has a reference.
   indirect: tier-1 byte-match dashboard would diff if the regex
   reordering broke. Worth a unit test if the normalizer grows.
 
+- **UNSOUND for self-anchored braf dispatch tables — guarded by
+  lint (2026-06).** The always-emit `.balign 4` is sound only for
+  consumers whose displacement GAS re-encodes (mov.l/mov.w/mova
+  label refs). A `braf`/`bsrf` delta table named `.L_pool_*` whose
+  entries are anchored to the table label itself breaks SILENTLY
+  when the pad materializes at 2-mod-4 offsets: the hardware adds
+  entries to braf+4 while the pad moves the table, shearing every
+  dispatch by 2. Worse, the feature *removed* the loud GAS
+  "offset to unaligned destination" error that previously caught
+  this shape. Shipped corruption in DaytonaCCEReverse
+  (FUN_06045B74, illegal-instruction crash). Guard:
+  `sh_lint_braf_tables` hard-errors on any braf-consumed table
+  not anchored at braf+4; see `landmines.md` and
+  `braf_dispatch_lint.md`. Regtests: `validate_build.sh` 4y2.
+
 ## 5. What NOT to do
 
 - **Don't try to byte-count the section** to emit alignment only
@@ -274,3 +289,5 @@ are flagged here so a future regression has a reference.
 |------|------|
 | 2026-04-29 | Initial design. Five stages; emit-time peek over peephole-mutation. |
 | 2026-04-30 | Revised D1 after the structural trigger over-fired in DaytonaCCEReverse's race build (1,246 wpool over-emissions + 22 non-pool over-emissions blew bsr displacement budget). Trigger now naming-based: `.L_pool_*` → `.balign 4`, `.L_wpool_*` → `.balign 2`, others → no emit. |
+| 2026-06-12 | Soundness hole found and guarded: the pad silently corrupts self-anchored braf dispatch tables at 2-mod-4 offsets (DaytonaCCEReverse FUN_06045B74 crash). New §4.5 entry; `sh_lint_braf_tables` makes the vulnerable style a hard compile error. See `braf_dispatch_lint.md`. |
+| 2026-06-12 | Loud absorption: every synthetic `.balign` now bracketed by `saturncc_pad_probe_N`/`saturncc_pad_mark_N_<site>` zero-size symbols; `pad_report.sh` reports materialized pads per-site from the .o symtab. GAS-native `.if/.warning` form impossible (non-constant expression across alignment frags). Regtests 4y3. |

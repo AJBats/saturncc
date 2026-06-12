@@ -988,7 +988,11 @@ pool_out="$(mktemp)"
 # emission shape breaks this strip, both this and asm_normalize.py
 # need an update.
 pool_out_clean="$(mktemp)"
-grep -v '^# [0-9]' "$pool_out" > "$pool_out_clean"
+# Also strip the pad-tripwire bookmark symbols (saturncc_pad_probe_N /
+# saturncc_pad_mark_N_*) — zero-size symbols that sit adjacent to every
+# synthetic .balign and would break the "directly before label" awk
+# adjacency checks below. They have their own regtest (4y3).
+grep -v '^# [0-9]' "$pool_out" | grep -v '^saturncc_pad_' > "$pool_out_clean"
 ok=1
 # Verify: directive `dir` ($1) appears immediately before label `lbl` ($2).
 check_emits() {
@@ -1048,6 +1052,231 @@ else
     fail "regtest: pool-label auto-alignment wrong — inspect $pool_out (raw) / $pool_out_clean (line-dirs stripped)"
 fi
 rm -f "$pool_out" "$pool_out_clean"
+
+# 4y2. braf/bsrf dispatch-table anchor lint: every entry of a braf-
+# consumed delta table must be `TARGET - ANCHOR` label arithmetic
+# with ANCHOR a label sitting at braf+4 (declared immediately after
+# the delay slot, before any alignment point). Self-anchored tables
+# (the FUN_06045B74 silent-corruption class) and raw-numeric tables
+# (the FUN_06028000 class) are hard compile errors with NONZERO EXIT
+# — the exit code is the load-bearing assertion, since the failure
+# this guards against was a build that stayed green while braf
+# dispatch sheared 2 bytes under a 2-mod-4 link shift. The pad-immune
+# re-anchored style and ordinary mova literal pools must still pass.
+
+# (a) must-FAIL: self-anchored dispatch table.
+cat > /tmp/regtest.c <<'EOF'
+void FUN_braf_selfanchor(void) asm {
+    mov r0, r1
+    mova .L_pool_tbl, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+.L_pool_tbl:
+    .2byte .L_case0 - .L_pool_tbl
+    .2byte .L_case1 - .L_pool_tbl
+.L_case0:
+    rts
+    nop
+.L_case1:
+    rts
+    nop
+}
+EOF
+lint_err="$(mktemp)"
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>"$lint_err"; then
+    fail "regtest: braf lint must reject self-anchored table (got exit 0) — inspect $lint_err"
+elif grep -q 'dispatch table' "$lint_err"; then
+    pass "regtest: braf lint rejects self-anchored dispatch table (nonzero exit)"
+else
+    fail "regtest: braf lint exited nonzero but with unexpected diagnostics — inspect $lint_err"
+fi
+
+# (b) must-FAIL: raw numeric table entries (frozen retail distances;
+# unverifiable against the braf+4 base).
+cat > /tmp/regtest.c <<'EOF'
+void FUN_braf_rawnum(void) asm {
+    mov r0, r1
+    mova .L_pool_tbl, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+.L_pool_tbl:
+    .2byte 0x0032
+    .2byte 0x0046
+    rts
+    nop
+}
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>"$lint_err"; then
+    fail "regtest: braf lint must reject raw-numeric table (got exit 0) — inspect $lint_err"
+elif grep -q 'TARGET - ANCHOR' "$lint_err"; then
+    pass "regtest: braf lint rejects raw-numeric dispatch table (nonzero exit)"
+else
+    fail "regtest: braf lint exited nonzero but with unexpected diagnostics — inspect $lint_err"
+fi
+
+# (c) must-PASS: pad-immune style — entries anchored to a plain label
+# at braf+4; the .L_pool_* table label itself still gets its auto
+# .balign 4 (lint and pool-align coexist on the same body).
+cat > /tmp/regtest.c <<'EOF'
+void FUN_braf_immune(void) asm {
+    mov r0, r1
+    mova .L_pool_tbl, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+.L_ret:
+.L_pool_tbl:
+    .2byte .L_case0 - .L_ret
+    .2byte .L_case1 - .L_ret
+.L_case0:
+    rts
+    nop
+.L_case1:
+    rts
+    nop
+}
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>"$lint_err" \
+   && ! grep -q 'dispatch table' "$lint_err" \
+   && grep -v -e '^# [0-9]' -e '^saturncc_pad_' /tmp/regtest.s | grep -B1 '^\.L_pool_tbl:' | grep -q '\.balign 4'; then
+    pass "regtest: braf lint accepts pad-immune re-anchored table (auto-.balign intact)"
+else
+    fail "regtest: braf lint rejected pad-immune style or dropped .balign — inspect $lint_err / /tmp/regtest.s"
+fi
+
+# (d) must-PASS: ordinary literal pool — mova present, no braf.
+cat > /tmp/regtest.c <<'EOF'
+void FUN_braf_litpool(void) asm {
+    mova .L_pool_data, r0
+    mov.l @r0, r1
+    rts
+    nop
+.L_pool_data:
+    .long 0x06028000
+    .long 0x0000FFFF
+}
+EOF
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>"$lint_err" \
+   && ! grep -q 'dispatch table' "$lint_err"; then
+    pass "regtest: braf lint silent on plain mova literal pool"
+else
+    fail "regtest: braf lint misfired on a literal pool — inspect $lint_err"
+fi
+rm -f "$lint_err"
+
+# 4y3. Pad tripwires ("loud absorption"): every synthetic .balign is
+# bracketed by a probe/mark symbol pair so materialized pads can be
+# reported per-site from the .o symbol table (saturn/tools/
+# pad_report.sh). NOTE: do NOT "simplify" this to an in-source
+# `.if (mark - probe) != 0` + `.warning` — GAS hard-errors with
+# "non-constant expression" on any .if spanning an alignment
+# directive (one-pass parse-time evaluation; verified empirically).
+#
+# (a) emission shape: probe, .balign, mark, pool label — in order.
+cat > /tmp/regtest.c <<'EOF'
+void FUN_tripwire(void) asm {
+    rts
+    nop
+    .byte 0x01
+.L_pool_p:
+    .long 0x12345678
+}
+EOF
+trip_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$trip_out" 2>/dev/null
+if awk '
+    /^saturncc_pad_probe_0:/                { probe = NR }
+    /\.balign 4/                            { if (probe) balign = NR }
+    /^saturncc_pad_mark_0__L_pool_p:/       { mark = NR }
+    /^\.L_pool_p:/                          { label = NR }
+    END { exit (probe && balign > probe && mark > balign \
+                && label > mark) ? 0 : 1 }
+' "$trip_out"; then
+    pass "regtest: pad-tripwire probe/mark pair brackets synthetic .balign"
+else
+    fail "regtest: pad-tripwire emission shape wrong — inspect $trip_out"
+fi
+rm -f "$trip_out"
+
+# (b) end-to-end through GAS + nm: the misaligned body must assemble
+# CLEAN (regression guard for the rejected .if/.warning form), report
+# exactly one 3-byte pad, and --strict must gate on it; the aligned
+# body must report zero pads and pass --strict.
+SH_AS_TRIP="/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-as.exe"
+SH_NM_TRIP="/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-nm.exe"
+TRIP_WSL="/mnt/d/Projects/saturncc/build/cmp/tripwire_regtest"
+TRIP_WIN="D:\\Projects\\saturncc\\build\\cmp\\tripwire_regtest"
+if [ -x "$SH_AS_TRIP" ] && [ -e "$SH_NM_TRIP" ]; then
+    mkdir -p "$TRIP_WSL"
+    cat > "$TRIP_WSL/padfire.c" <<'EOF'
+void FUN_padfire(void) asm {
+    rts
+    nop
+    .byte 0x01
+.L_pool_p:
+    .long 0x12345678
+}
+EOF
+    cat > "$TRIP_WSL/padquiet.c" <<'EOF'
+void FUN_padquiet(void) asm {
+    rts
+    nop
+.L_pool_q:
+    .long 0x12345678
+}
+EOF
+    trip_ok=1
+    "$RCC" -target=sh/hitachi "$TRIP_WSL/padfire.c" "$TRIP_WSL/padfire.s" 2>/dev/null || trip_ok=0
+    "$RCC" -target=sh/hitachi "$TRIP_WSL/padquiet.c" "$TRIP_WSL/padquiet.s" 2>/dev/null || trip_ok=0
+    "$SH_AS_TRIP" -big -o "${TRIP_WIN}\\padfire.o" "${TRIP_WIN}\\padfire.s" 2>/dev/null || trip_ok=0
+    "$SH_AS_TRIP" -big -o "${TRIP_WIN}\\padquiet.o" "${TRIP_WIN}\\padquiet.s" 2>/dev/null || trip_ok=0
+    fire_rep="$(SH_NM="$SH_NM_TRIP" bash "$SCRIPT_DIR/pad_report.sh" "${TRIP_WIN}\\padfire.o")" || true
+    echo "$fire_rep" | grep -q '^PAD: 3 byte(s)' || trip_ok=0
+    echo "$fire_rep" | grep -q 'pads materialized: 1' || trip_ok=0
+    if SH_NM="$SH_NM_TRIP" bash "$SCRIPT_DIR/pad_report.sh" "${TRIP_WIN}\\padfire.o" --strict >/dev/null; then
+        trip_ok=0    # strict must FAIL on a materialized pad
+    fi
+    quiet_rep="$(SH_NM="$SH_NM_TRIP" bash "$SCRIPT_DIR/pad_report.sh" "${TRIP_WIN}\\padquiet.o" --strict)" || trip_ok=0
+    echo "$quiet_rep" | grep -q 'pads materialized: 0' || trip_ok=0
+    if [ "$trip_ok" = "1" ]; then
+        pass "regtest: pad tripwires end-to-end (GAS clean, 3-byte pad reported, strict gates)"
+    else
+        fail "regtest: pad tripwires end-to-end wrong — inspect $TRIP_WSL"
+    fi
+
+    # (c) as_pad_wrap.sh — the automatic form consumers adopt by
+    # pointing AS at the wrapper. Pad case: assembles, warns on
+    # stderr, exit 0 (and exit 1 under SATURNCC_PAD_STRICT=1).
+    # Aligned case: assembles, silent, exit 0.
+    wrap_ok=1
+    wrap_err="$(mktemp)"
+    SH_NM="$SH_NM_TRIP" SATURNCC_AS="$SH_AS_TRIP" \
+        bash "$SCRIPT_DIR/as_pad_wrap.sh" -big \
+        -o "${TRIP_WIN}\\padfire.o" "${TRIP_WIN}\\padfire.s" \
+        2>"$wrap_err" || wrap_ok=0
+    grep -q 'saturncc pad warning .*PAD: 3 byte(s)' "$wrap_err" || wrap_ok=0
+    if SH_NM="$SH_NM_TRIP" SATURNCC_AS="$SH_AS_TRIP" SATURNCC_PAD_STRICT=1 \
+        bash "$SCRIPT_DIR/as_pad_wrap.sh" -big \
+        -o "${TRIP_WIN}\\padfire.o" "${TRIP_WIN}\\padfire.s" \
+        2>/dev/null; then
+        wrap_ok=0    # strict must FAIL on a materialized pad
+    fi
+    SH_NM="$SH_NM_TRIP" SATURNCC_AS="$SH_AS_TRIP" \
+        bash "$SCRIPT_DIR/as_pad_wrap.sh" -big \
+        -o "${TRIP_WIN}\\padquiet.o" "${TRIP_WIN}\\padquiet.s" \
+        2>"$wrap_err" || wrap_ok=0
+    [ -s "$wrap_err" ] && wrap_ok=0    # aligned case must be silent
+    if [ "$wrap_ok" = "1" ]; then
+        pass "regtest: as_pad_wrap.sh auto-reports pads (warn/strict/silent)"
+    else
+        fail "regtest: as_pad_wrap.sh behavior wrong — inspect $TRIP_WSL / $wrap_err"
+    fi
+    rm -f "$wrap_err"
+else
+    pass "regtest: pad tripwires end-to-end (sh-elf toolchain absent — skipped)"
+fi
 
 # 4z. Line directive emission: saturncc emits cpp-style
 # `# <line> "<file>"` directives ahead of each asm-body instruction

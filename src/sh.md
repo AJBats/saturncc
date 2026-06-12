@@ -4095,6 +4095,331 @@ static void sh_compute_pool_alignment(struct sh_asm_body *body) {
         }
 }
 
+/* ── braf/bsrf dispatch-table anchor lint ────────────────────────
+ *
+ * The SH-2 dispatch idiom loads a 16-bit delta table with mova,
+ * indexes it, and jumps with `braf rN`. The hardware target is
+ * braf_address + 4 + delta — so the deltas must be anchored to a
+ * label that sits exactly at braf+4. Retail layout usually makes
+ * that the table label itself (the table starts right after the
+ * delay slot), which works until alignment padding lands between
+ * the delay slot and the table: the pool_align pass above (or a
+ * source `.balign`) keeps the mova target 4-aligned by padding,
+ * the table-anchored label arithmetic re-evaluates to the same
+ * deltas, and every dispatch silently lands short by the pad
+ * size. Found the hard way: DaytonaCCEReverse FUN_06045B74 at a
+ * 2-mod-4 link shift dispatched into its own table data and took
+ * an illegal-instruction exception, with zero diagnostics from
+ * cpp/rcc/GAS/ld.
+ *
+ * The lint makes the vulnerable authoring style a hard compile
+ * error: every entry of a braf/bsrf-consumed delta table must be
+ * `TARGET - ANCHOR` where ANCHOR is a label located at braf+4,
+ * i.e. declared immediately after the delay slot and before any
+ * alignment point. Anchoring to the table label, raw numeric
+ * entries, and arithmetic the lint can't verify are all rejected.
+ * The error fires regardless of current layout parity — at
+ * 0-mod-4 the bytes happen to be right, but the style is latent
+ * corruption under any odd relocation, and the point is to catch
+ * it before a shift does.
+ *
+ * Scope/limits (binary-level verification downstream is the
+ * backstop for these):
+ *   - only tables reached through `mova L,r0` plus an insn
+ *     linking r0 to the braf register inside one straight-line
+ *     block are checked; hand-rolled PC math is invisible here.
+ *   - a table label defined outside this asm body is skipped,
+ *     not errored (mova can't reach another function's pool
+ *     anyway).
+ */
+
+#define SH_LINT_MAX_ANCHORS 8
+
+static int sh_asm_insn_src_line(const struct sh_asm_body *body,
+                                const struct sh_asm_insn *in);
+
+/* Zero-size, non-aligning directives that may sit between the
+ * delay slot and an anchor label without moving it. Everything
+ * not listed is conservatively treated as size-bearing. */
+static int sh_lint_dir_is_zero_size(const char *mn) {
+        if (!mn) return 0;
+        return strcmp(mn, ".global") == 0
+            || strcmp(mn, ".globl") == 0
+            || strcmp(mn, ".type") == 0;
+}
+
+/* Data directives that can hold dispatch-table deltas. */
+static int sh_lint_dir_is_table_entry(const char *mn) {
+        if (!mn) return 0;
+        return strcmp(mn, ".2byte") == 0
+            || strcmp(mn, ".short") == 0
+            || strcmp(mn, ".word")  == 0
+            || strcmp(mn, ".long")  == 0
+            || strcmp(mn, ".4byte") == 0;
+}
+
+/* Match an assembler identifier at p. On success stores start/len
+ * and returns the pointer past it; returns NULL on no match. */
+static const char *sh_lint_match_ident(const char *p,
+                                       const char **s, int *n) {
+        const char *q = p;
+        if (!((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+              || *q == '_' || *q == '.' || *q == '$'))
+                return NULL;
+        while ((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')
+               || (*q >= '0' && *q <= '9')
+               || *q == '_' || *q == '.' || *q == '$')
+                q++;
+        *s = p;
+        *n = (int)(q - p);
+        return q;
+}
+
+/* Check every comma-separated entry on one table data-directive
+ * line. Each entry must be `TARGET - ANCHOR` label arithmetic
+ * with ANCHOR in the braf+4 anchor set. Returns 0 when all
+ * entries pass, 1 on a bad anchor (ident stored in *bad/*badlen),
+ * 2 when an entry is not label-difference arithmetic at all (raw
+ * number, bare symbol, compound expression). */
+static int sh_lint_check_entry_line(const struct sh_asm_insn *in,
+                                    char **anchors, int nanchor,
+                                    const char **bad, int *badlen) {
+        const char *p, *q, *s;
+        int n, k, match;
+
+        *bad = NULL;
+        *badlen = 0;
+        if (!in->src_text || !in->mnemonic) return 2;
+        p = strstr(in->src_text, in->mnemonic);
+        if (!p) return 2;
+        p += strlen(in->mnemonic);
+        for (;;) {
+                p = sh_p_skip_ws(p);
+                q = sh_lint_match_ident(p, &s, &n);
+                if (!q) return 2;
+                p = sh_p_skip_ws(q);
+                if (*p != '-') return 2;
+                p = sh_p_skip_ws(p + 1);
+                q = sh_lint_match_ident(p, &s, &n);
+                if (!q) return 2;
+                match = 0;
+                for (k = 0; k < nanchor; k++)
+                        if ((int)strlen(anchors[k]) == n
+                            && strncmp(anchors[k], s, n) == 0) {
+                                match = 1;
+                                break;
+                        }
+                if (!match) {
+                        *bad = s;
+                        *badlen = n;
+                        return 1;
+                }
+                p = sh_p_skip_ws(q);
+                if (*p == ',') {
+                        p++;
+                        continue;
+                }
+                if (*p == 0 || *p == '\n' || *p == '\r'
+                    || *p == '!' || *p == ';'
+                    || (p[0] == '/' && p[1] == '*'))
+                        return 0;
+                return 2;
+        }
+}
+
+static void sh_lint_braf_tables(struct sh_asm_body *body) {
+        int i;
+        if (!body) return;
+        for (i = 0; i < body->n_insns; i++) {
+                struct sh_asm_insn *br = &body->insns[i];
+                char *anchors[SH_LINT_MAX_ANCHORS];
+                int nanchor, breg, d, j, mova_idx, link_ok, tbl;
+                const char *table_name;
+
+                if (br->is_comment || br->is_label || br->is_directive
+                    || br->is_entry || !br->mnemonic)
+                        continue;
+                if (strcmp(br->mnemonic, "braf") != 0
+                    && strcmp(br->mnemonic, "bsrf") != 0)
+                        continue;
+                if (br->n_operands < 1
+                    || br->operands[0].kind != SH_OP_REG)
+                        continue;
+                breg = br->operands[0].reg;
+
+                /* Delay slot: the next non-comment record must be a
+                 * plain instruction. Anything else is outside the
+                 * idiom — skip this braf. */
+                d = -1;
+                for (j = i + 1; j < body->n_insns; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment) continue;
+                        if (!in->is_label && !in->is_directive
+                            && !in->is_entry)
+                                d = j;
+                        break;
+                }
+                if (d < 0) continue;
+
+                /* Anchor set: labels guaranteed to sit at braf+4 —
+                 * declared after the delay slot, before the first
+                 * size-bearing record or alignment point. A label
+                 * with pool_align set has a synthetic .balign
+                 * printed BEFORE it, so it (and everything after)
+                 * is past a potential pad and is NOT an anchor. */
+                nanchor = 0;
+                for (j = d + 1; j < body->n_insns
+                     && nanchor < SH_LINT_MAX_ANCHORS; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment) continue;
+                        if (in->is_entry) {
+                                if (in->n_operands >= 1
+                                    && in->operands[0].kind
+                                       == SH_OP_LABEL)
+                                        anchors[nanchor++] =
+                                                in->operands[0].label;
+                                continue;
+                        }
+                        if (in->is_label) {
+                                if (in->pool_align) break;
+                                if (in->label_name)
+                                        anchors[nanchor++] =
+                                                in->label_name;
+                                if (in->is_directive) break;
+                                continue;
+                        }
+                        if (in->is_directive) {
+                                if (sh_is_align_directive(in->mnemonic))
+                                        break;
+                                if (sh_lint_dir_is_zero_size(in->mnemonic))
+                                        continue;
+                                break;
+                        }
+                        break;
+                }
+
+                /* The mova feeding this braf: nearest one scanning
+                 * back through the same straight-line block. */
+                mova_idx = -1;
+                for (j = i - 1; j >= 0; j--) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment || in->is_directive)
+                                continue;
+                        if (in->is_label || in->is_entry
+                            || in->is_branch)
+                                break;
+                        if (in->mnemonic
+                            && strcmp(in->mnemonic, "mova") == 0) {
+                                mova_idx = j;
+                                break;
+                        }
+                        if (in->mnemonic
+                            && (strcmp(in->mnemonic, "braf") == 0
+                                || strcmp(in->mnemonic, "bsrf") == 0))
+                                break;
+                }
+                if (mova_idx < 0) continue;
+                if (body->insns[mova_idx].n_operands < 1
+                    || body->insns[mova_idx].operands[0].kind
+                       != SH_OP_LABEL)
+                        continue;
+                table_name = body->insns[mova_idx].operands[0].label;
+
+                /* Dataflow link mova→braf: some insn in between
+                 * must write the braf register while reading r0
+                 * (the `mov.w @(r0,rX),rY` load). Conservatively-
+                 * parsed insns (is_unknown, all-bits masks) pass
+                 * for free — leniency is the right failure mode
+                 * for a lint gate. */
+                link_ok = 0;
+                for (j = mova_idx + 1; j < i; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_comment || in->is_label
+                            || in->is_directive || in->is_entry)
+                                continue;
+                        if ((in->writes & (1u << breg))
+                            && (in->reads & 1u)) {
+                                link_ok = 1;
+                                break;
+                        }
+                }
+                if (!link_ok) continue;
+
+                /* Table label definition inside this body. */
+                tbl = -1;
+                for (j = 0; j < body->n_insns; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        if (in->is_label && in->label_name
+                            && strcmp(in->label_name, table_name)
+                               == 0) {
+                                tbl = j;
+                                break;
+                        }
+                }
+                if (tbl < 0) continue;
+
+                /* Walk the table entries. First violation reports
+                 * and stops — one error per table keeps the output
+                 * readable when a 16-entry table is mis-anchored
+                 * throughout. */
+                for (j = tbl; j < body->n_insns; j++) {
+                        struct sh_asm_insn *in = &body->insns[j];
+                        int verdict;
+                        const char *bad;
+                        int badlen;
+                        if (in->is_comment) continue;
+                        if (j > tbl && (in->is_label || in->is_entry))
+                                break;
+                        if (!in->is_directive) {
+                                if (j == tbl) continue;
+                                break;
+                        }
+                        if (!sh_lint_dir_is_table_entry(in->mnemonic))
+                                break;
+                        verdict = sh_lint_check_entry_line(in, anchors,
+                                                           nanchor,
+                                                           &bad,
+                                                           &badlen);
+                        if (verdict == 1) {
+                                error("%s:%d: `%s` dispatch table `%s` "
+                                      "entry anchored to `%S`, which is "
+                                      "not at the dispatch instruction+4: "
+                                      "an alignment pad before the table "
+                                      "silently shifts every dispatch "
+                                      "(hardware adds entries to %s+4; "
+                                      "table-anchored arithmetic moves "
+                                      "with the table). Anchor entries "
+                                      "to a label placed immediately "
+                                      "after the delay slot.\n",
+                                      body->src_file ? body->src_file
+                                                     : "<asm>",
+                                      sh_asm_insn_src_line(body, in),
+                                      br->mnemonic, table_name,
+                                      bad, badlen, br->mnemonic);
+                                break;
+                        }
+                        if (verdict == 2) {
+                                error("%s:%d: `%s` dispatch table `%s` "
+                                      "entry is not `TARGET - ANCHOR` "
+                                      "label arithmetic; raw numbers "
+                                      "and compound expressions cannot "
+                                      "be verified against the %s+4 "
+                                      "dispatch base and break silently "
+                                      "under relocation. Write entries "
+                                      "as `TARGET - ANCHOR` with ANCHOR "
+                                      "a label immediately after the "
+                                      "delay slot.\n",
+                                      body->src_file ? body->src_file
+                                                     : "<asm>",
+                                      sh_asm_insn_src_line(body, in),
+                                      br->mnemonic, table_name,
+                                      br->mnemonic);
+                                break;
+                        }
+                }
+        }
+}
+
 struct sh_asm_body *sh_parse_asm_text(const char *text,
                                       const char *file, int line) {
         struct sh_asm_body *body;
@@ -4157,6 +4482,11 @@ struct sh_asm_body *sh_parse_asm_text(const char *text,
          * unconditionally so the flag is set whether or not -d-sim
          * is enabled. */
         sh_compute_pool_alignment(body);
+
+        /* Dispatch-table anchor lint. Must run after the pool-
+         * alignment pass — the lint reads pool_align to know where
+         * synthetic .balign pads can land. */
+        sh_lint_braf_tables(body);
 
         /* -d-sim: post-parse, run the symbolic simulator on this
          * body and report its r4-preservation verdict. The result
@@ -4411,6 +4741,56 @@ static void sh_resolve_aliases_for_fn(const char *fn_name,
         }
 }
 
+/* Pad tripwire ("loud absorption"): every synthetic .balign gets a
+ * bookmark-symbol pair so the pads that actually materialize can be
+ * reported per-site after assembly. rcc cannot report them itself —
+ * it only emits the directive; GAS decides 0-vs-N bytes at final
+ * layout. And GAS can't report them either: `.if (A - B)` spanning
+ * an alignment directive is a "non-constant expression" hard error
+ * (one-pass parse-time evaluation; verified empirically against
+ * sh-elf-as — do not retry the in-source .if/.warning form). So the
+ * question is planted as two zero-size symbols:
+ *
+ *   saturncc_pad_probe_N:            ← address before alignment
+ *       .balign 4
+ *   saturncc_pad_mark_N_<site>:      ← address after alignment
+ *   .L_pool_X:
+ *
+ * `saturn/tools/pad_report.sh` pairs them out of `nm` output and
+ * prints one line per materialized pad. Non-.L names survive into
+ * the .o symtab (GNU `.L*` locals are discarded); objcopy -O binary
+ * strips all symbols, so image bytes are untouched in every case.
+ * Free build: expected pad count 0 (any pad is a byte-identity
+ * break anyway) — the report turns that silence into a verified
+ * claim. Shifted builds: every absorbed pad becomes a line item.
+ * Source-supplied `.balign` (D3 dedup) gets no probe — scope is
+ * the pads WE introduce. Origin: DaytonaCCEReverse braf incident,
+ * "silence #3" — see braf_dispatch_lint.md. */
+static int sh_pad_probe_counter;
+
+/* Label name → symbol-suffix form: chars outside [A-Za-z0-9_]
+ * become '_' (`.L_pool_X` → `_L_pool_X`). */
+static void sh_pad_sanitize(const char *label, char *out, int cap) {
+        int i;
+        for (i = 0; label[i] && i < cap - 1; i++) {
+                char c = label[i];
+                out[i] = ((c >= 'a' && c <= 'z')
+                          || (c >= 'A' && c <= 'Z')
+                          || (c >= '0' && c <= '9') || c == '_')
+                         ? c : '_';
+        }
+        out[i] = 0;
+}
+
+static void sh_emit_pad_probe(int probe, int align,
+                              const char *label) {
+        char suffix[128];
+        sh_pad_sanitize(label, suffix, (int)sizeof suffix);
+        print("saturncc_pad_probe_%d:\n", probe);
+        print("\t.balign %d\n", align);
+        print("saturncc_pad_mark_%d_%s:\n", probe, suffix);
+}
+
 static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
         int i;
         if (!in) return;
@@ -4422,10 +4802,13 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
         }
         if (in->is_label && !in->is_directive) {
                 /* Standalone `LABEL:` line. */
-                if (in->pool_align == 4)
-                        print("\t.balign 4\n");
-                else if (in->pool_align == 2)
-                        print("\t.balign 2\n");
+                if (in->pool_align && in->label_name) {
+                        sh_emit_pad_probe(sh_pad_probe_counter++,
+                                          (int)in->pool_align,
+                                          in->label_name);
+                        print("%s:\n", in->label_name);
+                        return;
+                }
                 print("%s:\n", in->mnemonic ? in->mnemonic : "?");
                 return;
         }
@@ -4458,10 +4841,10 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                 const char *s = in->src_text;
                 while (*s == ' ' || *s == '\t') s++;
                 if (in->is_label) {
-                        if (in->pool_align == 4)
-                                print("\t.balign 4\n");
-                        else if (in->pool_align == 2)
-                                print("\t.balign 2\n");
+                        if (in->pool_align && in->label_name)
+                                sh_emit_pad_probe(sh_pad_probe_counter++,
+                                                  (int)in->pool_align,
+                                                  in->label_name);
                         print("%s", s);
                 } else {
                         print("\t%s", s);
