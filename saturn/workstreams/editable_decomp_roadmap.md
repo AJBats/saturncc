@@ -202,6 +202,12 @@ Tier 2 has the same verification strength as strict byte-match.
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-06-12` — C1 — binary braf verifier shipped (the menu's "trusts
+  nothing textual" layer): lint stamps `saturncc_braf_K` symbol families
+  on blessed tables; `saturn/tools/braf_verify.py` checks anchor==braf+4
+  and table words against assembled bytes; auto-runs via `as_pad_wrap.sh`,
+  errors always fail the build. Regtests 4y4; suite 72/72. Post-campaign
+  corpus: 757/757 shims pass via the faithful cpp→rcc pipeline.
 - `2026-06-12` — C1 — dispatch-table construct design drafted at
   [`../nti/dispatch_table_construct.md`](../nti/dispatch_table_construct.md)
   (rcc owns anchor/alignment/deltas; human writes the case list; switch-

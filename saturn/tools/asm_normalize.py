@@ -37,12 +37,13 @@ import sys
 DROP_DIR_RE = re.compile(
     r'^\s*\.(section|type|global|globl|align|balign|text|file|ident)\b'
 )
-# saturncc pad tripwires: `saturncc_pad_probe_N:` / `saturncc_pad_mark_N_*:`
-# bookmark symbols around each synthetic .balign (loud absorption — see
-# braf_dispatch_lint.md). Zero-size symbols, stripped by objcopy; must be
-# filtered BEFORE label classification or they would consume L<n> numbers
-# and shift every subsequent canonical label.
-PAD_PROBE_RE = re.compile(r'^\s*saturncc_pad_(probe|mark)_\S+:\s*$')
+# saturncc instrumentation symbols: pad tripwires (`saturncc_pad_probe_N:`
+# / `saturncc_pad_mark_N_*:` around each synthetic .balign) and braf
+# verification metadata (`saturncc_braf_K[_anchor|_tbl_N]:` on lint-blessed
+# dispatch tables) — see braf_dispatch_lint.md. Zero-size symbols, stripped
+# by objcopy; must be filtered BEFORE label classification or they would
+# consume L<n> numbers and shift every subsequent canonical label.
+PAD_PROBE_RE = re.compile(r'^\s*saturncc_(pad_(probe|mark)|braf)_\S+:\s*$')
 # cpp-style line directive: `# 142 "race/FUN_X.c"`. saturncc emits these
 # so GAS attributes its error messages to the original C source instead
 # of the .s file. They generate no bytes and shouldn't perturb tier-1

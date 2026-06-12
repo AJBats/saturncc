@@ -988,11 +988,12 @@ pool_out="$(mktemp)"
 # emission shape breaks this strip, both this and asm_normalize.py
 # need an update.
 pool_out_clean="$(mktemp)"
-# Also strip the pad-tripwire bookmark symbols (saturncc_pad_probe_N /
-# saturncc_pad_mark_N_*) — zero-size symbols that sit adjacent to every
-# synthetic .balign and would break the "directly before label" awk
-# adjacency checks below. They have their own regtest (4y3).
-grep -v '^# [0-9]' "$pool_out" | grep -v '^saturncc_pad_' > "$pool_out_clean"
+# Also strip the saturncc instrumentation symbols (pad-tripwire
+# probe/mark pairs + braf-verify metadata) — zero-size symbols that sit
+# adjacent to every synthetic .balign and would break the "directly
+# before label" awk adjacency checks below. They have their own
+# regtests (4y3, 4y4).
+grep -v '^# [0-9]' "$pool_out" | grep -v '^saturncc_' > "$pool_out_clean"
 ok=1
 # Verify: directive `dir` ($1) appears immediately before label `lbl` ($2).
 check_emits() {
@@ -1140,7 +1141,7 @@ void FUN_braf_immune(void) asm {
 EOF
 if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>"$lint_err" \
    && ! grep -q 'dispatch table' "$lint_err" \
-   && grep -v -e '^# [0-9]' -e '^saturncc_pad_' /tmp/regtest.s | grep -B1 '^\.L_pool_tbl:' | grep -q '\.balign 4'; then
+   && grep -v -e '^# [0-9]' -e '^saturncc_' /tmp/regtest.s | grep -B1 '^\.L_pool_tbl:' | grep -q '\.balign 4'; then
     pass "regtest: braf lint accepts pad-immune re-anchored table (auto-.balign intact)"
 else
     fail "regtest: braf lint rejected pad-immune style or dropped .balign — inspect $lint_err / /tmp/regtest.s"
@@ -1277,6 +1278,97 @@ EOF
 else
     pass "regtest: pad tripwires end-to-end (sh-elf toolchain absent — skipped)"
 fi
+
+# 4y4. Binary braf verification: the lint stamps blessed dispatch
+# tables with a saturncc_braf_K / _anchor / _tbl_N symbol family;
+# braf_verify.py checks ground truth in the assembled object (anchor
+# == braf+4, entry targets sane, unverified dispatches swept).
+# as_pad_wrap.sh runs it automatically and ALWAYS fails the build on
+# verifier errors — they are guaranteed-broken dispatch math.
+#
+# (a) emission shape: the three symbols appear at their sites.
+cat > /tmp/regtest.c <<'EOF'
+void FUN_braf_meta(void) asm {
+    mov r0, r1
+    mova .L_pool_tbl, r0
+    mov.w @(r0, r1), r1
+    braf r1
+    nop
+.L_ret:
+.L_pool_tbl:
+    .2byte .L_case0 - .L_ret
+    .2byte .L_case1 - .L_ret
+.L_case0:
+    rts
+    nop
+.L_case1:
+    rts
+    nop
+}
+EOF
+meta_out="$(mktemp)"
+"$RCC" -target=sh/hitachi /tmp/regtest.c "$meta_out" 2>/dev/null
+ok=1
+grep -q '^saturncc_braf_1:$' "$meta_out" || ok=0
+grep -q '^saturncc_braf_1_anchor:$' "$meta_out" || ok=0
+grep -q '^saturncc_braf_1_tbl_2:$' "$meta_out" || ok=0
+if [ "$ok" = "1" ]; then
+    pass "regtest: braf-verify metadata symbols emitted (dispatch/anchor/tbl_N)"
+else
+    fail "regtest: braf-verify metadata emission wrong — inspect $meta_out"
+fi
+
+# (b)-(d) end-to-end through GAS + nm + objdump, gated on the SDK.
+SH_AS_BV="/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-as.exe"
+SH_NM_BV="/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-nm.exe"
+SH_OD_BV="/mnt/c/Users/albat/saturndev/saturn-sdk-8-4/toolchain/bin/sh-elf-objdump.exe"
+BV_WSL="/mnt/d/Projects/saturncc/build/cmp/brafverify_regtest"
+BV_WIN="D:\\Projects\\saturncc\\build\\cmp\\brafverify_regtest"
+if [ -x "$SH_AS_BV" ] && [ -e "$SH_NM_BV" ] && [ -e "$SH_OD_BV" ]; then
+    mkdir -p "$BV_WSL"
+    bv_ok=1
+    cp "$meta_out" "$BV_WSL/good.s"
+    # (b) good object: 1 table verified, 0 errors, exit 0.
+    "$SH_AS_BV" -big -o "${BV_WIN}\\good.o" "${BV_WIN}\\good.s" 2>/dev/null || bv_ok=0
+    bv_rep="$(SH_NM="$SH_NM_BV" SH_OBJDUMP="$SH_OD_BV" python3 "$SCRIPT_DIR/braf_verify.py" "${BV_WIN}\\good.o")" || bv_ok=0
+    echo "$bv_rep" | grep -q 'braf tables verified: 1, errors: 0' || bv_ok=0
+    # (c) corrupted anchor (nop wedged between delay slot and anchor):
+    # verifier must report the shear and exit 1; the wrapper must
+    # fail the build even without strict mode.
+    sed '/^saturncc_braf_1_anchor:/i\	nop' "$BV_WSL/good.s" > "$BV_WSL/bad.s"
+    "$SH_AS_BV" -big -o "${BV_WIN}\\bad.o" "${BV_WIN}\\bad.s" 2>/dev/null || bv_ok=0
+    if bv_bad="$(SH_NM="$SH_NM_BV" SH_OBJDUMP="$SH_OD_BV" python3 "$SCRIPT_DIR/braf_verify.py" "${BV_WIN}\\bad.o")"; then
+        bv_ok=0    # must exit nonzero
+    fi
+    echo "$bv_bad" | grep -q 'sheared by +2 bytes' || bv_ok=0
+    if SH_NM="$SH_NM_BV" SATURNCC_AS="$SH_AS_BV" SH_OBJDUMP="$SH_OD_BV" \
+        bash "$SCRIPT_DIR/as_pad_wrap.sh" -big \
+        -o "${BV_WIN}\\bad.o" "${BV_WIN}\\bad.s" 2>/dev/null; then
+        bv_ok=0    # wrapper must fail the build on braf errors
+    fi
+    # (d) metadata-less braf: INFO line, exit 0.
+    cat > "$BV_WSL/nometa.c" <<'EOF'
+void FUN_nometa(void) asm {
+    mov r4, r1
+    braf r1
+    nop
+    rts
+    nop
+}
+EOF
+    "$RCC" -target=sh/hitachi "$BV_WSL/nometa.c" "$BV_WSL/nometa.s" 2>/dev/null || bv_ok=0
+    "$SH_AS_BV" -big -o "${BV_WIN}\\nometa.o" "${BV_WIN}\\nometa.s" 2>/dev/null || bv_ok=0
+    bv_nm="$(SH_NM="$SH_NM_BV" SH_OBJDUMP="$SH_OD_BV" python3 "$SCRIPT_DIR/braf_verify.py" "${BV_WIN}\\nometa.o")" || bv_ok=0
+    echo "$bv_nm" | grep -q 'INFO: unverified braf' || bv_ok=0
+    if [ "$bv_ok" = "1" ]; then
+        pass "regtest: braf_verify end-to-end (good passes, sheared anchor caught + fails build, no-metadata swept)"
+    else
+        fail "regtest: braf_verify end-to-end wrong — inspect $BV_WSL"
+    fi
+else
+    pass "regtest: braf_verify end-to-end (sh-elf toolchain absent — skipped)"
+fi
+rm -f "$meta_out"
 
 # 4z. Line directive emission: saturncc emits cpp-style
 # `# <line> "<file>"` directives ahead of each asm-body instruction

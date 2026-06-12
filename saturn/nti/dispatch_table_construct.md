@@ -130,6 +130,35 @@ requirement. The canonical banner lives above
 expansion, and verifier code must point back to it rather than
 paraphrase it partially.
 
+## Cross-file tables need a second form (found 2026-06-12)
+
+The drafted construct emits the table immediately after the delay
+slot — correct for the common idiom, but the 6 cross-file retail
+sites have the table physically inside a *different* function's
+byte range, and byte identity forbids moving it. Those sites need a
+split spelling, sketch:
+
+```asm
+    braf r1
+    sts.l pr, @-r15
+    .dispatch_anchor .L_disp_7        ! declares anchor at braf+4
+```
+```asm
+    ! ...in the shim that physically holds the table...
+    .dispatch_table_for .L_disp_7 .L_pool_X
+    .case .L_case0
+    .end_dispatch
+```
+
+Both halves live in one unity TU, so the name resolves at compile
+time. This also closes the verifier's known gap (per-body lint
+can't see cross-file tables → no metadata → INFO only). Alternative
+or interim closer: a TU-wide second resolution pass over the
+existing cross-body insn array (A1 substrate, commit 82cd08d).
+Sequencing: implement the local form first (covers the 13 single-
+file sites including FUN_06045B74's two tables); the split form
+follows once the engineer confirms the 6 sites' generator shape.
+
 ## Open questions for DaytonaCCEReverse
 
 1. **Generator fit** — the Ghidra exporter already emits these tables;

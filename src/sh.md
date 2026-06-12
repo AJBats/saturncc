@@ -4216,10 +4216,16 @@ static const char *sh_lint_match_ident(const char *p,
  * with ANCHOR in the braf+4 anchor set. Returns 0 when all
  * entries pass, 1 on a bad anchor (ident stored in *bad/*badlen),
  * 2 when an entry is not label-difference arithmetic at all (raw
- * number, bare symbol, compound expression). */
+ * number, bare symbol, compound expression). On success,
+ * *n_entries accumulates the entry count and *matched_anchor
+ * receives the anchors[] index the first entry matched (for the
+ * braf_verify metadata — every anchor in the set sits at braf+4,
+ * so any matched one serves). */
 static int sh_lint_check_entry_line(const struct sh_asm_insn *in,
                                     char **anchors, int nanchor,
-                                    const char **bad, int *badlen) {
+                                    const char **bad, int *badlen,
+                                    int *n_entries,
+                                    int *matched_anchor) {
         const char *p, *q, *s;
         int n, k, match;
 
@@ -4250,6 +4256,9 @@ static int sh_lint_check_entry_line(const struct sh_asm_insn *in,
                         *badlen = n;
                         return 1;
                 }
+                (*n_entries)++;
+                if (*matched_anchor < 0)
+                        *matched_anchor = k;
                 p = sh_p_skip_ws(q);
                 if (*p == ',') {
                         p++;
@@ -4263,13 +4272,20 @@ static int sh_lint_check_entry_line(const struct sh_asm_insn *in,
         }
 }
 
+/* Unique id source for the saturncc_braf_K verification-symbol
+ * family. Parse-time (lint) assigns; emit prints. Per-TU unique
+ * like sh_pad_probe_counter. */
+static int sh_braf_meta_counter;
+
 static void sh_lint_braf_tables(struct sh_asm_body *body) {
         int i;
         if (!body) return;
         for (i = 0; i < body->n_insns; i++) {
                 struct sh_asm_insn *br = &body->insns[i];
                 char *anchors[SH_LINT_MAX_ANCHORS];
+                int anchor_idx[SH_LINT_MAX_ANCHORS];
                 int nanchor, breg, d, j, mova_idx, link_ok, tbl;
+                int total_entries, first_anchor, table_bad;
                 const char *table_name;
 
                 if (br->is_comment || br->is_label || br->is_directive
@@ -4311,16 +4327,20 @@ static void sh_lint_braf_tables(struct sh_asm_body *body) {
                         if (in->is_entry) {
                                 if (in->n_operands >= 1
                                     && in->operands[0].kind
-                                       == SH_OP_LABEL)
+                                       == SH_OP_LABEL) {
+                                        anchor_idx[nanchor] = j;
                                         anchors[nanchor++] =
                                                 in->operands[0].label;
+                                }
                                 continue;
                         }
                         if (in->is_label) {
                                 if (in->pool_align) break;
-                                if (in->label_name)
+                                if (in->label_name) {
+                                        anchor_idx[nanchor] = j;
                                         anchors[nanchor++] =
                                                 in->label_name;
+                                }
                                 if (in->is_directive) break;
                                 continue;
                         }
@@ -4397,7 +4417,14 @@ static void sh_lint_braf_tables(struct sh_asm_body *body) {
                 /* Walk the table entries. First violation reports
                  * and stops — one error per table keeps the output
                  * readable when a 16-entry table is mis-anchored
-                 * throughout. */
+                 * throughout. A fully clean walk stamps braf_verify
+                 * metadata (id/role/entries) on the dispatch insn,
+                 * the matched anchor label, and the table label, so
+                 * emit plants the saturncc_braf_K symbol family for
+                 * post-assembly ground-truth verification. */
+                total_entries = 0;
+                first_anchor = -1;
+                table_bad = 0;
                 for (j = tbl; j < body->n_insns; j++) {
                         struct sh_asm_insn *in = &body->insns[j];
                         int verdict;
@@ -4415,7 +4442,9 @@ static void sh_lint_braf_tables(struct sh_asm_body *body) {
                         verdict = sh_lint_check_entry_line(in, anchors,
                                                            nanchor,
                                                            &bad,
-                                                           &badlen);
+                                                           &badlen,
+                                                           &total_entries,
+                                                           &first_anchor);
                         if (verdict == 1) {
                                 error("%s:%d: `%s` dispatch table `%s` "
                                       "entry anchored to `%S`, which is "
@@ -4432,6 +4461,7 @@ static void sh_lint_braf_tables(struct sh_asm_body *body) {
                                       sh_asm_insn_src_line(body, in),
                                       br->mnemonic, table_name,
                                       bad, badlen, br->mnemonic);
+                                table_bad = 1;
                                 break;
                         }
                         if (verdict == 2) {
@@ -4450,8 +4480,27 @@ static void sh_lint_braf_tables(struct sh_asm_body *body) {
                                       sh_asm_insn_src_line(body, in),
                                       br->mnemonic, table_name,
                                       br->mnemonic);
+                                table_bad = 1;
                                 break;
                         }
+                }
+
+                /* Clean table → stamp braf_verify metadata. All
+                 * anchors in the set sit at braf+4, so the first
+                 * matched one represents the contract. */
+                if (!table_bad && total_entries > 0
+                    && first_anchor >= 0) {
+                        int id = ++sh_braf_meta_counter;
+                        br->braf_meta_id = id;
+                        br->braf_meta_role = 1;
+                        body->insns[anchor_idx[first_anchor]]
+                                .braf_meta_id = id;
+                        body->insns[anchor_idx[first_anchor]]
+                                .braf_meta_role = 2;
+                        body->insns[tbl].braf_meta_id = id;
+                        body->insns[tbl].braf_meta_role = 3;
+                        body->insns[tbl].braf_meta_entries =
+                                total_entries;
                 }
         }
 }
@@ -4836,15 +4885,34 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                  * whitespace from the source. */
                 return;
         }
+        /* braf_verify metadata, roles 1 and 2 (dispatch insn /
+         * anchor label): zero-size symbol printed at the record's
+         * own address. Role 3 (table label) is handled inside the
+         * label branches below — its symbol must land AFTER the
+         * synthetic alignment so it carries the post-pad table
+         * address. Part of the cross-build-stage contract — see the
+         * banner above sh_pool_align_for_label. */
+        if (in->braf_meta_role == 1)
+                print("saturncc_braf_%d:\n", in->braf_meta_id);
+        else if (in->braf_meta_role == 2)
+                print("saturncc_braf_%d_anchor:\n", in->braf_meta_id);
         if (in->is_label && !in->is_directive) {
                 /* Standalone `LABEL:` line. */
                 if (in->pool_align && in->label_name) {
                         sh_emit_pad_probe(sh_pad_probe_counter++,
                                           (int)in->pool_align,
                                           in->label_name);
+                        if (in->braf_meta_role == 3)
+                                print("saturncc_braf_%d_tbl_%d:\n",
+                                      in->braf_meta_id,
+                                      in->braf_meta_entries);
                         print("%s:\n", in->label_name);
                         return;
                 }
+                if (in->braf_meta_role == 3)
+                        print("saturncc_braf_%d_tbl_%d:\n",
+                              in->braf_meta_id,
+                              in->braf_meta_entries);
                 print("%s:\n", in->mnemonic ? in->mnemonic : "?");
                 return;
         }
@@ -4881,6 +4949,10 @@ static void sh_emit_asm_insn(const struct sh_asm_insn *in) {
                                 sh_emit_pad_probe(sh_pad_probe_counter++,
                                                   (int)in->pool_align,
                                                   in->label_name);
+                        if (in->braf_meta_role == 3)
+                                print("saturncc_braf_%d_tbl_%d:\n",
+                                      in->braf_meta_id,
+                                      in->braf_meta_entries);
                         print("%s", s);
                 } else {
                         print("\t%s", s);

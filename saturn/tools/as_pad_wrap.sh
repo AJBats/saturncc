@@ -57,6 +57,22 @@ if [ -n "$OBJ" ]; then
             exit 1
         fi
     fi
+
+    # braf dispatch ground-truth verification (binary level — trusts
+    # nothing textual). ERRORs here are real, guaranteed-broken
+    # dispatch math, so they ALWAYS fail the build, strict or not.
+    # A non-running verifier (exit 2: python/objdump missing) only
+    # warns — a broken checker must not block assembly.
+    braf_out="$(python3 "$SCRIPT_DIR/braf_verify.py" "$OBJ" 2>&1)"
+    braf_rc=$?
+    if [ $braf_rc -eq 1 ]; then
+        printf '%s\n' "$braf_out" | grep -E '^(ERROR|braf tables)' | while IFS= read -r line; do
+            echo "saturncc braf error [$OBJ]: $line" >&2
+        done
+        exit 1
+    elif [ $braf_rc -ne 0 ]; then
+        echo "saturncc: braf_verify.py could not run on $OBJ (rc=$braf_rc) — dispatch tables UNVERIFIED" >&2
+    fi
 fi
 
 exit 0

@@ -177,23 +177,57 @@ the agreed end state. The remaining files re-anchor in the existing
 lint-gated label-pair form and migrate mechanically when the
 construct lands.
 
+## 5.7. Binary braf verifier (shipped 2026-06-12)
+
+The layer that trusts nothing textual. The lint, when a table fully
+passes, stamps a zero-size symbol family into the emission —
+`saturncc_braf_K` (the dispatch instruction), `saturncc_braf_K_anchor`,
+`saturncc_braf_K_tbl_N` (table, N entries) — and
+`saturn/tools/braf_verify.py` checks ground truth in the assembled
+object: anchor address == braf+4 (ERROR with the exact shear
+otherwise), every table word read from real section bytes (odd
+target = ERROR; target inside the table = ERROR — the FUN_06045B74
+crash class; outside .text = WARN), plus a disassembly sweep listing
+every braf/bsrf with no metadata as INFO (hand-rolled dispatch the
+textual lint can't see). `as_pad_wrap.sh` runs it automatically;
+verifier ERRORs always fail the build, strict mode or not — they are
+guaranteed-broken dispatch math. Regtests 4y4 (a–d), including a
+deliberately sheared anchor caught at +2 bytes.
+
+**Corpus status (2026-06-12, post-campaign):** 757/757 race shims
+pass the lint through the faithful cpp→rcc pipeline. (A sweep
+without cpp false-rejects FUN_06045B74 — its multi-line block
+comment defeats the line-based asm parser; cpp strips comments
+before rcc in the real build. Sweep harnesses must mirror the
+pipeline.)
+
+**Unity end-to-end (2026-06-12):** the full downstream pipeline
+(`cpp -I<root> race.c → rcc → sh-elf-as → braf_verify`) on the real
+107k-line unity TU: **18 tables verified, 0 errors, 0 warnings**;
+54 metadata symbols; 22,502 pad-probe sites; 95 INFO unverified-
+dispatch lines (mostly data decoding as bsrf opcodes — small pool
+constants like 0x0003; plus the cross-file dispatch sites, see
+known gap below). Downstream engineer signed off.
+
+**Known gap — cross-file tables (6 sites):** the lint resolves the
+table label within one asm body; the 6 retail sites whose table
+lives in a *different* shim than the braf get no metadata and fall
+to INFO. They are the pad-immune originals (lowest-risk class), but
+"skipped" is the honest status. Closers, either/both: a TU-wide
+second resolution pass over the existing cross-body insn array
+(A1 substrate, commit 82cd08d), or the construct's cross-file
+variant (needs a `.dispatch_anchor` form — the table can't move to
+braf+4 without breaking byte identity). Tracked in
+`../nti/dispatch_table_construct.md` open questions.
+
 ## 6. Queued follow-ups
 
 - **First-class dispatch construct** — the agreed end state for the
   whole idiom: a declared construct where rcc owns the anchor (it
   knows where braf+4 is), synthesizes the labels and deltas, and
   the human writes only the case list. The label-pair form becomes
-  generated output, never a human ritual. Design doc next; written
-  so `sh_emit_switch_dispatch` converges on the same emission path
-  (one rcc-owned "emit a braf table correctly" routine serves both
-  hand shims and compiled C `switch`). Needs downstream input —
-  their shims come from a Ghidra-export generator that would
-  target the construct.
-- **Binary-level braf verifier** — disassemble the linked output;
-  for each braf/bsrf assert (mova target) == braf+4. Catches what
-  the textual lint can't (hand math, exotic encodings). Natural
-  home: DaytonaCCEReverse `make validate`; could also live in
-  `saturn/tools/`.
+  generated output, never a human ritual. Design draft circulated:
+  [`../nti/dispatch_table_construct.md`](../nti/dispatch_table_construct.md).
 - **`sh_emit_switch_dispatch` pad-immune emission** — compiler-
   generated `switch` tables are currently self-anchored
   (`.short Lcase - LswtN`, sh.md). Loud failure mode (no auto-
@@ -212,3 +246,4 @@ construct lands.
 | 2026-06-12 | Created. Lint shipped + regtests (4y2 a–d); corpus sweep 13/757 rejected; briefing question answered (rcc emits the pad-triggering directive). |
 | 2026-06-12 | Loud absorption shipped: probe/mark symbol pairs + `pad_report.sh` + regtests 4y3 (a–b). In-source `.if/.warning` form rejected by GAS (non-constant expression across alignment) — documented, don't retry. Compound-spelling interim (menu item 4) dropped; first-class construct promoted to top of queue. Suite 69/69. |
 | 2026-06-12 | `as_pad_wrap.sh` added: drop-in AS wrapper so the pad report runs automatically on every assembly (user preference: automatic over opt-in). Regtest 4y3(c). Suite 70/70. |
+| 2026-06-12 | Binary braf verifier shipped: lint stamps saturncc_braf_K symbol family; `braf_verify.py` checks anchor==braf+4 + table words against assembled bytes; chained into `as_pad_wrap.sh` (errors always fail the build). Regtests 4y4. Suite 72/72. Post-campaign corpus: 757/757 pass via cpp→rcc. |

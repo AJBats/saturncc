@@ -111,6 +111,21 @@ struct sh_asm_insn {
                                    * for preserves-r4 inference. The
                                    * entry-target name lives in
                                    * operands[0].label. */
+        int braf_meta_id;         /* 0 = none; else the 1-based id K of
+                                   * the saturncc_braf_K verification
+                                   * symbol family. Set by
+                                   * sh_lint_braf_tables when a
+                                   * dispatch table fully passes the
+                                   * anchor lint; consumed at emit to
+                                   * plant zero-size symbols the
+                                   * post-assembly braf_verify.py
+                                   * checks against ground truth. */
+        unsigned char braf_meta_role; /* 1 = dispatch insn (braf/bsrf),
+                                       * 2 = anchor label, 3 = table
+                                       * label. */
+        int braf_meta_entries;    /* role 3 only: verified entry count
+                                   * (encoded into the _tbl_N symbol
+                                   * name). */
         unsigned char pool_align; /* set by sh_compute_pool_alignment.
                                    * 0 = nothing emitted; 4 = emit
                                    * `.balign 4` (label is `.L_pool_*`

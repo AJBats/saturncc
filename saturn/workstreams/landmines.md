@@ -342,3 +342,14 @@ candidate manually, mirror the pipeline:
 ```bash
 cpp -P foo.c /tmp/pp.c && build/rcc -target=sh/hitachi /tmp/pp.c out.s
 ```
+
+**Second reason (2026-06-12):** multi-line `/* ... */` block
+comments inside `asm { }` bodies. The asm parser is line-based —
+only the line *starting with* `/*` is classified as a comment; the
+continuation lines parse as garbage unknown-instructions. That
+poisons analysis passes (a comment continuation right after a braf
+delay slot false-failed the dispatch lint on FUN_06045B74) and
+would emit comment text as code. cpp strips all comments before
+rcc in every supported pipeline, so this only bites direct-rcc
+invocations — sweep harnesses and one-off probes included. Always
+cpp first.
