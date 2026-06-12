@@ -51,9 +51,17 @@ if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; th
     DIRTY=" (dirty)"
 fi
 
+# Binary fingerprint: two dirty stamps can carry the same git sha
+# while shipping different compilers (cost a downstream migration a
+# round trip on 2026-06-12 — the artifact predated the feature its
+# docs described). The hash makes "which rcc is this, exactly?"
+# answerable without trusting timestamps.
+BINHASH="$(sha256sum "$RELEASEDIR/rcc" | cut -c1-16)"
+
 cat > "$RELEASEDIR/VERSION" <<EOF
 saturncc release
 sha:   $SHA$DIRTY
+bin:   $BINHASH
 date:  $DATE
 EOF
 
