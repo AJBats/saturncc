@@ -57,7 +57,14 @@ TU_NAME=$(basename "$TU_C" .c)
 
 PROD_S=$(find "$PROD_SRC" -maxdepth 3 -name "${TU_NAME}.s" -print -quit 2>/dev/null)
 if [ -z "$PROD_S" ]; then
-    echo "ERROR: prod TU .s not found for $TU_NAME under $PROD_SRC" >&2
+    # 2026-06: DaytonaCCEReverse moved the raw SHC prod .s tree from
+    # src/ to archive_src/src/ when src/ became the unity-C layout
+    # (race.c + asm/ shims). The archive tree is the byte target.
+    PROD_SRC_FALLBACK="/mnt/d/Projects/DaytonaCCEReverse/archive_src/src"
+    PROD_S=$(find "$PROD_SRC_FALLBACK" -maxdepth 3 -name "${TU_NAME}.s" -print -quit 2>/dev/null)
+fi
+if [ -z "$PROD_S" ]; then
+    echo "ERROR: prod TU .s not found for $TU_NAME under $PROD_SRC (or archive_src fallback)" >&2
     exit 2
 fi
 

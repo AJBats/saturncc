@@ -126,11 +126,15 @@ pipeline).
 ## External references
 
 - **Authoritative prod assembly:** the raw SHC output at
-  `D:/Projects/DaytonaCCEReverse/src/race/FUN_*.s`. Some functions
-  are inlined in larger TU files (e.g., FUN_06037E28 lives inside
-  `FUN_060351CC.s`). `mods/transplant/race/*.s` are reassembled
-  copies without the `init cross-ref, fixed` pool markers — the
-  raw `src/race/*.s` is what you want for Gap 0 archaeology.
+  `D:/Projects/DaytonaCCEReverse/archive_src/src/race/FUN_*.s`.
+  (Their 2026-06 reboot made `src/race/` the unity-C layout —
+  `race.c` + `asm/` naked-asm shims — and moved the raw prod .s
+  tree to `archive_src/src/`; `validate_byte_match_tu.sh` falls
+  back there automatically.) Some functions are inlined in larger
+  TU files (e.g., FUN_06037E28 lives inside `FUN_060351CC.s`).
+  `mods/transplant/race/*.s` are reassembled copies without the
+  `init cross-ref, fixed` pool markers — the raw archive_src
+  `.s` files are what you want for Gap 0 archaeology.
 - **Authoritative prod object files:** `D:/Projects/DaytonaCCEReverse/build/<module>/FUN_*.o`
   — what tier-2 `validate_byte_match_bin.sh` diffs against.
 - **Ghidra C reference:** `D:/Projects/DaytonaCCEReverse/ghidra_reference/race/*.c`.
