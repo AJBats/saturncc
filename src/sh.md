@@ -4010,6 +4010,42 @@ static int sh_is_align_directive(const char *mn) {
             || strcmp(mn, ".align") == 0;
 }
 
+/* ════════════════════════════════════════════════════════════════
+ * CROSS-BUILD-STAGE SILENT DEPENDENCY — READ BEFORE TOUCHING ANY OF
+ * sh_pool_align_for_label / sh_compute_pool_alignment /
+ * sh_lint_braf_tables / sh_emit_pad_probe, or any braf table code.
+ *
+ * Four build stages cooperate on SH-2 dispatch tables, and no single
+ * stage can see the whole contract:
+ *
+ *   1. rcc (here) decides a pad is POSSIBLE: `.balign 4` auto-
+ *      emitted before `.L_pool_*` labels, by NAME, invisible in the
+ *      shim source.
+ *   2. GAS decides the pad is REAL: 0 or 2 bytes, at final layout,
+ *      silently.
+ *   3. GAS re-prices `TARGET - ANCHOR` label arithmetic from final
+ *      addresses — sound only if ANCHOR sits where stage 4 counts
+ *      from.
+ *   4. SH-2 hardware computes braf/bsrf targets as instr+4 + entry.
+ *      It has never heard of the table, the labels, or the pad.
+ *
+ * The visible artifact of this contract is the "pointless" double
+ * label in re-anchored shims (`.L_braf_ret_X:` directly above
+ * `.L_pool_X:`): same address TODAY, different roles — the ret label
+ * is welded to the instruction stream (stage 4's base), the pool
+ * label floats behind the invisible stage-1 pad. They are designed
+ * to come apart. Swapping, merging, or renaming them is silent
+ * corruption that no single build stage will report.
+ *
+ * Mechanical guards (keep all three alive): sh_lint_braf_tables
+ * (stage-1/3 contract, compile error), sh_emit_pad_probe +
+ * pad_report.sh/as_pad_wrap.sh (stage-2 events, build-log report),
+ * braf_verify (stage-4 ground truth, post-assembly). History and
+ * full walk: saturn/workstreams/braf_dispatch_lint.md; landmines.md
+ * "Pool auto-align silently corrupts self-anchored braf tables";
+ * end-state design: saturn/nti/dispatch_table_construct.md.
+ * ════════════════════════════════════════════════════════════════ */
+
 /* Look at the label name and return the alignment we should emit
  * before it (4 or 2), or 0 if no auto-alignment is warranted.
  *

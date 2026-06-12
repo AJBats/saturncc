@@ -202,6 +202,12 @@ Tier 2 has the same verification strength as strict byte-match.
 
 Newest first. Format: `commit_or_date — item_id — note`.
 
+- `2026-06-12` — C1 — dispatch-table construct design drafted at
+  [`../nti/dispatch_table_construct.md`](../nti/dispatch_table_construct.md)
+  (rcc owns anchor/alignment/deltas; human writes the case list; switch-
+  emitter converges on the same emission). Circulated to DaytonaCCEReverse
+  for generator-side review. Incident commits `0144de6` + `1362d07`
+  landed; clean release `1362d07` cut and accepted downstream.
 - `2026-06-12` — C1 — loud absorption shipped: probe/mark symbol pairs
   around every synthetic `.balign` + `saturn/tools/pad_report.sh` (per-site
   pad report from .o symtab, `--strict` for identity gates). GAS-native
