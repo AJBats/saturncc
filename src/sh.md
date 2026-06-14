@@ -6846,6 +6846,52 @@ static void sh_coalesce_move_chains(void) {
         }
 }
 
+/* Collapse a redundant copy chain `mov rA,rB; mov rB,rC` into a single
+ * `mov rA,rC` when rB is dead after the second move.
+ *
+ * This arises from the call-address rtarget routing a register-resident
+ * call target through r0 on its way to r3: an indirect call through a
+ * register variable emits `mov rX,r0; mov r0,r3; jsr @r3`. The r0 copy
+ * is dead — the jsr's target is r3 and the call clobbers r0 (caller-
+ * saved) — so the chain folds to `mov rX,r3; jsr @r3`, dropping one
+ * instruction per indirect call. The final jsr target register is
+ * unchanged, so this only moves output toward SHC (which never emits
+ * the redundant pair), never away. Distinct from sh_coalesce_move_chains,
+ * which folds `mov rA,rB; <op writes rB>; mov rB,rC` (an op in between);
+ * this handles the back-to-back copy with nothing between. */
+static void sh_collapse_copy_chain(void) {
+        int i, j, k;
+        for (i = 0; i < sh_nlines; i++) {
+                int rA, rB, rP, rC, dead;
+                if (sh_lines[i][0] == 0) continue;
+                if (!sh_parse_regmov(sh_lines[i], &rA, &rB)) continue;
+                if (rA == rB) continue;
+                for (j = i + 1; j < sh_nlines; j++)
+                        if (sh_lines[j][0] != 0) break;
+                if (j >= sh_nlines) continue;
+                if (!sh_parse_regmov(sh_lines[j], &rP, &rC)) continue;
+                if (rP != rB) continue;            /* 2nd move reads rB  */
+                if (rC == rB || rC == rA) continue;
+                /* rB must be dead after line j. A following call (jsr/jmp)
+                 * whose target isn't rB kills a caller-saved rB; otherwise
+                 * fall back to the conservative liveness scan. */
+                dead = 0;
+                for (k = j + 1; k < sh_nlines; k++)
+                        if (sh_lines[k][0] != 0) break;
+                if (k < sh_nlines) {
+                        int tgt = sh_branch_target_reg(sh_lines[k]);
+                        if (tgt >= 0 && tgt != rB && rB >= 0 && rB <= 7)
+                                dead = 1;
+                }
+                if (!dead && sh_reg_dead_after(j + 1, rB))
+                        dead = 1;
+                if (!dead) continue;
+                snprintf(sh_lines[i], SH_MAX_LINELEN,
+                         "\tmov\tr%d,r%d\n", rA, rC);
+                sh_kill_line(j);
+        }
+}
+
 /* Returns 1 if the body contains at least one bool_fp pattern
  * (any destination register, not specifically r14). Used by
  * sh_rewrite_bool_fp's r14-force-add gate. Mirrors the pattern
@@ -10346,6 +10392,10 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
          *                              opportunity.
          *   sh_coalesce_move_chains  — collapse redundant mov chains
          *                              exposed by earlier passes.
+         *   sh_collapse_copy_chain   — fold back-to-back `mov rA,rB;
+         *                              mov rB,rC` (rB dead) into mov rA,rC;
+         *                              kills the r0 hop in register-target
+         *                              indirect calls.
          *   sh_elim_redundant_mov_r0 — drop mov-r0 sequences that are
          *                              now dead after coalescing.
          *   sh_interleave_pool       — MUST BE LAST in phase 3. Emits
@@ -10362,6 +10412,7 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
         sh_rewrite_bool_fp(need_fp);
         sh_swap_pool_add();
         sh_coalesce_move_chains();
+        sh_collapse_copy_chain();
         sh_elim_redundant_mov_r0();
         sh_interleave_pool();
 

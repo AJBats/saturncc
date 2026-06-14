@@ -210,8 +210,7 @@ L11:
 	mov.l	@(4,r15),r2
 	add	r2,r1
 	add	r0,r1
-	mov	r1,r0
-	mov	r0,r14
+	mov	r1,r14
 	mov.l	@r14,r0
 	mov.l	r0,@r13
 	mov	r13,r0
@@ -244,8 +243,7 @@ L11:
 	mov.l	@(4,r15),r2
 	add	r2,r1
 	add	r0,r1
-	mov	r1,r0
-	mov	r0,r14
+	mov	r1,r14
 	mov.l	@r14,r0
 	mov.l	r0,@r13
 	mov	r13,r0
