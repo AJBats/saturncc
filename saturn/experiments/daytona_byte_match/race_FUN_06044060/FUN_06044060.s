@@ -2840,10 +2840,11 @@ FUN_06044e28:
 	mov	r15,r5
 	mov.l	L2534,r3
 	jsr	@r3
+	add	#0,r5
 	add	#4,r15
 	lds.l	@r15+,pr
 	rts
-	add	#0,r5
+	nop
 	.align 2
 L2534:	.long	FUN_06044e3c
 	.global FUN_06044e3c
@@ -9711,8 +9712,8 @@ FUN_060451be:
 	sts.l	pr,@-r15
 	mov	r15,r14
 	add	#-4,r15
-	mov.l	L2722,r0
-	jsr	@r0
+	mov.l	L2722,r3
+	jsr	@r3
 	nop
 	mov.l	L2723,r3
 	jsr	@r3
@@ -9733,10 +9734,11 @@ FUN_060451be:
 	mov	r15,r5
 	mov.l	L2726,r3
 	jsr	@r3
+	add	#0,r5
 	mov	r14,r15
 	lds.l	@r15+,pr
 	rts
-	add	#0,r5
+	nop
 	.align 2
 L2722:	.long	FUN_06044d80
 L2723:	.long	FUN_060450f2
@@ -11870,9 +11872,10 @@ FUN_06045368:
 	nop
 	mov.l	L2794,r3
 	jsr	@r3
+	mov	#0,r4
 	lds.l	@r15+,pr
 	rts
-	mov	#0,r4
+	nop
 	.align 2
 L2787:	.long	PTR_FUN_0604539c
 L2788:	.long	PTR_SUB_060453a0
@@ -11899,9 +11902,10 @@ FUN_06045378:
 	nop
 	mov.l	L2799,r3
 	jsr	@r3
+	mov	#0,r4
 	lds.l	@r15+,pr
 	rts
-	mov	#0,r4
+	nop
 	.align 2
 L2795:	.long	PTR_DAT_060453a4
 L2796:	.long	FUN_060453cc
@@ -11928,9 +11932,10 @@ L1511:
 	nop
 	mov.l	L2803,r3
 	jsr	@r3
+	mov	#0,r4
 	lds.l	@r15+,pr
 	rts
-	mov	#0,r4
+	nop
 	.align 2
 L2800:	.long	puRam060453c4
 L2801:	.long	puRam060453c0
@@ -11956,9 +11961,10 @@ L1515:
 	nop
 	mov.l	L2807,r3
 	jsr	@r3
+	mov	#0,r4
 	lds.l	@r15+,pr
 	rts
-	mov	#0,r4
+	nop
 	.align 2
 L2804:	.long	puRam06045598
 L2805:	.long	puRam06045594
@@ -11981,9 +11987,10 @@ L1519:
 	nop
 	mov.l	L2809,r3
 	jsr	@r3
+	mov	#0,r4
 	lds.l	@r15+,pr
 	rts
-	mov	#0,r4
+	nop
 	.align 2
 L2808:	.long	FUN_060456cc
 L2809:	.long	FUN_06045ccc
@@ -12036,9 +12043,10 @@ FUN_0604559c:
 	mov.l	L2821,r1
 	mov.l	@r1,r1
 	jsr	@r3
+	mov.w	r1,@r0
 	lds.l	@r15+,pr
 	rts
-	mov.w	r1,@r0
+	nop
 	.align 2
 L2820:	.short	140
 	.align 2
@@ -12065,9 +12073,10 @@ FUN_060455d0:
 	mov.l	L2825,r1
 	mov.l	@r1,r1
 	jsr	@r3
+	mov.w	r1,@r0
 	lds.l	@r15+,pr
 	rts
-	mov.w	r1,@r0
+	nop
 	.align 2
 L2824:	.short	140
 	.align 2
@@ -12253,9 +12262,10 @@ FUN_060456c2:
 	add	r13,r1
 	mov.l	L2851,r3
 	jsr	@r3
+	mov.w	r14,@r1
 	lds.l	@r15+,pr
 	rts
-	mov.w	r14,@r1
+	nop
 	.align 2
 L2850:	.short	140
 	.align 2
@@ -13767,8 +13777,8 @@ FUN_060459c4:
 	sts.l	pr,@-r15
 	add	#-12,r15
 	mov	r4,r14
-	mov.l	L2982,r0
-	jsr	@r0
+	mov.l	L2982,r3
+	jsr	@r3
 	mov	r5,r13
 	mov.l	@(0,r15),r0
 	mov.w	L2983,r1
@@ -14815,13 +14825,12 @@ L1805:
 	mov.l	r2,@r0
 	mov	r9,r0
 	exts.b	r0,r0
+	mov.l	L3052,r3
+	jsr	@r3
 	mov.b	r0,@r13
-	mov.l	L3052,r0
-	jsr	@r0
-	nop
 L1804:
-	mov.l	L3052,r0
-	jsr	@r0
+	mov.l	L3052,r3
+	jsr	@r3
 	nop
 L1795:
 	mov.b	@(7,r15),r0
@@ -14831,12 +14840,12 @@ L1795:
 	and	r1,r0
 	tst	r0,r0
 	bt	L1806
-	mov.l	L3052,r0
-	jsr	@r0
+	mov.l	L3052,r3
+	jsr	@r3
 	nop
 L1806:
-	mov.l	L3052,r0
-	jsr	@r0
+	mov.l	L3052,r3
+	jsr	@r3
 	nop
 L1794:
 	add	#32,r15
@@ -15122,10 +15131,9 @@ L1845:
 	mov.l	L3059,r0
 	add	r9,r0
 	mov	r13,r1
+	mov.l	L3062,r3
+	jsr	@r3
 	mov.b	r1,@r0
-	mov.l	L3062,r0
-	jsr	@r0
-	nop
 	mov.l	L3059,r0
 	nop
 	add	#8,r15
@@ -15419,10 +15427,9 @@ L3068:	.short	156
 	mov.l	@(4,r15),r0
 	add	#16,r0
 	mov.l	L3084,r1
-	mov.l	L3077,r0
+	mov.l	L3077,r3
+	jsr	@r3
 	mov.l	r1,@r0
-	jsr	@r0
-	nop
 	mov.l	L3078,r1
 	add	r9,r1
 	mov	#93,r0
@@ -15567,17 +15574,15 @@ L3068:	.short	156
 	mov	r1,r0
 	add	r2,r0
 	mov.w	L3086,r1
-	mov.l	L3085,r0
+	mov.l	L3085,r3
+	jsr	@r3
 	mov.w	r1,@r0
-	jsr	@r0
-	nop
 	mov.l	@(4,r15),r0
 	add	#18,r0
 	mov.l	L3083,r1
-	mov.l	L3085,r0
+	mov.l	L3085,r3
+	jsr	@r3
 	mov.w	r1,@r0
-	jsr	@r0
-	nop
 L1869:
 L1870:
 	mov.l	L3090,r0
@@ -16246,10 +16251,9 @@ Lswt0:
 	mov.l	@(32,r15),r0
 	add	#20,r0
 	mov.l	@(24,r15),r1
-	mov.l	L3133,r0
+	mov.l	L3133,r3
+	jsr	@r3
 	mov.l	r1,@r0
-	jsr	@r0
-	nop
 	mov.l	@(24,r15),r0
 	exts.b	r0,r0
 	mov.b	r0,@r13
@@ -16319,8 +16323,8 @@ Lswt0:
 	lds.l	@r15+,pr
 	rts
 	nop
-	mov.l	L3133,r0
-	jsr	@r0
+	mov.l	L3133,r3
+	jsr	@r3
 	nop
 L1915:
 L1914:
@@ -16352,8 +16356,8 @@ FUN_06046602:
 	add	#28,r0
 	mov.l	@r0,r11
 L1929:
-	mov.l	L3139,r0
-	jsr	@r0
+	mov.l	L3139,r3
+	jsr	@r3
 	nop
 	mov.l	L3140,r3
 	jsr	@r3
@@ -16395,8 +16399,8 @@ FUN_0604660a:
 	add	#28,r0
 	mov.l	@r0,r12
 L1933:
-	mov.l	L3142,r0
-	jsr	@r0
+	mov.l	L3142,r3
+	jsr	@r3
 	nop
 	mov.l	L3143,r3
 	jsr	@r3
@@ -16434,8 +16438,8 @@ FUN_0604669e:
 	add	#-4,r15
 	mov	r4,r14
 	mov	r5,r13
-	mov.l	L3145,r0
-	jsr	@r0
+	mov.l	L3145,r3
+	jsr	@r3
 	mov	r6,r12
 	mov.l	@(0,r15),r0
 	mov.w	L3146,r1
@@ -16539,8 +16543,8 @@ FUN_060466a0:
 	add	#-4,r15
 	mov	r4,r14
 	mov	r5,r13
-	mov.l	L3154,r0
-	jsr	@r0
+	mov.l	L3154,r3
+	jsr	@r3
 	mov	r6,r12
 	mov.l	@(0,r15),r0
 	mov.w	L3155,r1
@@ -16669,11 +16673,11 @@ FUN_0604670c:
 	jsr	@r3
 	nop
 L1959:
-	mov.l	L3166,r0
-	jsr	@r0
+	mov.l	L3166,r3
+	jsr	@r3
 	nop
-	mov.l	L3167,r0
-	jsr	@r0
+	mov.l	L3167,r3
+	jsr	@r3
 	nop
 	mov.l	L3168,r3
 	jsr	@r3
@@ -16681,10 +16685,9 @@ L1959:
 	mov.w	L3169,r0
 	add	r9,r0
 	mov	#4,r1
+	mov.l	L3170,r3
+	jsr	@r3
 	mov.b	r1,@r0
-	mov.l	L3170,r0
-	jsr	@r0
-	nop
 	mov.w	L3166,r0
 	add	r9,r0
 	mov.w	@r0,r1
@@ -16733,11 +16736,11 @@ FUN_0604674e:
 	jsr	@r3
 	nop
 L1964:
-	mov.l	L3174,r0
-	jsr	@r0
+	mov.l	L3174,r3
+	jsr	@r3
 	nop
-	mov.l	L3175,r0
-	jsr	@r0
+	mov.l	L3175,r3
+	jsr	@r3
 	nop
 	mov.l	L3176,r3
 	jsr	@r3
@@ -16745,10 +16748,9 @@ L1964:
 	mov.w	L3177,r0
 	add	r10,r0
 	mov	#4,r1
+	mov.l	L3178,r3
+	jsr	@r3
 	mov.b	r1,@r0
-	mov.l	L3178,r0
-	jsr	@r0
-	nop
 	mov.w	L3174,r0
 	add	r10,r0
 	mov.w	@r0,r1
@@ -16829,10 +16831,11 @@ L1967:
 	mov.l	@r0,r0
 	mov.l	L3186,r3
 	jsr	@r3
+	mov.l	r0,@r1
 L1966:
 	lds.l	@r15+,pr
 	rts
-	mov.l	r0,@r1
+	nop
 	.align 2
 L3182:	.short	168
 L3183:	.short	170
@@ -16987,10 +16990,11 @@ L1981:
 	mov.l	@r0,r0
 	mov.l	L3202,r3
 	jsr	@r3
+	mov.l	r0,@r1
 L1980:
 	lds.l	@r15+,pr
 	rts
-	mov.l	r0,@r1
+	nop
 	.align 2
 L3198:	.short	168
 L3199:	.short	170
@@ -17214,11 +17218,12 @@ L2004:
 	mov.l	@(16,r15),r4
 	mov.l	L3220,r3
 	jsr	@r3
+	mov.l	@r4,r4
 L1994:
 	add	#32,r15
 	lds.l	@r15+,pr
 	rts
-	mov.l	@r4,r4
+	nop
 	.align 2
 L3214:	.short	249
 L3215:	.short	155
@@ -19634,12 +19639,11 @@ Lswt0:
 	mov	r0,r1
 	mov.b	r12,@r1
 	mov.l	@(16,r15),r0
-	mov.l	L3363,r0
+	mov.l	L3363,r3
+	jsr	@r3
 	mov.l	r4,@r0
-	jsr	@r0
-	nop
-	mov.l	L3363,r0
-	jsr	@r0
+	mov.l	L3363,r3
+	jsr	@r3
 	nop
 L2225:
 	mov	r14,r5
@@ -19855,7 +19859,7 @@ L2237:
 	tst	r0,r0
 	bt/s	L2241
 	mov	r15,r14
-	bra	Lm305
+	bra	Lm304
 	mov	#0,r0
 	.align 2
 L3360:	.short	143
@@ -19869,7 +19873,7 @@ L3367:	.short	142
 L3368:	.short	32767
 L2241:
 	mov	#1,r0
-Lm305:
+Lm304:
 	mov	r14,r15
 	mov.b	r0,@(11,r15)
 	mov.b	@(11,r15),r0
@@ -20303,9 +20307,9 @@ FUN_060477fc:
 	mov	r12,r4
 	mov.l	L3402,r6
 	mov.l	L3401,r5
-	mov.l	L3405,r0
+	mov.l	L3405,r3
 	mov.l	@r5,r5
-	jsr	@r0
+	jsr	@r3
 	mov.l	@r6,r6
 	mov.l	L3406,r0
 	mov.l	@r0,r0
@@ -20620,9 +20624,10 @@ FUN_060479d6:
 	mov.l	@r4,r4
 	mov.l	L3446,r3
 	jsr	@r3
+	mov.l	@r5,r5
 	lds.l	@r15+,pr
 	rts
-	mov.l	@r5,r5
+	nop
 	.align 2
 L3438:	.long	DAT_06047a54
 L3439:	.long	DAT_06047a50
@@ -20674,9 +20679,10 @@ FUN_06047a08:
 	mov.l	@r5,r5
 	mov.l	@r4,r4
 	jsr	@r3
+	mov.l	@r5,r5
 	lds.l	@r15+,pr
 	rts
-	mov.l	@r5,r5
+	nop
 	.align 2
 L3447:	.long	DAT_06047a54
 L3448:	.long	DAT_06047a50

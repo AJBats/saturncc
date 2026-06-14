@@ -2097,6 +2097,19 @@ static void target(Node p) {
                 setreg(p, ireg[0]);
                 rtarget(p, 0, ireg[3]);
                 break;
+        case CALL+V:
+                /* Void calls need the same call-address rtarget as
+                 * value-returning calls. Without it the address kid is
+                 * allocated freely and lands in r0 — colliding with r0's
+                 * use as the store/scratch register. A store to a pool-
+                 * loaded address immediately followed by a void call then
+                 * loads the call target into r0 before the store fires,
+                 * silently redirecting the store to the call address.
+                 * Pinning the call target to r3 keeps r0 free for the
+                 * store, matching SHC (call targets live in r1-r3, never
+                 * r0). No setreg: a void call yields no value. */
+                rtarget(p, 0, ireg[3]);
+                break;
         case RET+I: case RET+U: case RET+P:
                 rtarget(p, 0, ireg[0]);
                 break;
@@ -3025,6 +3038,22 @@ static int sh_is_branch_line(const char *s) {
         if (sh_has_prefix(s, "jmp"))  return 1;
         if (sh_has_prefix(s, "bra"))  return 1;
         if (sh_has_prefix(s, "bsr"))  return 1;
+        return 0;
+}
+
+/* Return 1 if sh_lines[idx] sits in a branch/call delay slot, i.e. the
+ * nearest preceding non-empty line is a branch (jsr/jmp/bra/bsr). Such
+ * an instruction must not be moved by a later pass: stealing it un-fills
+ * the branch's delay slot AND reorders it across the branch. A store
+ * that sh_fill_branch_delays placed in a jsr delay slot (so it runs
+ * before the call) would otherwise be sunk to after the call returns. */
+static int sh_in_branch_delay_slot(int idx) {
+        int p;
+        for (p = idx - 1; p >= 0; p--) {
+                if (sh_lines[p][0] == 0)
+                        continue;
+                return sh_is_branch_line(sh_lines[p]);
+        }
         return 0;
 }
 
@@ -5601,18 +5630,8 @@ static void sh_fill_branch_delays(void) {
                          * a delay slot — illegal SH-2 per SH7604
                          * §branch-instructions ("any branch, MOVA, or
                          * TRAPA in a delay slot is forbidden"). */
-                        {
-                                int p, in_delay = 0;
-                                for (p = k - 1; p >= 0; p--) {
-                                        if (sh_lines[p][0] == 0)
-                                                continue;
-                                        if (sh_is_branch_line(sh_lines[p]))
-                                                in_delay = 1;
-                                        break;
-                                }
-                                if (in_delay)
-                                        break;
-                        }
+                        if (sh_in_branch_delay_slot(k))
+                                break;
                         cand = k;
                         break;
                 }
@@ -10410,7 +10429,14 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
                                         continue;
                                 if (sh_is_label_line(sh_lines[j]))
                                         continue;
-                                if (sh_is_delay_safe(sh_lines[j]))
+                                /* Don't pull the last body line into the
+                                 * rts slot if it already fills a jsr/bra
+                                 * delay slot — moving it would un-fill that
+                                 * branch and sink it across the call (e.g.
+                                 * a store placed before a void call would
+                                 * run after the call returns). */
+                                if (sh_is_delay_safe(sh_lines[j])
+                                    && !sh_in_branch_delay_slot(j))
                                         delay_idx = j;
                                 break;
                         }

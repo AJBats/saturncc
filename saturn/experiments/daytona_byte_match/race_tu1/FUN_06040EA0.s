@@ -55,8 +55,8 @@ FUN_06040EA0:
 	mov	#0,r0
 	mov	r0,r4
 	mov	r0,r5
-	mov.l	L20,r0
-	jsr	@r0
+	mov.l	L20,r3
+	jsr	@r3
 	mov	#32,r6
 	bra	L12
 	nop
@@ -75,17 +75,17 @@ L12:
 	mov	r0,r4
 	tst	r4,r4
 	bt	L13
-	mov.l	L23,r0
-	jsr	@r0
+	mov.l	L23,r3
+	jsr	@r3
 	nop
-	mov.l	L24,r0
-	jsr	@r0
+	mov.l	L24,r3
+	jsr	@r3
 	mov	r14,r4
 	mov.w	@(14,gbr),r0
 	mov.w	L25,r1
 	mov	r0,r4
-	mov.l	L26,r0
-	jsr	@r0
+	mov.l	L26,r3
+	jsr	@r3
 	add	r1,r4
 	mov.w	@(12,gbr),r0
 	mov	r0,r1
@@ -93,26 +93,23 @@ L12:
 	add	r14,r2
 	mov.w	@r2,r0
 	mov	r1,r4
+	mov.l	L28,r3
+	jsr	@r3
 	sub	r0,r4
-	mov.l	L28,r0
-	jsr	@r0
-	nop
 	mov.w	@(16,gbr),r0
+	mov.l	L29,r3
+	jsr	@r3
 	neg	r0,r4
-	mov.l	L29,r0
-	jsr	@r0
-	nop
 	mov.w	@(26,gbr),r0
+	mov.l	L26,r3
+	jsr	@r3
 	mov	r0,r4
-	mov.l	L26,r0
-	jsr	@r0
-	nop
-	mov.l	L30,r0
-	jsr	@r0
+	mov.l	L30,r3
+	jsr	@r3
 	nop
 	mov	r12,r4
-	mov.l	L31,r0
-	jsr	@r0
+	mov.l	L31,r3
+	jsr	@r3
 	add	#20,r4
 	mov	#4,r0
 	mov.l	r0,@(4,r4)
@@ -132,10 +129,9 @@ L13:
 L4:
 L2:
 	mov.b	@(18,gbr),r0
+	mov.l	L33,r3
+	jsr	@r3
 	mov	r0,r4
-	mov.l	L33,r0
-	jsr	@r0
-	nop
 	ldc.l	@r15+,gbr
 	lds.l	@r15+,pr
 	mov.l	@r15+,r12

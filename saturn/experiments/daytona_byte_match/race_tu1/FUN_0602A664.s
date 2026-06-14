@@ -13,10 +13,9 @@ FUN_0602A664:
 	add	#-12,r15
 	mov.l	L15,r0
 	mov	#17,r1
+	mov.l	L16,r3
+	jsr	@r3
 	mov.b	r1,@r0
-	mov.l	L16,r0
-	jsr	@r0
-	nop
 	mov.l	L17,r8
 	mov	r8,r0
 	mov.l	@(4,r0),r9
@@ -56,10 +55,9 @@ L11:
 	bf	L7
 	mov.l	@(0,r15),r0
 	mov	#1,r1
+	mov.l	L19,r3
+	jsr	@r3
 	mov.b	r1,@r0
-	mov.l	L19,r0
-	jsr	@r0
-	nop
 	bra	L7
 	nop
 L9:

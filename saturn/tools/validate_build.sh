@@ -173,6 +173,43 @@ else
     fail "regtest: multi-call with array deref args (crash)"
 fi
 
+# 4f2. Store to a pool-loaded address immediately followed by a void call.
+# The void call's target address must NOT be allocated to r0, or it
+# clobbers the store address (also in r0) before the store fires —
+# silently redirecting the store to the call target (memory corruption,
+# no diagnostic). See rcc_bug_store_before_call. Invariant: a direct
+# call target never lands in r0, so `jsr @r0` must not appear.
+cat > /tmp/regtest.c <<'EOF'
+extern void f(void);
+void g(unsigned int v) {
+    *(volatile unsigned int *)0x0022E140 = v;
+    f();
+}
+EOF
+regtest_grep "store-to-global before void call keeps call target off r0" "jsr.*@r0" no
+
+# 4f3. A store that precedes a void call must execute BEFORE the call, not
+# get sunk into the rts delay slot (after the call returns). The store
+# belongs in the jsr delay slot. This guards the rts delay-slot filler
+# against stealing an instruction already placed in a branch delay slot.
+# In a function with no callee-saved regs, the only post-rts instruction
+# must be a nop — never a store (`,@`). See rcc_bug_store_before_call.
+cat > /tmp/regtest.c <<'EOF'
+extern void do_thing(void);
+unsigned int g_store_seq;
+void test(void) { g_store_seq = 5; do_thing(); }
+EOF
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    if awk '/\trts\b/{seen=1; next} seen && /,@/{bad=1} END{exit(bad?1:0)}' /tmp/regtest.s; then
+        pass "regtest: store before void call not sunk into rts delay slot"
+    else
+        fail "regtest: store before void call not sunk into rts delay slot"
+    fi
+else
+    fail "regtest: store before void call not sunk into rts delay slot (crash)"
+fi
+
 # 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
 {
     echo "extern void f(void);"
