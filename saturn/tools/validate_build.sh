@@ -210,6 +210,26 @@ else
     fail "regtest: store before void call not sunk into rts delay slot (crash)"
 fi
 
+# 4f4. Literal-pool entry sizing across functions in one TU. shlit_flush
+# resets the pool between functions (nshlit=0) without wiping slot fields,
+# so a fresh .long entry could inherit a stale is_word=1 left by a prior
+# function's word entry — emitting a 32-bit constant as .short (value
+# truncation + pool misalignment). See rcc_bug_short_pool_constant.
+# Function a() seeds a word-pool entry (0x1234); function b()'s 32-bit
+# address constant reuses that slot. Invariant: no .short pool entry holds
+# a value outside signed 16-bit range.
+printf 'int a(int x) { return x & 0x1234; }\nvoid b(void) { *(volatile int *)0x12345678 = 1; }\n' > /tmp/regtest.c
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    if awk '/\.short/{v=$NF+0; if(v>32767||v<-32768) bad=1} END{exit(bad?1:0)}' /tmp/regtest.s; then
+        pass "regtest: 32-bit pool constant never emitted as .short (no stale is_word)"
+    else
+        fail "regtest: 32-bit pool constant never emitted as .short (no stale is_word)"
+    fi
+else
+    fail "regtest: 32-bit pool constant never emitted as .short (no stale is_word) (crash)"
+fi
+
 # 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
 {
     echo "extern void f(void);"

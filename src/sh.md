@@ -1030,14 +1030,21 @@ stmt: ARGB(INDIRB(reg))       "# argb %0\n"      1
 stmt: ASGNB(reg,INDIRB(reg))  "# asgnb %0 %1\n"  1
 
 %%
+/* shlit_flush resets the pool with `nshlit = 0` but does not wipe the
+ * slot structs, so a slot can carry stale fields from the previous
+ * function's pool. Every creator below therefore zero-initializes the
+ * slot before setting its fields — otherwise a fresh .long entry could
+ * inherit a stale is_word=1 (left by an earlier word entry or the
+ * mov.l+exts.w fold) and silently emit a 32-bit constant as .short. */
 static int shlit_num(int val) {
         int i;
         for (i = 0; i < nshlit; i++)
-                if (!shlits[i].is_symbol && shlits[i].value == val)
+                if (!shlits[i].is_symbol && !shlits[i].is_word
+                    && shlits[i].value == val)
                         return shlits[i].label;
         assert(nshlit < SH_MAX_LITERALS);
+        memset(&shlits[nshlit], 0, sizeof shlits[nshlit]);
         shlits[nshlit].label = genlabel(1);
-        shlits[nshlit].is_symbol = 0;
         shlits[nshlit].value = val;
         return shlits[nshlit++].label;
 }
@@ -1048,8 +1055,8 @@ static int shlit_word(int val) {
                 if (shlits[i].is_word && shlits[i].value == val)
                         return shlits[i].label;
         assert(nshlit < SH_MAX_LITERALS);
+        memset(&shlits[nshlit], 0, sizeof shlits[nshlit]);
         shlits[nshlit].label = genlabel(1);
-        shlits[nshlit].is_symbol = 0;
         shlits[nshlit].is_word = 1;
         shlits[nshlit].value = val;
         return shlits[nshlit++].label;
@@ -1061,6 +1068,7 @@ static int shlit_sym(char *name) {
                 if (shlits[i].is_symbol && strcmp(shlits[i].name, name) == 0)
                         return shlits[i].label;
         assert(nshlit < SH_MAX_LITERALS);
+        memset(&shlits[nshlit], 0, sizeof shlits[nshlit]);
         shlits[nshlit].label = genlabel(1);
         shlits[nshlit].is_symbol = 1;
         shlits[nshlit].name = name;
