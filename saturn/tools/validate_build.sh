@@ -230,6 +230,25 @@ else
     fail "regtest: 32-bit pool constant never emitted as .short (no stale is_word) (crash)"
 fi
 
+# 4f5. A run of >=2 volatile copies immediately before a call. The
+# pre-call arg-load reorder (sh_reorder_pre_call_args) must only fire on
+# a clean arg setup (distinct registers), not on copy runs that reuse
+# r0/r1 across copies — hoisting those collapses them to the last pair
+# and silently drops the earlier stores. See rcc_bug_copy_run_before_call.
+# Bug signature: two consecutive pool loads to the SAME register (the
+# first is immediately dead), which correct codegen never emits.
+printf 'extern void f(void);\nvoid t(void){\n *(volatile unsigned int *)0x0022800C = *(volatile unsigned int *)0x0022E180;\n *(volatile unsigned int *)0x00228028 = *(volatile unsigned int *)0x0022E184;\n *(volatile unsigned int *)0x00228030 = *(volatile unsigned int *)0x0022E184;\n f();\n}\n' > /tmp/regtest.c
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    if awk '/mov\.l[ \t]+L[0-9]+,r[0-9]+/{n=$0; sub(/.*,r/,"",n); sub(/[^0-9].*/,"",n); if(prev&&n==preg) bad=1; prev=1; preg=n; next} {prev=0} END{exit(bad?1:0)}' /tmp/regtest.s; then
+        pass "regtest: copy-run before call keeps each copy's addresses live"
+    else
+        fail "regtest: copy-run before call keeps each copy's addresses live"
+    fi
+else
+    fail "regtest: copy-run before call keeps each copy's addresses live (crash)"
+fi
+
 # 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
 {
     echo "extern void f(void);"

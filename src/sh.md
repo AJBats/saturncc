@@ -7602,6 +7602,29 @@ static void sh_reorder_pre_call_args(void) {
                 if (nloads < 3) continue;
                 first_arg_line = loads[nloads - 1].line;
 
+                /* Only reorder a clean argument setup, where each
+                 * non-deref pool load targets a DISTINCT register.
+                 * A run of >=2 value-copies before a call
+                 * (*d1=*s1; *d2=*s2; f();) materializes addresses by
+                 * reusing r0/r1 across copies; hoisting those loads to
+                 * the front would collapse them to the last copy's pair
+                 * and silently drop the earlier stores. Bail when any
+                 * non-deref load register repeats. */
+                {
+                        unsigned seen = 0;
+                        int dup = 0, m;
+                        for (m = 0; m < nloads; m++) {
+                                if (loads[m].is_deref || loads[m].reg < 0)
+                                        continue;
+                                if (seen & (1u << loads[m].reg)) {
+                                        dup = 1;
+                                        break;
+                                }
+                                seen |= 1u << loads[m].reg;
+                        }
+                        if (dup) continue;
+                }
+
                 /* Sort: pool loads (non-deref) by descending register,
                  * then derefs at the end. Simple insertion sort. */
                 {

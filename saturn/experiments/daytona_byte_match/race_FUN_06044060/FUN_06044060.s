@@ -2179,10 +2179,10 @@ FUN_06044a9a:
 	mov.l	L2494,r0
 	mov.l	@r0,r0
 	mov	r0,r13
-	mov.l	L2496,r4
-	mov.l	L2497,r3
 	mov.l	L2495,r0
 	mov.l	@r0,r0
+	mov.l	r0,@(12,r12)
+	mov.l	r13,@(20,r12)
 	mov.l	L2496,r4
 	mov.l	L2497,r3
 	jsr	@r3
@@ -2199,10 +2199,10 @@ FUN_06044a9a:
 	mov.l	L2500,r0
 	mov.l	@r0,r0
 	mov	r0,r13
-	mov.l	L2498,r4
-	mov.l	L2497,r3
 	mov.l	L2501,r0
 	mov.l	@r0,r0
+	mov.l	r0,@(44,r12)
+	mov.l	r13,@(52,r12)
 	mov.l	L2498,r4
 	mov.l	L2497,r3
 	jsr	@r3
@@ -12002,15 +12002,15 @@ FUN_0604559c:
 	mov.l	L2794,r0
 	mov.l	@r0,r0
 	mov	r0,r14
-	mov.l	L2797,r4
 	mov.l	L2795,r1
-	mov.l	L2796,r0
-	mov.l	L2798,r0
 	mov.l	@r1,r1
 	mov.l	r0,@r1
+	mov.l	L2796,r0
 	mov.l	@r0,r1
 	extu.w	r14,r0
 	mov.l	r0,@r1
+	mov.l	L2797,r4
+	mov.l	L2798,r0
 	mov.l	@r0,r3
 	jsr	@r3
 	nop
@@ -13902,14 +13902,14 @@ L1730:
 	mov.l	L2977,r3
 	jsr	@r3
 	nop
-	mov.l	L2978,r3
 	mov.l	@(16,r15),r0
-	mov.l	@(12,r15),r0
-	mov.l	@(8,r15),r0
 	mov.l	@r0,r13
+	mov.l	@(12,r15),r0
 	mov.l	@r0,r12
+	mov.l	@(8,r15),r0
 	mov.l	@r0,r11
 	mov.l	@r8,r0
+	mov.l	r0,@(12,r10)
 	mov.l	r13,@(16,r10)
 	mov.l	r12,@(20,r10)
 	mov.l	L2978,r3
@@ -19226,8 +19226,8 @@ L3347:	.long	100954846
 	.align 2
 FUN_06047332:
 	sts.l	pr,@-r15
-	mov.l	L3348,r3
-	mov.l	@r10,r0
+	mov.l	@(8,r10),r14
+	mov.l	@(16,r10),r13
 	mov.l	@(32,r10),r12
 	mov.l	@r10,r0
 	mov.l	r0,@(12,r11)
@@ -19247,8 +19247,8 @@ FUN_06047332:
 	mov.w	L3349,r1
 	and	r1,r0
 	mov.b	r0,@r11
-	mov.l	L3348,r3
-	mov.l	@(16,r10),r0
+	mov.l	@(24,r10),r14
+	mov.l	@(32,r10),r13
 	mov.l	@(16,r10),r0
 	mov.l	r0,@(44,r11)
 	mov.l	r14,@(48,r11)
@@ -19271,8 +19271,8 @@ L3348:	.long	FUN_06046d30
 	.align 2
 FUN_0604737a:
 	sts.l	pr,@-r15
-	mov.l	L3351,r3
-	mov.l	@r10,r0
+	mov.l	@(8,r10),r14
+	mov.l	@(24,r10),r13
 	mov.l	@(32,r10),r12
 	mov.l	@r10,r0
 	mov.l	r0,@(12,r11)
@@ -19292,8 +19292,8 @@ FUN_0604737a:
 	mov.w	L3352,r1
 	and	r1,r0
 	mov.b	r0,@r11
-	mov.l	L3351,r3
-	mov.l	@(8,r10),r0
+	mov.l	@(16,r10),r14
+	mov.l	@(24,r10),r13
 	mov.l	@(8,r10),r0
 	mov.l	r0,@(44,r11)
 	mov.l	r14,@(48,r11)
@@ -19316,8 +19316,8 @@ L3351:	.long	FUN_06046d30
 	.align 2
 FUN_060473ca:
 	sts.l	pr,@-r15
-	mov.l	L3354,r3
-	mov.l	@r10,r0
+	mov.l	@(8,r10),r14
+	mov.l	@(16,r10),r13
 	mov.l	@(40,r10),r12
 	mov.l	@r10,r0
 	mov.l	r0,@(12,r11)
@@ -19337,8 +19337,8 @@ FUN_060473ca:
 	mov.w	L3355,r1
 	and	r1,r0
 	mov.b	r0,@r11
-	mov.l	L3354,r3
-	mov.l	@(40,r10),r0
+	mov.l	@(16,r10),r14
+	mov.l	@(24,r10),r13
 	mov.l	@(32,r10),r12
 	mov.l	@(40,r10),r0
 	mov.l	r0,@(44,r11)
@@ -19362,8 +19362,8 @@ L3354:	.long	FUN_06046d30
 	.align 2
 FUN_06047414:
 	sts.l	pr,@-r15
-	mov.l	L3357,r3
-	mov.l	@r10,r0
+	mov.l	@(8,r10),r14
+	mov.l	@(32,r10),r13
 	mov.l	@(40,r10),r12
 	mov.l	@r10,r0
 	mov.l	r0,@(12,r11)
@@ -19383,8 +19383,8 @@ FUN_06047414:
 	mov.w	L3358,r1
 	and	r1,r0
 	mov.b	r0,@r11
-	mov.l	L3357,r3
-	mov.l	@(8,r10),r0
+	mov.l	@(16,r10),r14
+	mov.l	@(24,r10),r13
 	mov.l	@(32,r10),r12
 	mov.l	@(8,r10),r0
 	mov.l	r0,@(44,r11)
@@ -19408,8 +19408,8 @@ L3357:	.long	FUN_06046d30
 	.align 2
 FUN_06047460:
 	sts.l	pr,@-r15
-	mov.l	L3360,r3
-	mov.l	@r9,r0
+	mov.l	@(8,r9),r14
+	mov.l	@(32,r9),r13
 	mov.l	@(40,r9),r12
 	mov.l	@r9,r0
 	mov.l	r0,@(12,r11)
@@ -19431,8 +19431,8 @@ FUN_06047460:
 	mov.w	L3361,r1
 	and	r1,r0
 	mov.b	r0,@r11
-	mov.l	L3360,r3
-	mov.l	@(8,r9),r0
+	mov.l	@(16,r9),r14
+	mov.l	@(24,r9),r13
 	mov.l	@(32,r9),r12
 	mov.l	@(8,r9),r0
 	mov.l	r0,@(44,r11)
@@ -19452,8 +19452,8 @@ FUN_06047460:
 	mov.w	L3361,r1
 	and	r1,r0
 	mov.b	r0,@r10
-	mov.l	L3360,r3
-	mov.l	@r9,r0
+	mov.l	@(40,r9),r14
+	mov.l	@(48,r9),r13
 	mov.l	@r9,r0
 	mov.l	r0,@(44,r10)
 	mov.l	r14,@(48,r10)
@@ -19476,8 +19476,8 @@ L3360:	.long	FUN_06046d30
 	.align 2
 FUN_060474d4:
 	sts.l	pr,@-r15
-	mov.l	L3363,r3
-	mov.l	@r9,r0
+	mov.l	@(8,r9),r14
+	mov.l	@(32,r9),r13
 	mov.l	@(40,r9),r12
 	mov.l	@r9,r0
 	mov.l	r0,@(12,r11)
@@ -19499,8 +19499,8 @@ FUN_060474d4:
 	mov.w	L3364,r1
 	and	r1,r0
 	mov.b	r0,@r11
-	mov.l	L3363,r3
-	mov.l	@(8,r9),r0
+	mov.l	@(16,r9),r14
+	mov.l	@(24,r9),r13
 	mov.l	@(32,r9),r12
 	mov.l	@(8,r9),r0
 	mov.l	r0,@(44,r11)
@@ -19520,8 +19520,8 @@ FUN_060474d4:
 	mov.w	L3364,r1
 	and	r1,r0
 	mov.b	r0,@r10
-	mov.l	L3363,r3
-	mov.l	@r9,r0
+	mov.l	@(40,r9),r14
+	mov.l	@(48,r9),r13
 	mov.l	@(56,r9),r12
 	mov.l	@r9,r0
 	mov.l	r0,@(44,r10)
@@ -20251,10 +20251,10 @@ FUN_060477fc:
 	mov.l	@(4,r0),r0
 	mov	r0,r1
 	mov.l	L3393,r0
-	mov.l	L3394,r0
 	mov.w	@r0,r0
 	mov.w	r0,@r1
-	mov.l	@r0,r3
+	mov.l	r13,@(4,r14)
+	mov.l	L3394,r0
 	mov.l	@r0,r3
 	jsr	@r3
 	nop
@@ -20273,12 +20273,12 @@ FUN_060477fc:
 	mov.l	@r0,r0
 	add	#4,r0
 	mov	r0,r1
-	mov.l	L3400,r4
 	mov.l	L3399,r0
-	mov.l	L3401,r0
 	mov.w	@r0,r0
 	mov.l	r0,@r1
+	mov.l	L3400,r4
 	mov.l	@r4,r4
+	mov.l	L3401,r0
 	mov.l	@r0,r3
 	jsr	@r3
 	nop
@@ -20308,9 +20308,9 @@ FUN_060477fc:
 	add	#2,r0
 	mov	r0,r1
 	mov.l	L3408,r0
-	mov.l	L3394,r0
 	mov.w	@r0,r0
 	mov.w	r0,@r1
+	mov.l	L3394,r0
 	mov.l	@r0,r3
 	jsr	@r3
 	nop
@@ -20336,13 +20336,13 @@ L2306:
 	mov.l	@r0,r0
 	add	#4,r0
 	mov	r0,r1
-	mov.l	L3412,r4
 	mov.l	L3411,r0
-	mov.l	L3413,r0
 	mov.w	@r0,r0
 	mov.l	r0,@r1
+	mov.l	r10,@(8,r12)
+	mov.l	L3412,r4
 	mov.l	@r4,r4
-	mov.l	@r0,r3
+	mov.l	L3413,r0
 	mov.l	@r0,r3
 	jsr	@r3
 	nop
@@ -20383,9 +20383,9 @@ L2306:
 	add	#2,r0
 	mov	r0,r1
 	mov.l	L3422,r0
-	mov.l	L3423,r0
 	mov.w	@r0,r0
 	mov.w	r0,@r1
+	mov.l	L3423,r0
 	mov.l	@r0,r3
 	jsr	@r3
 	nop
@@ -20598,13 +20598,13 @@ FUN_060479d6:
 	mov	#0,r1
 	mov.l	L3441,r3
 	jsr	@r3
-	mov.l	L3444,r3
-	mov.l	L3442,r0
-	mov.l	L3443,r0
 	mov.l	r1,@r0
+	mov.l	L3442,r0
 	mov.w	@r0,r0
 	mov.w	r0,@r13
+	mov.l	L3443,r0
 	mov.w	@r0,r0
+	mov.l	L3444,r3
 	jsr	@r3
 	mov.l	L3446,r5
 	mov.l	L3445,r4
