@@ -305,6 +305,24 @@ else
     fail "regtest: immediate store to pool address keeps value off the address reg (crash)"
 fi
 
+# 4f9. A pointer variable homed in r14 in a leaf function (no frame
+# pointer) and dereferenced with a displacement (p[k], k>0). The leaf
+# callee-saved rename moves the producer (mov ...,r14 -> mov ...,r7) but
+# the @(disp,r14) consumer must be renamed too — the is_fp_indexed guard
+# wrongly treated it as a frame access. See rcc_bug_copy_run_before_call
+# audit (F1). Invariant: both derefs of the same pointer share a base reg.
+printf 'int ptr14(int *a, int i){ int *p = a + i; return p[0] + p[1]; }\n' > /tmp/regtest.c
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    if awk '/mov\.l[ \t]+@r[0-9]+,r/{s=$0;sub(/.*@r/,"",s);sub(/,.*/,"",s);b0=s} /@\(4,r[0-9]+\)/{s=$0;sub(/.*@\(4,r/,"",s);sub(/\).*/,"",s);b1=s} END{exit((b0!=""&&b1!=""&&b0!=b1)?1:0)}' /tmp/regtest.s; then
+        pass "regtest: leaf pointer-in-r14 derefs share a base register"
+    else
+        fail "regtest: leaf pointer-in-r14 derefs share a base register"
+    fi
+else
+    fail "regtest: leaf pointer-in-r14 derefs share a base register (crash)"
+fi
+
 # 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
 {
     echo "extern void f(void);"

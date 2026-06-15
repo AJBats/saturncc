@@ -8292,7 +8292,14 @@ static void sh_elim_redundant_mov_r0(void) {
  * old==14, since those carry FP semantics that must not be renamed.
  * Non-r14 renames have no such exception — `,rN)` for N != 14 is an
  * indexed addressing operand and is a legitimate rename target. */
-static void sh_rename_reg(int old_reg, int new_reg) {
+/* r14_is_fp: when renaming r14 (old_reg==14), whether r14 is this
+ * function's frame pointer. If so, `@(disp,r14)` is a frame access and
+ * must NOT be renamed. If not (r14 merely homes a variable — e.g. a
+ * leaf function with no FP), `@(disp,r14)` is a variable-base access
+ * (p[k] on a pointer var living in r14) and MUST be renamed along with
+ * the producer; otherwise consumer and producer split across registers
+ * and the access reads a stale r14. */
+static void sh_rename_reg(int old_reg, int new_reg, int r14_is_fp) {
         char buf[SH_MAX_LINELEN];
         char old_digits[4];
         int old_len;
@@ -8311,6 +8318,7 @@ static void sh_rename_reg(int old_reg, int new_reg) {
                                  && in[1 + old_len] <= '9')) {
                                 int is_fp_indexed =
                                         (old_reg == 14
+                                         && r14_is_fp
                                          && in > sh_lines[j]
                                          && in[-1] == ','
                                          && in[1 + old_len] == ')');
@@ -8336,7 +8344,9 @@ static void sh_rename_reg(int old_reg, int new_reg) {
 }
 
 static void sh_rename_r14_var(int new_reg) {
-        sh_rename_reg(14, new_reg);
+        /* FP path: r14 becomes the frame pointer, so keep the existing
+         * `@(disp,r14)` handling (treat as frame access). */
+        sh_rename_reg(14, new_reg, 1);
 }
 
 /* Leaf-function callee-saved elision (Gap 1, Phase A).
@@ -8458,7 +8468,12 @@ static void sh_leaf_rename_callee_saved(int need_fp, int exit_label_num) {
                      k++) {
                         int dst = rename_prio[k];
                         if (!(live & (1u << dst))) {
-                                sh_rename_reg(src, dst);
+                                /* r14 is only renamed here when !need_fp
+                                 * (gated above), i.e. it homes a variable,
+                                 * not the frame pointer — so its
+                                 * `@(disp,r14)` consumers are var accesses
+                                 * and must be renamed too. */
+                                sh_rename_reg(src, dst, need_fp);
                                 live &= ~(1u << src);
                                 live |= 1u << dst;
                                 usedmask[IREG] &= ~(1u << src);
@@ -8532,7 +8547,9 @@ static void sh_rename_to_r14_for_delay_slot(int need_fp,
         if (live & (1u << 14))
                 return;
 
-        sh_rename_reg(src, 14);
+        /* Renames TO r14 (old_reg = src != 14); the r14_is_fp flag only
+         * affects old_reg==14, so its value is irrelevant here. */
+        sh_rename_reg(src, 14, 0);
         usedmask[IREG] &= ~(1u << src);
         usedmask[IREG] |= 1u << 14;
 }

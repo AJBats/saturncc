@@ -2710,28 +2710,28 @@ L153:
 	mov.l	L2531,r0
 	mov.l	r0,@r7
 	mov	#0,r0
-	mov.l	r0,@(4,r14)
+	mov.l	r0,@(4,r7)
 	mov	#0,r0
-	mov.l	r0,@(8,r14)
+	mov.l	r0,@(8,r7)
 	mov	#0,r0
-	mov.l	r0,@(12,r14)
+	mov.l	r0,@(12,r7)
 	mov	#0,r0
-	mov.l	r0,@(16,r14)
+	mov.l	r0,@(16,r7)
 	mov.l	L2531,r0
-	mov.l	r0,@(20,r14)
+	mov.l	r0,@(20,r7)
 	mov	#0,r0
-	mov.l	r0,@(24,r14)
+	mov.l	r0,@(24,r7)
 	mov	#0,r0
-	mov.l	r0,@(28,r14)
+	mov.l	r0,@(28,r7)
 	mov	#0,r0
-	mov.l	r0,@(32,r14)
+	mov.l	r0,@(32,r7)
 	mov	#0,r0
-	mov.l	r0,@(36,r14)
+	mov.l	r0,@(36,r7)
 	mov.l	L2531,r0
-	mov.l	r0,@(40,r14)
+	mov.l	r0,@(40,r7)
 	mov	#0,r0
 	rts
-	mov.l	r0,@(44,r14)
+	mov.l	r0,@(44,r7)
 	.align 2
 L2528:	.long	DAT_06044da0
 L2529:	.long	_DAT_ffffffe2
@@ -12266,7 +12266,7 @@ FUN_060456cc:
 	mov.l	L2836,r0
 	mov.l	@r0,r0
 	rts
-	mov.l	r0,@(12,r14)
+	mov.l	r0,@(12,r7)
 	.align 2
 L2834:	.short	140
 	.align 2
@@ -15954,7 +15954,7 @@ FUN_06045EC8:
 	mov.l	@r7,r1
 	or	r1,r0
 	mov.l	r0,@(4,r6)
-	mov.l	@(4,r14),r0
+	mov.l	@(4,r7),r0
 	mov.l	r0,@(8,r6)
 	mov.l	L3113,r0
 	mov.l	@r0,r0
@@ -20794,7 +20794,7 @@ FUN_06047ae0:
 	mov.l	r6,@r0
 	mov	r6,r0
 	rts
-	mov.l	r0,@(4,r14)
+	mov.l	r0,@(4,r7)
 	.align 2
 L3469:	.long	DAT_06047af8
 L3470:	.long	DAT_06047afa
