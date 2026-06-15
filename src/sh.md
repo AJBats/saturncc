@@ -6278,6 +6278,36 @@ static int sh_r0_dead_at(int start_idx) {
  * saving one instruction per match.  Also handles the variant
  * without the leading mov (when rT == rA already, so the
  * conditional ? mov was omitted). */
+/* Conservative liveness for sh_route_via_r0: is register rT dead from
+ * sh_lines[start] onward? sh_route_via_r0 stops materializing the base
+ * register rT (it folds `mov rA,rT; add rB,rT; mov.X @rT,rD` into an
+ * indexed access), so it may only fire when nothing later needs rT.
+ *
+ * This is NOT sh_reg_dead_after: a use of rT as a STORE address
+ * (mov.X rS,@rT / @(disp,rT) / @(r0,rT)) must count as a READ of rT,
+ * but rT is then the line's last register, which sh_reads_reg treats as
+ * a destination and sh_writes_reg treats as a write — both wrong for a
+ * store base. We detect the store form (",@" present) and treat rT-as-
+ * last-register there as a live use. Bails (live) at any label/branch. */
+static int sh_route_base_dead(int start, int rT) {
+        int i;
+        for (i = start; i < sh_nlines; i++) {
+                const char *s = sh_lines[i];
+                if (s[0] == 0) continue;
+                if (sh_is_label_line(s)) return 0;
+                if (sh_is_branch_line(s)) return 0;
+                if (sh_has_prefix(s, "bt") || sh_has_prefix(s, "bf")
+                    || sh_has_prefix(s, "rts")) return 0;
+                if (strstr(s, ",@") && sh_writes_reg(s, rT))
+                        return 0;   /* rT used as a store-address base */
+                if (sh_reads_reg(s, rT))
+                        return 0;   /* read (incl. load base / operand) */
+                if (sh_writes_reg(s, rT))
+                        return 1;   /* real (non-store) redefinition */
+        }
+        return 1;
+}
+
 static void sh_route_via_r0(void) {
         static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
         int i, nout = 0;
@@ -6304,7 +6334,15 @@ static void sh_route_via_r0(void) {
                     && sscanf(sh_lines[i+2], "\tmov.%c\t@r%d,r%d\n",
                               &suf, &rT3, &rD) == 3
                     && rT3 == rT
-                    && sh_r0_dead_at(i)) {
+                    && sh_r0_dead_at(i)
+                    /* The base rT must be dead after the load, else the
+                     * folded indexed form (which stops materializing rT)
+                     * leaves a later reader/store with a stale address.
+                     * Exception: when the load writes back to rT itself
+                     * (rD == rT), the load consumes the base — rT then
+                     * holds the loaded value, so no base-liveness check
+                     * is needed. */
+                    && (rD == rT || sh_route_base_dead(i + 3, rT))) {
                         snprintf(new_lines[nout++], SH_MAX_LINELEN,
                                  "\tmov\tr%d,r0\n", rA);
                         snprintf(new_lines[nout++], SH_MAX_LINELEN,

@@ -268,6 +268,24 @@ else
     fail "regtest: no PC-relative pool load in rts delay slot (crash)"
 fi
 
+# 4f7. sh_route_via_r0 folds `mov rA,rT; add rB,rT; mov.X @rT,rD` into an
+# indexed `mov.X @(r0,rB),rD`, which stops materializing the base rT. It
+# must only fire when rT is dead afterwards — otherwise a later deref or
+# store through rT (e.g. char *p=a+n; x=*p; *p=v; *(p+1)=x) reads/writes a
+# stale/garbage base. See rcc_bug_copy_run_before_call audit (F2).
+# Invariant: a callee-saved reg (r8-r14) used as a memory base is defined.
+printf 'void rv0(char *a, int n, char v){ char *p = a + n; char x = *p; *p = v; *(p+1) = x; }\n' > /tmp/regtest.c
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    if awk '/@r1[0-4]([^0-9]|$)/||/,r1[0-4]\)/{use=1} /^[ \t]*(mov|add|sub|and|or|xor|neg|not|extu|exts|shll|shlr|shar)[^@]*,r1[0-4]$/{wr=1} END{exit((use&&!wr)?1:0)}' /tmp/regtest.s; then
+        pass "regtest: route_via_r0 keeps a reused base pointer live"
+    else
+        fail "regtest: route_via_r0 keeps a reused base pointer live"
+    fi
+else
+    fail "regtest: route_via_r0 keeps a reused base pointer live (crash)"
+fi
+
 # 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
 {
     echo "extern void f(void);"
