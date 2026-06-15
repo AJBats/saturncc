@@ -173,6 +173,27 @@ else
     fail "regtest: multi-call with array deref args (crash)"
 fi
 
+# 4f1. A cheap constant (or address) that repeats within one call and feeds a
+# STACK arg (the 5th+ arg) was CSE-recalculated to its source node and never
+# got x.inst set; prune dropped it, leaving the ARG node's x.kids[0] NULL ->
+# getregnum(NULL) SIGABRT at emit. Register args dodge this because target()
+# rtargets them into r4-r7; stack args had no such redirect. The deref form
+# f5fn(p[1],1,2,3,4) is just the special case where p[1]'s displacement (4)
+# collides with the stack constant (4). Invariant: compiles, and the shared
+# constant is materialized and stored to the outgoing-arg area at @(...,r15).
+# See F6 (rcc_f6_stack_arg_crash_handoff).
+cat > /tmp/regtest.c <<'EOF'
+extern void f5fn(int, int, int, int, int);
+void g(void) { f5fn(7, 1, 2, 3, 7); }
+EOF
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null \
+   && grep -Eq 'mov\.l[[:space:]]+r[0-9]+,@\([0-9]+,r15\)' /tmp/regtest.s; then
+    pass "regtest: duplicated constant feeding a stack arg compiles and stores"
+else
+    fail "regtest: duplicated constant feeding a stack arg compiles and stores"
+fi
+
 # 4f2. Store to a pool-loaded address immediately followed by a void call.
 # The void call's target address must NOT be allocated to r0, or it
 # clobbers the store address (also in r0) before the store fires —

@@ -2669,9 +2669,24 @@ static void emit2(Node p) {
                  * @(0,r15) for the first stack arg. */
                 if (p->x.argno < 4)
                         break;
-                src = getregnum(p->x.kids[0]);
+                {
+                /* The value to store normally rides in x.kids[0], the
+                 * pruned operand. But when the value is a CSE'd cheap
+                 * constant (or address) that LCC's recalculation pass
+                 * decided to recompute rather than spill, the original
+                 * INDIR(VREGP) use-node is reduced via reuse() to its
+                 * CSE source and never gets x.inst set; prune() then
+                 * drops it and x.kids[0] is left NULL. Register args
+                 * dodge this because target() rtargets them into r4-r7
+                 * (rtarget wires x.kids directly), but a stack arg has
+                 * no such redirect. Fall back to the raw tree kid: it
+                 * is the INDIR(VREGP) whose getregnum() resolves to the
+                 * shared register via its CSE fallback (gen.c). */
+                Node vk = p->x.kids[0] ? p->x.kids[0] : p->kids[0];
+                src = getregnum(vk);
                 print("\tmov.l\tr%d,@(%d,r15)\n",
                       src, (int)p->syms[2]->u.c.v.i - 16);
+                }
                 break;
         case EQ+I: case EQ+U: case NE+I: case NE+U: {
                 /* Get the immediate value from kids[1].  Normally
