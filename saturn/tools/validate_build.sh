@@ -249,6 +249,25 @@ else
     fail "regtest: copy-run before call keeps each copy's addresses live (crash)"
 fi
 
+# 4f6. A leaf whose last body instruction is a PC-relative pool load. The
+# rts delay-slot filler must NOT pull it into the slot: in a delay slot a
+# mov.l L,rN computes its source from the branch target's PC, reading the
+# wrong literal (and can hard-error "pcrel too far"). The fix is local to
+# the rts filler (sh_is_delay_safe still allows pool loads so the branch
+# filler can scan past them). See rcc_bug_copy_run_before_call audit (F3).
+# Invariant: the instruction after rts is not a PC-relative pool load.
+printf 'int g_pcrel;\nint *retaddr(void){ return &g_pcrel; }\n' > /tmp/regtest.c
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    if awk 'prev{ if($0 ~ /mov\.[lw][ \t]+L[0-9]/) bad=1; prev=0 } /^[ \t]*rts/{prev=1} END{exit(bad?1:0)}' /tmp/regtest.s; then
+        pass "regtest: no PC-relative pool load in rts delay slot"
+    else
+        fail "regtest: no PC-relative pool load in rts delay slot"
+    fi
+else
+    fail "regtest: no PC-relative pool load in rts delay slot (crash)"
+fi
+
 # 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
 {
     echo "extern void f(void);"

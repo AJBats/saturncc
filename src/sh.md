@@ -9155,7 +9155,15 @@ static void sh_interleave_pool(void) {
 static int sh_is_delay_safe(const char *s) {
         /* Conservative whitelist: simple ALU and data moves only.
          * Excludes any branch, jmp/jsr/rts/bsr/bra/bt/bf, and the
-         * few PC-relative or delay-slot-forbidden forms. */
+         * few PC-relative or delay-slot-forbidden forms.
+         *
+         * NB: PC-relative pool loads (mov.l L,rN) DO pass this check.
+         * sh_fill_branch_delays depends on that — it walks its backward
+         * candidate scan *past* pool loads (handling them via a separate
+         * sh_is_pc_rel_load branch) and would stop short if they were
+         * "unsafe" here. Callers that must keep a pool load out of an
+         * actual delay slot (the rts-slot filler) test sh_is_pc_rel_load
+         * themselves; do not add that test here. */
         if (sh_has_prefix(s, "mov")) return 1;
         if (sh_has_prefix(s, "mov.b")) return 1;
         if (sh_has_prefix(s, "mov.w")) return 1;
@@ -10516,8 +10524,15 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
                                  * delay slot — moving it would un-fill that
                                  * branch and sink it across the call (e.g.
                                  * a store placed before a void call would
-                                 * run after the call returns). */
+                                 * run after the call returns). Also never
+                                 * a PC-relative pool load: in a delay slot
+                                 * its source is computed from the branch
+                                 * target's PC, so it reads the wrong
+                                 * literal (sh_is_delay_safe permits pool
+                                 * loads for the branch-filler's scan, so
+                                 * exclude them explicitly here). */
                                 if (sh_is_delay_safe(sh_lines[j])
+                                    && !sh_is_pc_rel_load(sh_lines[j])
                                     && !sh_in_branch_delay_slot(j))
                                         delay_idx = j;
                                 break;
