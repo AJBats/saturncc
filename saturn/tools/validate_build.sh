@@ -286,6 +286,25 @@ else
     fail "regtest: route_via_r0 keeps a reused base pointer live (crash)"
 fi
 
+# 4f8. A store of a small immediate to a pool-loaded address. The value
+# and the address must not both land in r0 — if the address load clobbers
+# the value, the store degenerates to `mov.X r0,@r0`, writing the address
+# to itself instead of the value (e.g. flag=1 becomes flag=&flag). The
+# scheduling order can be flipped by a following statement, so it surfaces
+# intermittently. See rcc_bug_copy_run_before_call audit (F4).
+# Invariant: no store `mov.X rN,@rN` with the same source and base reg.
+printf 'int flag, counter;\nextern void run(void);\nvoid stc(void){ flag = 1; counter = counter + 1; run(); }\n' > /tmp/regtest.c
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    if awk '/mov\.[lwb][ \t]+r[0-9]+,@r[0-9]+/{s=$0;src=s;sub(/.*mov\.[lwb][ \t]+r/,"",src);sub(/,.*/,"",src);d=$0;sub(/.*,@r/,"",d);sub(/[^0-9].*/,"",d);if(src==d)bad=1} END{exit(bad?1:0)}' /tmp/regtest.s; then
+        pass "regtest: immediate store to pool address keeps value off the address reg"
+    else
+        fail "regtest: immediate store to pool address keeps value off the address reg"
+    fi
+else
+    fail "regtest: immediate store to pool address keeps value off the address reg (crash)"
+fi
+
 # 4g. Body overflow diagnostic (compiler must not crash, must warn on stderr)
 {
     echo "extern void f(void);"

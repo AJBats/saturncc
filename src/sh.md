@@ -6308,6 +6308,65 @@ static int sh_route_base_dead(int start, int rT) {
         return 1;
 }
 
+/* Find a caller-saved register (r1..r7, skipping `avoid`) whose current
+ * value is dead at sh_lines[at] — its next reference from there is a
+ * write, so it is free to use as scratch. Returns -1 if none. */
+static int sh_find_dead_caller_saved(int at, int avoid) {
+        int r;
+        for (r = 1; r <= 7; r++) {
+                if (r == avoid) continue;
+                if (sh_reg_dead_after(at, r)) return r;
+        }
+        return -1;
+}
+
+/* Repair a store whose value and pool-loaded address both landed in r0:
+ *   mov #imm,r0 ; mov.l L,r0 ; mov.X r0,@r0      (or mov rSrc,r0 ; ...)
+ * The address load clobbers the value, so the store writes the address
+ * to itself (*addr = addr) instead of the value. The allocator can pick
+ * this when the store value is assigned r0 before the pool-loaded
+ * address; a following statement can flip the order, so it surfaces
+ * intermittently. Repair by loading the address first and keeping the
+ * value in a different register:
+ *   mov #imm,r0 case: re-materialize the immediate into a dead register.
+ * (The mov rSrc,r0 variant — where rSrc still holds the value — is left
+ * to the general allocator/coalescer; only the immediate case is handled
+ * here, which is the shape that loses its value with no surviving copy.) */
+static void sh_fix_store_self_addr(void) {
+        int i;
+        for (i = 0; i + 2 < sh_nlines; i++) {
+                int a_imm, blab, j, k, rF;
+                int ni = -1, nj = -1, nk = -1;
+                char suf;
+                if (sh_lines[i][0] == 0) continue;
+                j = i + 1; while (j < sh_nlines && sh_lines[j][0] == 0) j++;
+                if (j >= sh_nlines) continue;
+                k = j + 1; while (k < sh_nlines && sh_lines[k][0] == 0) k++;
+                if (k >= sh_nlines) continue;
+                /* A: mov #imm,r0 ; B: mov.l Lnn,r0 ; C: mov.X r0,@r0.
+                 * %n + end-of-line check is essential: sscanf returns the
+                 * conversion count BEFORE a trailing-literal mismatch, so
+                 * "mov #12,r2" would otherwise match the #%d,r0 pattern and
+                 * "mov.b @r0,r0" (a LOAD) would match the r0,@r0 store
+                 * pattern. Requiring the parse to consume up to the newline
+                 * rejects those. */
+                sscanf(sh_lines[i], "\tmov\t#%d,r0%n", &a_imm, &ni);
+                if (ni < 0 || sh_lines[i][ni] != '\n') continue;
+                sscanf(sh_lines[j], "\tmov.l\tL%d,r0%n", &blab, &nj);
+                if (nj < 0 || sh_lines[j][nj] != '\n') continue;
+                sscanf(sh_lines[k], "\tmov.%c\tr0,@r0%n", &suf, &nk);
+                if (nk < 0 || sh_lines[k][nk] != '\n') continue;
+                rF = sh_find_dead_caller_saved(i, 0);
+                if (rF < 0) continue;   /* no scratch — leave as-is (rare) */
+                snprintf(sh_lines[i], SH_MAX_LINELEN,
+                         "\tmov.l\tL%d,r0\n", blab);
+                snprintf(sh_lines[j], SH_MAX_LINELEN,
+                         "\tmov\t#%d,r%d\n", a_imm, rF);
+                snprintf(sh_lines[k], SH_MAX_LINELEN,
+                         "\tmov.%c\tr%d,@r0\n", suf, rF);
+        }
+}
+
 static void sh_route_via_r0(void) {
         static char new_lines[SH_MAX_LINES][SH_MAX_LINELEN];
         int i, nout = 0;
@@ -10283,6 +10342,7 @@ static void sh_process_deferred_fn(struct sh_ipa_fn *e) {
                  *                              the call sites below.
                  * ────────────────────────────────────────────────── */
                 sh_peephole();
+                sh_fix_store_self_addr();
                 if (sh_gbr_param)
                         sh_rewrite_gbr_param();
                 sh_elim_redundant_ext();
