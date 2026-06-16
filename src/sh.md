@@ -841,6 +841,26 @@ reg:  LSHU4(reg,conshi)  "# lsh\n"  4
 reg:  RSHI4(reg,conshi)  "# rsh\n"  4
 reg:  RSHU4(reg,conshi)  "# rsh\n"  4
 
+/* Runtime-amount (register-count) shifts via the SH-2 dynamic-shift
+ * instructions SHLD/SHAD. The count register's sign picks direction:
+ * SHLD/SHAD shift left when the count is >= 0 and right by the
+ * magnitude when it is < 0 (SHLD zero-fills, SHAD sign-fills). A left
+ * shift therefore uses the count as-is; the two right shifts need a
+ * negated count, which target() supplies by wrapping the count in a
+ * NEGI4 node (only for non-constant counts) so the existing
+ * reg: NEGI4(reg) rule materializes -count in its own register.
+ *
+ * Cost 5 keeps these above the constant-shift rules (max cost 4 for
+ * the conshi fallback): a constant count also reduces to reg, so
+ * without the higher cost these would undercut the shll/shlr/shar
+ * decomposition and perturb byte-matched output. For a genuine
+ * runtime count the constant rules do not match and these are the
+ * only candidates. */
+reg:  LSHI4(reg,reg)  "?\tmov\tr%0,r%c\n\tshld\tr%1,r%c\n"  5
+reg:  LSHU4(reg,reg)  "?\tmov\tr%0,r%c\n\tshld\tr%1,r%c\n"  5
+reg:  RSHU4(reg,reg)  "?\tmov\tr%0,r%c\n\tshld\tr%1,r%c\n"  5
+reg:  RSHI4(reg,reg)  "?\tmov\tr%0,r%c\n\tshad\tr%1,r%c\n"  5
+
 reg:  BANDI4(reg,bmask)  "\textu.b\tr%0,r%c\n"  0
 reg:  BANDU4(reg,bmasu)  "\textu.b\tr%0,r%c\n"  0
 reg:  BANDI4(reg,wmask)  "\textu.w\tr%0,r%c\n"  0
@@ -2194,6 +2214,44 @@ static void target(Node p) {
                                         n = n->kids[0];
                                 }
                         }
+                }
+                break;
+                }
+        case RSH+I: case RSH+U: {
+                /* Runtime-amount right shift: SH-2 SHLD/SHAD shift
+                 * right only when the count is negative, so wrap the
+                 * count in a NEGI4 node and let reg: NEGI4(reg) put
+                 * -count in its own register; the reg: RSHx4(reg,reg)
+                 * rule then emits shld/shad on that negated count.
+                 *
+                 * Skip the wrap for an in-range (0..31) constant count,
+                 * whether a literal CNST or a CSE-recalculated one
+                 * (INDIR(VREGP) whose cse source is the CNST): those
+                 * match the conshi rule and lower via the shll/shlr/
+                 * shar decomposition, which byte-matches SHC and must
+                 * not be perturbed. A variable count, or an out-of-
+                 * range (undefined) constant, falls through to the wrap
+                 * so the shift still goes right. Also skip the 64-bit
+                 * mul-high idiom (size 8 has its own shapes), and guard
+                 * against re-wrapping when prelabel revisits a shared
+                 * DAG node. */
+                Node cnt = p->kids[1];
+                Node cn = cnt;
+                int skip = 0;
+                if (cn && generic(cn->op) == INDIR && cn->syms[RX]
+                    && cn->syms[RX]->u.t.cse)
+                        cn = cn->syms[RX]->u.t.cse;
+                if (cn && generic(cn->op) == CNST && cn->syms[0]) {
+                        int v = (int)cn->syms[0]->u.c.v.i;
+                        if (v >= 0 && v <= 31)
+                                skip = 1;
+                }
+                if (opsize(p->op) == 4 && cnt && !skip
+                    && specific(cnt->op) != NEG+I) {
+                        Node neg = newnode(NEG + I + sizeop(4),
+                                           cnt, NULL, NULL);
+                        setreg(neg, (*IR->x.rmap)(opkind(neg->op)));
+                        p->kids[1] = neg;
                 }
                 break;
                 }

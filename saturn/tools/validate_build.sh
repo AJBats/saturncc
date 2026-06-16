@@ -215,6 +215,66 @@ else
     fail "regtest: pinned-result 2-address op does not alias its operand"
 fi
 
+# 4f5. Runtime-amount (register-count) shifts. The SH-2 backend had rules
+# only for constant shift amounts, so a shift by a runtime value failed with
+# "no lburg rule" (F5). Now lowered via the dynamic-shift instructions: a
+# left shift uses the count as-is (shld); a right shift negates the count
+# first, since SHLD/SHAD shift right only when the count is negative (shld
+# for unsigned/logical, shad for signed/arithmetic). See F5 workstream
+# (rcc_bug_variable_shift). Invariants below pin the lowering per form.
+cat > /tmp/regtest.c <<'EOF'
+unsigned int vlu(unsigned int x, int n) { return x << n; }
+unsigned int vru(unsigned int x, int n) { return x >> n; }
+int          vrs(int x, int n)          { return x >> n; }
+EOF
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null; then
+    pass "regtest: runtime-amount shift compiles (was: no lburg rule)"
+else
+    fail "regtest: runtime-amount shift compiles (was: no lburg rule)"
+fi
+# Left: shld present, no neg/shad (count used directly, positive => left).
+if awk '/^_?vlu:/{f=1;next} f&&/^_?[a-z]/{f=0} f' /tmp/regtest.s \
+     | grep -q '\bshld\b' \
+   && ! awk '/^_?vlu:/{f=1;next} f&&/^_?[a-z]/{f=0} f' /tmp/regtest.s \
+        | grep -Eq '\b(neg|shad)\b'; then
+    pass "regtest: variable left shift uses shld with no negate"
+else
+    fail "regtest: variable left shift uses shld with no negate"
+fi
+# Unsigned right: negate the count, then logical shld.
+if awk '/^_?vru:/{f=1;next} f&&/^_?[a-z]/{f=0} f' /tmp/regtest.s \
+     | grep -q '\bneg\b' \
+   && awk '/^_?vru:/{f=1;next} f&&/^_?[a-z]/{f=0} f' /tmp/regtest.s \
+        | grep -q '\bshld\b'; then
+    pass "regtest: variable unsigned right shift negates then shld"
+else
+    fail "regtest: variable unsigned right shift negates then shld"
+fi
+# Signed right: negate the count, then arithmetic shad.
+if awk '/^_?vrs:/{f=1;next} f&&/^_?[a-z]/{f=0} f' /tmp/regtest.s \
+     | grep -q '\bneg\b' \
+   && awk '/^_?vrs:/{f=1;next} f&&/^_?[a-z]/{f=0} f' /tmp/regtest.s \
+        | grep -q '\bshad\b'; then
+    pass "regtest: variable signed right shift negates then shad"
+else
+    fail "regtest: variable signed right shift negates then shad"
+fi
+# Guard the gate: a constant shift must still use the shll/shlr/shar
+# decomposition (cheaper) and never the dynamic shld/shad.
+cat > /tmp/regtest.c <<'EOF'
+unsigned int cl(unsigned int x) { return x << 5; }
+int          cr(int x)          { return x >> 3; }
+EOF
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null \
+   && grep -Eq '\b(shll|shar)\b' /tmp/regtest.s \
+   && ! grep -Eq '\b(shld|shad)\b' /tmp/regtest.s; then
+    pass "regtest: constant shift still decomposes (no dynamic shld/shad)"
+else
+    fail "regtest: constant shift still decomposes (no dynamic shld/shad)"
+fi
+
 # 4f2. Store to a pool-loaded address immediately followed by a void call.
 # The void call's target address must NOT be allocated to r0, or it
 # clobbers the store address (also in r0) before the store fires —
