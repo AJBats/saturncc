@@ -71,6 +71,7 @@ static void defconst(int, int, Value);
 static void defstring(int, char *);
 static void defsymbol(Symbol);
 static void doarg(Node);
+int getrule(Node, int);   /* gen.c: winning rule for a labeled node */
 static void emit2(Node);
 static void export(Symbol);
 static void clobber(Node);
@@ -2307,6 +2308,38 @@ static unsigned sh_prealloc_mask(Symbol sym, Node p, unsigned m) {
                         if (sz == 1 || sz == 2)
                                 return m & ~0x1u;
                 }
+        }
+        /* 2-address aliasing guard. A "?"-template instruction emits
+         * `mov r%0,r%c` then `op r%1,r%c`: it overwrites its result
+         * register %c with the first operand before reading the second
+         * operand %1, so %c must differ from %1. gen.c's ralloc masking
+         * enforces that when %c is a wildcard, but not when %c is pinned
+         * to a fixed register (e.g. r0 via a return, or an arg/assign
+         * target) — askfixedreg ignores the mask there. So when p feeds
+         * such an instruction as a non-first operand, keep that
+         * instruction's pinned result register out of p's own candidate
+         * set. Without this, p can land in the result register and the
+         * mov silently destroys it (e.g. `return a - (b+1)` collapsing
+         * to `sub r0,r0`). The x-op-x form, where p is also the first
+         * operand, is exempt: the mov is then an identity and sharing
+         * the register is correct. */
+        for (n = p->x.next; n; n = n->x.next) {
+                int as_first = 0, as_other = 0;
+                for (i = 0; i < NELEMS(n->x.kids) && n->x.kids[i]; i++)
+                        if (n->x.kids[i] == p) {
+                                if (i == 0)
+                                        as_first = 1;
+                                else
+                                        as_other = 1;
+                        }
+                if (as_other && !as_first
+                    && n->x.inst
+                    && n->syms[RX]
+                    && n->syms[RX]->x.wildcard == NULL
+                    && n->syms[RX]->x.regnode
+                    && n->syms[RX]->x.regnode->set == IREG
+                    && *IR->x._templates[getrule(n, n->x.inst)] == '?')
+                        m &= ~n->syms[RX]->x.regnode->mask;
         }
         return m;
 }

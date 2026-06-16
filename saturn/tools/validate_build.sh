@@ -194,6 +194,27 @@ else
     fail "regtest: duplicated constant feeding a stack arg compiles and stores"
 fi
 
+# 4f1b. 2-address aliasing for a "?"-template op whose result is pinned to a
+# specific register. `mov r%0,r%c ; op r%1,r%c` writes %c before reading %1,
+# so %c must differ from %1. gen.c's ralloc masking enforces that only when
+# %c is a wildcard; for a pinned result (e.g. r0 via return) askfixedreg
+# ignores the mask, so a co-allocated second operand silently landed in r0
+# and the mov destroyed it -> `sub r0,r0` (computes a-a=0). sh_prealloc_mask
+# now keeps the pinned result reg out of the second operand's candidates.
+# Invariant: the subtract's operands are distinct (never `sub r0,r0`); same
+# hazard for and/or/xor. See F5 workstream (rcc_bug_variable_shift).
+cat > /tmp/regtest.c <<'EOF'
+int s(int a, int b) { return a - (b + 1); }
+int x(int a, int b) { return a & (b | 3); }
+EOF
+rm -f /tmp/regtest.s
+if "$RCC" -target=sh/hitachi /tmp/regtest.c /tmp/regtest.s 2>/dev/null \
+   && ! grep -Eq '\b(sub|and|or|xor)[[:space:]]+r([0-9]+),r\2\b' /tmp/regtest.s; then
+    pass "regtest: pinned-result 2-address op does not alias its operand"
+else
+    fail "regtest: pinned-result 2-address op does not alias its operand"
+fi
+
 # 4f2. Store to a pool-loaded address immediately followed by a void call.
 # The void call's target address must NOT be allocated to r0, or it
 # clobbers the store address (also in r0) before the store fires —

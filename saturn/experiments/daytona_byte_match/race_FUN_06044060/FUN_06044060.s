@@ -14210,9 +14210,10 @@ FUN_06045b10:
 	or	r6,r0
 	shll	r0
 	or	r5,r0
-	shll	r0
+	mov	r0,r2
+	shll	r2
 	mov	r1,r0
-	or	r0,r0
+	or	r2,r0
 	add	#4,r15
 	rts
 	nop
@@ -14260,9 +14261,10 @@ FUN_06045b48:
 	mov	r5,r0
 	shll	r0
 	or	r6,r0
-	shll	r0
+	mov	r0,r2
+	shll	r2
 	mov	r1,r0
-	or	r0,r0
+	or	r2,r0
 	rts
 	nop
 L1758:

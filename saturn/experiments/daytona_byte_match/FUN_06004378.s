@@ -35,7 +35,7 @@ L4:
 	bt	L10
 	cmp/eq	#46,r0
 	bt	L12
-	bra	Ld24
+	bra	Ld26
 	nop
 L8:
 	mov	#36,r0
@@ -53,7 +53,7 @@ L12:
 	mov	#39,r0
 	rts
 	mov.l	@r15+,r14
-Ld24:
+Ld26:
 	mov	#41,r0
 	rts
 	mov.l	@r15+,r14

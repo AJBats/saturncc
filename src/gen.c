@@ -21,7 +21,7 @@ static void     dumptree(Node);
 static void     genreload(Node, Symbol, int);
 static void     genspill(Symbol, Node, Symbol);
 static Symbol   getreg(Symbol, unsigned*, Node);
-static int      getrule(Node, int);
+int             getrule(Node, int);
 static void     linearize(Node, Node);
 static int      moveself(Node);
 static void     prelabel(Node);
@@ -189,7 +189,7 @@ static void dump_tree(Node n, int d) {
 		if (n->kids[1]) dump_tree(n->kids[1], d + 1);
 	}
 }
-static int getrule(Node p, int nt) {
+int getrule(Node p, int nt) {
 	int rulenum;
 
 	assert(p);
